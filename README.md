@@ -17,6 +17,7 @@
   <a href="#the-problem">Problem</a> •
   <a href="#how-it-works">How it works</a> •
   <a href="#compression-in-practice">In practice</a> •
+  <a href="#real-world-test--smos-analyzed-itself">Self-test</a> •
   <a href="#install">Install</a> •
   <a href="#benchmarks">Benchmarks</a> •
   <a href="#example-use-cases">Examples</a> •
@@ -352,6 +353,23 @@ SMOS pays off when the knowledge being accumulated exceeds what fits comfortably
 | Long agentic runs | Prior tool outputs stored out-of-context; don't accumulate |
 
 **Single-session, small codebases (< 10 files, < 5KB each):** SMOS overhead exceeds savings. The tool is designed for sustained use and scale, not one-shot audits of tiny repos.
+
+---
+
+## Real-world test — SMOS analyzed itself
+
+As a validation run, SMOS was used to analyze its own codebase. Claude read 10 source files using `tool_read_file_compress`, stored compressed summaries in the index, then ran 4 targeted `tool_semantic_query` calls to produce a full architecture analysis — without re-reading a single file at synthesis time.
+
+| Metric | Value |
+|---|---|
+| Files processed | 10 |
+| Source lines | 982 |
+| Context at synthesis (with SMOS) | ~850 tokens |
+| Context at synthesis (without SMOS) | ~4,910 tokens |
+| Reduction | **5.8×** |
+| Synthesis queries | 4 |
+
+The analysis covers end-to-end data flow, lock contention, failure modes, scaling characteristics, and design issues — all derived from compressed memory, not live source. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full output.
 
 ---
 
