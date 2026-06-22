@@ -22,6 +22,7 @@
   <a href="#example-use-cases">Examples</a> •
   <a href="#tools">Tools</a> •
   <a href="#configuration">Config</a> •
+  <a href="#update">Update</a> •
   <a href="#uninstall">Uninstall</a>
 </p>
 
@@ -499,6 +500,24 @@ rm -rf .smos
 Add `.smos/` to your `.gitignore` to keep memory data out of version control (SMOS does this automatically for new projects).
 
 The database survives crashes: on restart, SMOS detects FAISS/SQLite divergence and rebuilds the index from SQLite automatically (re-embeds all content in batches of 256).
+
+---
+
+## Update
+
+```bash
+smos update
+```
+
+Pulls the latest version from GitHub and upgrades in place. Restart Claude Code afterward.
+
+Check your current version:
+
+```bash
+smos --version
+```
+
+**To get notified of new releases:** go to the [GitHub repo](https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS), click **Watch → Custom → Releases**.
 
 ---
 

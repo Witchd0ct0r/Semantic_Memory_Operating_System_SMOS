@@ -2,11 +2,21 @@
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import importlib.util
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+_REPO_URL = "https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS.git"
+
+
+def _current_version() -> str:
+    try:
+        return importlib.metadata.version("smos-mcp")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
 
 _SNIPPET_START = "<!-- smos: semantic memory operating system — file reading policy -->"
 _SNIPPET_END = "<!-- end smos -->"
@@ -248,6 +258,25 @@ def _remove_data(dry_run: bool) -> None:
     print("    macOS/Linux:  rm -rf .smos")
 
 
+# ── update helper ────────────────────────────────────────────────────────────
+
+def _update(dry_run: bool) -> None:
+    print(f"SMOS Update  (current: {_current_version()})")
+    print("=" * 40)
+    cmd = [
+        sys.executable, "-m", "pip", "install", "--upgrade",
+        f"git+{_REPO_URL}",
+    ]
+    if dry_run:
+        print(f"  Would run: {' '.join(cmd)}")
+        return
+    print("  Fetching latest from GitHub...")
+    subprocess.check_call(cmd)
+    print()
+    print(f"  Updated to: {_current_version()}")
+    print("  Restart Claude Code to activate the new version.")
+
+
 # ── commands ─────────────────────────────────────────────────────────────────
 
 def _setup(dry_run: bool) -> None:
@@ -323,18 +352,25 @@ def main() -> None:
         "command",
         nargs="?",
         default="setup",
-        choices=["setup", "uninstall"],
-        help="setup (default) or uninstall",
+        choices=["setup", "uninstall", "update"],
+        help="setup (default), uninstall, or update",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Show what would be done without making any changes",
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"smos {_current_version()}",
+    )
 
     args = parser.parse_args()
 
     if args.command == "uninstall":
         _uninstall(args.dry_run)
+    elif args.command == "update":
+        _update(args.dry_run)
     else:
         _setup(args.dry_run)
