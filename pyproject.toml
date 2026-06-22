@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "smos-mcp"
+version = "0.1.0"
+description = "Semantic Memory Operating System — persistent memory MCP server for Claude Code"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["claude", "mcp", "memory", "semantic", "ai", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "mcp[cli]>=1.0.0,<2.0.0",
+    "faiss-cpu>=1.8.0",
+    "sentence-transformers>=3.0.0,<4.0.0",
+    "openai>=1.50.0,<2.0.0",
+    "pydantic>=2.5.0,<3.0.0",
+    "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.scripts]
+smos = "smos.install.cli:main"
+smos-server = "smos.server:run"
+
+[project.urls]
+Homepage = "https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS"
+Repository = "https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS"
+Issues = "https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["smos*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

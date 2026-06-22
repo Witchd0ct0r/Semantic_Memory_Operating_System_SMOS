@@ -1,0 +1,38 @@
+name: smos-mcp
+displayName: "SMOS — Semantic Memory Operating System"
+description: >
+  Persistent semantic memory for Claude Code. Store, query, and retrieve knowledge
+  across sessions and files. Compresses file content out of the context window;
+  retrieves it on demand via natural language queries.
+license: MIT
+homepage: https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS
+
+tools:
+  - tool_semantic_store
+  - tool_semantic_query
+  - tool_semantic_write
+  - tool_read_file_compress
+  - tool_store_verbatim
+  - tool_retrieve
+  - tool_write_file_safe
+
+runtime: python
+startCommand:
+  type: stdio
+  command: smos-server
+
+configSchema:
+  type: object
+  properties:
+    OLLAMA_BASE_URL:
+      type: string
+      description: Ollama API base URL
+      default: "http://localhost:11434/v1"
+    OLLAMA_MODEL:
+      type: string
+      description: Local LLM model for summarization
+      default: "qwen2.5:7b"
+    SUMMARIZER_MAX_TOKENS:
+      type: string
+      description: Max tokens for LLM summarization output
+      default: "512"
