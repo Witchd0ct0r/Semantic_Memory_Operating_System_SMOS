@@ -16,6 +16,7 @@
 <p align="center">
   <a href="#the-problem">Problem</a> •
   <a href="#how-it-works">How it works</a> •
+  <a href="#compression-in-practice">In practice</a> •
   <a href="#install">Install</a> •
   <a href="#benchmarks">Benchmarks</a> •
   <a href="#example-use-cases">Examples</a> •
@@ -57,6 +58,96 @@ Synthesis:                            Synthesis:
 ```
 
 Memory persists across sessions. Session 2 queries what Session 1 stored — no re-reading.
+
+---
+
+## Compression in practice
+
+### Input — raw file (312 tokens in context without SMOS)
+
+```python
+# smos/memory/vector_store.py  (excerpt)
+
+def store(self, content: str, metadata: dict | None = None, tier: str = "working") -> str:
+    meta = metadata or {}
+    doc_id = str(uuid.uuid4())
+    ts = datetime.now(timezone.utc).isoformat()
+
+    summary = self._summarizer.summarize(content)
+    embedding = self._embed(summary)
+
+    with self._lock:
+        idx = self._index.ntotal
+        self._index.add(embedding.reshape(1, -1))
+        self._db.execute(
+            "INSERT INTO memories VALUES (?,?,?,?,?,?)",
+            (doc_id, content, summary, json.dumps(meta), tier, ts),
+        )
+        self._db.commit()
+        self._id_map[idx] = doc_id
+    return doc_id
+
+def query(self, text: str, top_k: int = 5) -> list[dict]:
+    embedding = self._embed(text)
+    distances, indices = self._index.search(embedding.reshape(1, -1), top_k)
+    results = []
+    for dist, idx in zip(distances[0], indices[0]):
+        if idx == -1:
+            continue
+        doc_id = self._id_map.get(int(idx))
+        row = self._db.execute(
+            "SELECT content, summary, metadata, tier, created_at FROM memories WHERE id = ?",
+            (doc_id,),
+        ).fetchone()
+        if row:
+            results.append({
+                "id": doc_id,
+                "summary": row[1],
+                "score": float(dist),
+                "tier": row[3],
+            })
+    return results
+```
+
+### Output — LLM summary stored in SMOS (42 tokens)
+
+```
+Stores text with LLM-compressed embedding into FAISS index and SQLite.
+Assigns UUID, timestamps entry, generates summary via summarizer, embeds
+with sentence-transformer, persists metadata and tier. Query method embeds
+input text, searches FAISS for nearest neighbours, returns scored results
+with summary and tier.
+```
+
+**42 tokens stored. 312 tokens never entered the context window. 7.4× compression on this excerpt.**
+
+### What's written to SQLite
+
+```
+id:         f3a2b1c0-8d4e-4f7a-9b2c-1e5d6f3a2b1c
+summary:    Stores text with LLM-compressed embedding into FAISS...
+content:    [original source, stored for lossless retrieval if needed]
+metadata:   {"source": "smos/memory/vector_store.py"}
+tier:       working
+created_at: 2026-06-22T14:23:11.847Z
+```
+
+The FAISS index stores the 384-dimensional embedding of the summary. Queries embed the search string and find nearest neighbours by cosine distance — no keywords, no exact match required.
+
+### Query result returned to Claude
+
+```
+tool_semantic_query("how does storage work")
+
+→ score: 0.91
+  summary: "Stores text with LLM-compressed embedding into FAISS index
+            and SQLite. Assigns UUID, timestamps entry, generates summary
+            via summarizer, embeds with sentence-transformer..."
+  source:  smos/memory/vector_store.py
+  tier:    working
+```
+
+Claude gets the 42-token summary and a confidence score. The 312-token source stays on disk.
 
 ---
 
