@@ -149,6 +149,39 @@ tool_semantic_query("how does storage work")
 
 Claude gets the 42-token summary and a confidence score. The 312-token source stays on disk.
 
+### Lossless retrieval — when you need the exact original
+
+For code, diffs, or any content where exact bytes matter, use the verbatim path instead:
+
+```
+tool_store_verbatim(content="<full source>", label="vector_store.py store+query methods")
+→ key: "f3a2b1c0-8d4e-4f7a-9b2c-1e5d6f3a2b1c"
+```
+
+Retrieve it later by key:
+
+```
+tool_retrieve(key="f3a2b1c0-8d4e-4f7a-9b2c-1e5d6f3a2b1c")
+
+→ key:       f3a2b1c0-8d4e-4f7a-9b2c-1e5d6f3a2b1c
+  label:     vector_store.py store+query methods
+  timestamp: 2026-06-22T14:23:11.847Z
+  content:
+    def store(self, content: str, metadata: dict | None = None, tier: str = "working") -> str:
+        meta = metadata or {}
+        doc_id = str(uuid.uuid4())
+        ...  [exact original, byte-for-byte]
+```
+
+**Verbatim storage has no compression and no semantic index — it is a pure key-value store.** Use it when you need to reconstruct a diff, apply a patch, or pass exact code to a tool.
+
+### Which path to use
+
+| Content type | Tool | Retrieval |
+|---|---|---|
+| Prose, analysis, docs, logs | `tool_read_file_compress` / `tool_semantic_store` | `tool_semantic_query` (by meaning) |
+| Code, diffs, structured data | `tool_store_verbatim` | `tool_retrieve` (by key) |
+
 ---
 
 ## Install
