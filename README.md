@@ -86,6 +86,8 @@ smos setup
 
 All numbers measured on real data. Benchmarks live in [`tests/`](./tests/).
 
+> **Test hardware:** AMD Ryzen 5 7640HS (6C / 12T, 4.3 GHz) · 32 GB RAM · RTX 4050 Laptop 4 GB VRAM · 1 TB Kioxia NVMe · Windows 11
+
 ### Compression quality
 
 Local LLM (qwen2.5:7b via Ollama) compresses files to a fixed-length summary. **Factual retention is 100% at all sizes** — all seeded keywords recovered from every summary across 3 independent runs.
@@ -165,13 +167,13 @@ Embedding is the ceiling on both paths — FAISS add and SQLite write together a
 SMOS is production-ready for ≤100K memories on standard hardware. The lifecycle manager runs O(M) deduplication where M is the batch size (50), independent of total corpus size — dedup cycles stay at ~1.1 seconds whether you have 10K or 1M memories stored.
 
 ```
-Component limits (standard deployment, 8GB RAM)
-─────────────────────────────────────────────────
+Component limits (tested: Ryzen 5 7640HS, 32 GB RAM, RTX 4050 4 GB VRAM)
+──────────────────────────────────────────────────────────────────────────
 Query < 20ms P95        ████████████████████  100K memories
-Lifecycle functional    ██████████████████████████████  1M+ memories (after v0.1 fix)
+Lifecycle functional    ██████████████████████████████  1M+ memories
 Ingest rate             42 docs/s (real-time) / 300 docs/s (bulk)
 Max document size       ~50KB (qwen2.5:7b context window)
-FAISS index size        147 MB at 100K memories
+FAISS index size        147 MB at 100K memories / 1.4 GB at 1M memories
 ```
 
 ---
@@ -230,12 +232,14 @@ Environment variables (set during `smos setup` or in your shell):
 
 ### Model options (chosen during setup)
 
-| Model | Size | RAM needed | Compression quality |
-|-------|-----:|:---------:|-------------------|
-| `qwen2.5:7b`  | 4.7 GB | 16 GB | Best (benchmarked) |
-| `qwen2.5:3b`  | 2.0 GB |  8 GB | Good |
-| `qwen2.5:1.5b`| 0.9 GB |  6 GB | Fast |
-| none          | —      |  —    | Extractive fallback (first sentences) |
+| Model | Size | Min RAM | Compression quality |
+|-------|-----:|:-------:|-------------------|
+| `qwen2.5:7b`  | 4.7 GB | 8 GB  | Best (benchmarked) — GPU-accelerated if CUDA available |
+| `qwen2.5:3b`  | 2.0 GB | 4 GB  | Good |
+| `qwen2.5:1.5b`| 0.9 GB | 4 GB  | Fast |
+| none          | —      | —     | Extractive fallback (first sentences only) |
+
+The RTX 4050 (or any CUDA GPU) will be used automatically by Ollama if available, reducing LLM latency from ~10s to ~2–3s per compression call.
 
 Without Ollama, SMOS falls back to extractive summarization. Semantic querying and verbatim storage work normally — only LLM-driven compression degrades.
 
