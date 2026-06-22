@@ -18,6 +18,7 @@
   <a href="#how-it-works">How it works</a> •
   <a href="#install">Install</a> •
   <a href="#benchmarks">Benchmarks</a> •
+  <a href="#example-use-cases">Examples</a> •
   <a href="#tools">Tools</a> •
   <a href="#configuration">Config</a> •
   <a href="#uninstall">Uninstall</a>
@@ -226,6 +227,69 @@ SMOS pays off when the knowledge being accumulated exceeds what fits comfortably
 | Long agentic runs | Prior tool outputs stored out-of-context; don't accumulate |
 
 **Single-session, small codebases (< 10 files, < 5KB each):** SMOS overhead exceeds savings. The tool is designed for sustained use and scale, not one-shot audits of tiny repos.
+
+---
+
+## Example use cases
+
+### Codebase audit across many files
+
+```
+Read every file in src/ and give me a security audit.
+```
+
+Without SMOS, Claude reads 40 files → 60,000 tokens in context by the time it reaches synthesis. With SMOS, each file is compressed to ~85 tokens and stored. Synthesis pulls only what's relevant via semantic query. Context at synthesis: ~1,200 tokens.
+
+---
+
+### Multi-session feature work
+
+Day 1 — Claude reads the auth module, database schema, and API contracts. All compressed and stored.
+
+Day 2 — new session, zero re-reading:
+
+```
+What did we establish about the auth flow yesterday?
+```
+
+SMOS returns the stored context instantly. Claude picks up exactly where it left off without touching a file.
+
+---
+
+### Large log / generated file analysis
+
+```
+Read build/output.log and tell me what failed.
+```
+
+A 50KB build log would consume ~12,800 tokens in context and stay there. With SMOS, it compresses 154× to ~83 tokens. Claude gets the failure summary; the raw log never enters the window.
+
+---
+
+### Accumulating decisions across a long agent run
+
+Claude is running a multi-step refactor — reading files, making decisions, writing changes. Without SMOS, every prior decision accumulates in context. With SMOS:
+
+```python
+tool_store_verbatim(content=diff, label="auth-refactor-step-3")
+tool_semantic_store("Decided to replace JWT with session tokens — see verbatim key abc123")
+```
+
+Prior steps are queryable but out-of-context. The agent runs indefinitely without hitting the context ceiling.
+
+---
+
+### Repeated analysis from different angles
+
+```
+# Session 1
+Analyse src/payments.py for performance issues.
+
+# Session 2
+Analyse src/payments.py for security issues.
+```
+
+Session 2 queries the compressed version stored in session 1 — no re-read, no re-embedding, instant retrieval. Analysis starts immediately from stored knowledge.
 
 ---
 
