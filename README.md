@@ -68,6 +68,8 @@ pip install smos-mcp
 smos setup
 ```
 
+> **Note:** `smos-mcp` is the PyPI package name. The CLI commands installed are `smos` and `smos-server`.
+
 The setup wizard handles everything else: Python deps, model selection, model pull, MCP registration, and CLAUDE.md policy injection. Restart Claude Code when done.
 
 ```bash
@@ -80,6 +82,38 @@ Alternatively, install directly from GitHub:
 pip install git+https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS.git
 smos setup
 ```
+
+### If `smos` is not found after install
+
+pip installs CLI scripts to a directory that may not be on your `PATH`. Find it:
+
+```bash
+python -m site --user-scripts
+```
+
+Then add it permanently:
+
+**Windows (PowerShell)**
+
+```powershell
+$scripts = python -m site --user-scripts
+[Environment]::SetEnvironmentVariable("Path", "$env:Path;$scripts", "User")
+# Restart PowerShell for the change to take effect
+```
+
+**macOS (zsh)**
+
+```bash
+echo 'export PATH="$(python3 -m site --user-scripts):$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+**Linux (bash)**
+
+```bash
+echo 'export PATH="$(python3 -m site --user-scripts):$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+> **conda / miniconda users:** Scripts land in `$CONDA_PREFIX\Scripts` (Windows) or `$CONDA_PREFIX/bin` (macOS/Linux). These are on PATH when the conda environment is active — if you installed into `base` or an active env, `smos` should work immediately after activating that environment.
 
 ---
 
