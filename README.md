@@ -86,7 +86,7 @@ smos setup
 
 All numbers measured on real data. Benchmarks live in [`tests/`](./tests/).
 
-> **Test hardware:** AMD Ryzen 5 7640HS (6C / 12T, 4.3 GHz) · 32 GB RAM · RTX 4050 Laptop 4 GB VRAM · 1 TB Kioxia NVMe · Windows 11
+> **Test hardware:** AMD Ryzen 5 7640HS (6C / 12T, 4.3 GHz) · 32 GB RAM · RTX 4050 Laptop 6 GB VRAM · 1 TB Kioxia NVMe · Windows 11
 
 ### Compression quality
 
