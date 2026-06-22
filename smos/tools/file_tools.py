@@ -9,8 +9,8 @@ from smos.llm.summarizer import summarize_text
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 
-_WORKSPACE = Path(__file__).parent.parent.parent / "workspace"
-_LOGS = Path(__file__).parent.parent.parent / "logs"
+_WORKSPACE = Path.cwd() / ".smos" / "workspace"
+_LOGS = Path.cwd() / ".smos" / "logs"
 _LOG_LOCK = threading.Lock()
 
 

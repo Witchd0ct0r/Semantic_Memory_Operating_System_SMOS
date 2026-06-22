@@ -470,18 +470,33 @@ Without Ollama, SMOS falls back to extractive summarization. Semantic querying a
 
 ## Data
 
-All data lives locally at `~/.smos/data/`. Nothing leaves your machine.
+Each project gets its own isolated data store. SMOS creates a `.smos/` folder in the project root the first time Claude Code opens the project — no manual setup required.
 
 ```
+<your-project>/
+└── .smos/
+    ├── faiss.index    — vector index for this project (147 MB at 100K memories)
+    ├── metadata.db    — SQLite: content, summaries, tiers, verbatim store
+    ├── workspace/     — sandboxed file write area
+    └── logs/          — write audit log
+
 ~/.smos/
-├── data/
-│   ├── faiss.index    — vector index (147 MB at 100K memories)
-│   └── metadata.db    — SQLite: content, tags, tiers, verbatim store
-└── .env               — model preference (OLLAMA_MODEL=qwen2.5:7b)
+└── .env               — global model preference (OLLAMA_MODEL=qwen2.5:7b)
 ```
 
-**Windows:** `C:\Users\<you>\.smos\`
-**macOS / Linux:** `~/.smos/`
+Nothing leaves your machine. Memories from Project A never appear in Project B queries.
+
+To delete a project's memory:
+
+```bash
+# Windows
+Remove-Item -Recurse -Force .smos
+
+# macOS / Linux
+rm -rf .smos
+```
+
+Add `.smos/` to your `.gitignore` to keep memory data out of version control (SMOS does this automatically for new projects).
 
 The database survives crashes: on restart, SMOS detects FAISS/SQLite divergence and rebuilds the index from SQLite automatically (re-embeds all content in batches of 256).
 
@@ -497,11 +512,21 @@ This removes:
 
 - **MCP registration** — `claude mcp remove smos` (runs automatically)
 - **CLAUDE.md policy block** — strips the injected file-reading policy from `~/.claude/CLAUDE.md`
-- **Memory data** — prompts before deleting `~/.smos/` (FAISS index + SQLite database)
+- **Global config** — prompts before deleting `~/.smos/` (model preference only)
+
+**Per-project data** (`.smos/` in each project folder) must be deleted manually — the uninstaller can't know which projects you've used SMOS in:
+
+```bash
+# Windows (run inside the project folder)
+Remove-Item -Recurse -Force .smos
+
+# macOS / Linux
+rm -rf .smos
+```
 
 The Python package itself is **not** removed automatically — run `pip uninstall smos-mcp` afterward if you want that too.
 
-Ollama models (`qwen2.5:7b` etc.) are **not** removed — they are shared system-wide. To remove manually:
+Ollama models are **not** removed — they are shared system-wide. To remove manually:
 
 ```bash
 ollama rm qwen2.5:7b

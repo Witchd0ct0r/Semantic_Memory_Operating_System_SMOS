@@ -38,7 +38,12 @@ app = FastMCP(
     ),
 )
 
-_store = VectorStore()
+# Each project gets its own .smos/ directory. The MCP server is started
+# as a subprocess by Claude Code from the project root, so cwd == project root.
+_PROJECT_ROOT = Path.cwd()
+_DATA_DIR = _PROJECT_ROOT / ".smos"
+
+_store = VectorStore(persist_path=_DATA_DIR)
 _lifecycle = LifecycleManager(_store)
 _store._lifecycle_callback = _lifecycle.on_insert
 

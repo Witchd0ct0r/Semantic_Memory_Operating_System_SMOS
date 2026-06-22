@@ -14,6 +14,7 @@ venv/
 env/
 
 # Runtime data — never commit
+.smos/
 data/
 workspace/
 logs/

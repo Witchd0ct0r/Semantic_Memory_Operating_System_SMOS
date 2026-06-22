@@ -222,25 +222,30 @@ def _strip_claude_md(dry_run: bool) -> None:
 
 
 def _remove_data(dry_run: bool) -> None:
-    smos_dir = Path.home() / ".smos"
-    if not smos_dir.exists():
-        _ok("No SMOS data directory found (~/.smos)")
-        return
-
-    total_bytes = sum(f.stat().st_size for f in smos_dir.rglob("*") if f.is_file())
-    size_mb = total_bytes / (1024 * 1024)
-    print(f"  Found: {smos_dir}  ({size_mb:.1f} MB)")
-
-    if dry_run:
-        print(f"  Would delete: {smos_dir}")
-        return
-
-    answer = input("  Delete all SMOS memory data? This cannot be undone. [y/N]: ").strip().lower()
-    if answer in ("y", "yes"):
-        shutil.rmtree(smos_dir)
-        _ok(f"Deleted {smos_dir}")
+    # Remove global config dir (~/.smos/ — model preference only, no data)
+    smos_config = Path.home() / ".smos"
+    if smos_config.exists():
+        total_bytes = sum(f.stat().st_size for f in smos_config.rglob("*") if f.is_file())
+        size_mb = total_bytes / (1024 * 1024)
+        print(f"  Found global config: {smos_config}  ({size_mb:.1f} MB)")
+        if dry_run:
+            print(f"  Would delete: {smos_config}")
+        else:
+            answer = input("  Delete global SMOS config? [y/N]: ").strip().lower()
+            if answer in ("y", "yes"):
+                shutil.rmtree(smos_config)
+                _ok(f"Deleted {smos_config}")
+            else:
+                _ok(f"Kept: {smos_config}")
     else:
-        _ok(f"Kept: {smos_dir}")
+        _ok("No global SMOS config found (~/.smos)")
+
+    # Per-project data lives in <project>/.smos/ — we can't enumerate those
+    print()
+    print("  Per-project memory data is stored in .smos/ inside each project directory.")
+    print("  Delete those manually if you no longer need them:")
+    print("    Windows:      Remove-Item -Recurse -Force .smos")
+    print("    macOS/Linux:  rm -rf .smos")
 
 
 # ── commands ─────────────────────────────────────────────────────────────────
@@ -273,13 +278,12 @@ def _setup(dry_run: bool) -> None:
     print("\nBehavioural instructions...")
     _write_claude_md(dry_run)
 
-    data_dir = Path.home() / ".smos" / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
-
     print()
     print("=" * 40)
     print("Done. Restart Claude Code to activate SMOS.")
-    print(f"Data directory: {data_dir}")
+    print()
+    print("Data storage: each project gets its own .smos/ folder")
+    print("  created automatically when Claude Code opens the project.")
     print()
     print("Verify with: claude mcp list")
 
