@@ -73,17 +73,24 @@ def build_compressed_context(
     query: str,
     k: int,
     store: VectorStore,
+    tags: Optional[list[str]] = None,
 ) -> CompressedContext:
     candidate_k = max(k * _CANDIDATE_MULTIPLIER, 20)
 
-    domain = _classify_domain(query)
-    if domain:
-        domain_tags = _DOMAIN_KEYWORDS[domain]
-        retrieved = store.query_domain(query, k=candidate_k, domain_tags=domain_tags)
+    if tags:
+        # Explicit tags take priority — skip auto-detection
+        retrieved = store.query_domain(query, k=candidate_k, domain_tags=tags)
         if len(retrieved) < k:
             retrieved = store.query_domain(query, k=candidate_k, domain_tags=None)
     else:
-        retrieved = store.query_domain(query, k=candidate_k, domain_tags=None)
+        domain = _classify_domain(query)
+        if domain:
+            domain_tags = _DOMAIN_KEYWORDS[domain]
+            retrieved = store.query_domain(query, k=candidate_k, domain_tags=domain_tags)
+            if len(retrieved) < k:
+                retrieved = store.query_domain(query, k=candidate_k, domain_tags=None)
+        else:
+            retrieved = store.query_domain(query, k=candidate_k, domain_tags=None)
 
     if not retrieved:
         return CompressedContext(

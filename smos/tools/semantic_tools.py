@@ -25,10 +25,15 @@ def semantic_store(text: str, type: str, store: VectorStore) -> str:
     return store.store(memory)
 
 
-def semantic_query(query: str, k: int, store: VectorStore) -> dict:
+def semantic_query(
+    query: str,
+    k: int,
+    store: VectorStore,
+    tags: list[str] | None = None,
+) -> dict:
     if not _validate_text(query):
         return _INVALID_INPUT_RESPONSE
-    result = build_compressed_context(query, k, store)
+    result = build_compressed_context(query, k, store, tags=tags)
     return result.model_dump()
 
 

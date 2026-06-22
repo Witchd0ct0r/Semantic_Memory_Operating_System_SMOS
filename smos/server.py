@@ -71,18 +71,25 @@ def tool_semantic_store(text: str, type: str = "doc") -> str:
 
 
 @app.tool()
-def tool_semantic_query(query: str, k: int = 5) -> dict:
+def tool_semantic_query(query: str, k: int = 5, tags: str = "") -> dict:
     """Retrieve a compressed context summary relevant to the query.
 
     Returns a dict with keys: summary (str), sources (list[str]), confidence (float 0-1),
     mode (abstractive | extractive | uncertain).
 
+    At large scale (many domains), pass tags to scope the search to specific domains
+    and avoid retrieving unrelated memories. Example: tags="auth,security"
+
     Args:
         query: Natural language query.
-        k: Number of memory candidates to retrieve before compression.
+        k: Number of results to return (default 5 — rarely need more than 10).
+        tags: Optional comma-separated domain tags to restrict the search scope.
+              Example: "auth,security" or "database,performance".
+              When omitted, auto-detects domain from query keywords.
     """
     try:
-        return semantic_query(query, k, _store)
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        return semantic_query(query, k, _store, tags=tag_list)
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
 
