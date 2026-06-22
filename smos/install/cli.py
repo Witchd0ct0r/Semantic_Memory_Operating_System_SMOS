@@ -1,15 +1,18 @@
-"""smos setup — interactive first-run installer."""
+"""smos — setup and uninstall CLI."""
 from __future__ import annotations
 
+import argparse
 import importlib.util
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-_CLAUDE_MD_SNIPPET = """
-<!-- smos: semantic memory operating system — file reading policy -->
+_SNIPPET_START = "<!-- smos: semantic memory operating system — file reading policy -->"
+_SNIPPET_END = "<!-- end smos -->"
+
+_CLAUDE_MD_SNIPPET = f"""
+{_SNIPPET_START}
 ## SMOS active — file reading policy
 
 For any file you are NOT about to edit, use `tool_read_file_compress` instead of
@@ -24,14 +27,14 @@ useful context, skip the read entirely.
 Storage routing:
 - Prose, analysis, notes → `tool_semantic_store` (LLM-compressed, queryable)
 - Code, diffs, exact text → `tool_store_verbatim` (lossless, retrieve by key)
-<!-- end smos -->
+{_SNIPPET_END}
 """
 
 _MODELS = [
-    ("qwen2.5:7b",  "Best quality  (~4.7 GB, needs 16 GB RAM)"),
-    ("qwen2.5:3b",  "Good quality  (~2.0 GB, needs  8 GB RAM)"),
-    ("qwen2.5:1.5b","Fast, lighter (~0.9 GB, needs  6 GB RAM)"),
-    ("none",        "Extractive fallback only — no Ollama needed"),
+    ("qwen2.5:7b",   "Best quality  (~4.7 GB, min 8 GB RAM — GPU-accelerated if CUDA available)"),
+    ("qwen2.5:3b",   "Good quality  (~2.0 GB, min 4 GB RAM)"),
+    ("qwen2.5:1.5b", "Fast, lighter (~0.9 GB, min 4 GB RAM)"),
+    ("none",         "Extractive fallback only — no Ollama needed"),
 ]
 
 
@@ -47,6 +50,8 @@ def _fail(msg: str) -> None:
     print(f"  [FAIL] {msg}")
     sys.exit(1)
 
+
+# ── setup helpers ────────────────────────────────────────────────────────────
 
 def _check_python() -> None:
     v = sys.version_info
@@ -86,7 +91,6 @@ def _install_python_deps() -> None:
         "pydantic>=2.5.0,<3.0.0",
         "numpy>=1.26.0",
     ]
-    missing = []
     pkg_map = {
         "mcp": "mcp",
         "faiss": "faiss",
@@ -95,9 +99,7 @@ def _install_python_deps() -> None:
         "pydantic": "pydantic",
         "numpy": "numpy",
     }
-    for mod, pkg in pkg_map.items():
-        if importlib.util.find_spec(mod) is None:
-            missing.append(pkg)
+    missing = [pkg for mod, pkg in pkg_map.items() if importlib.util.find_spec(mod) is None]
 
     if not missing:
         _ok("Python dependencies already installed")
@@ -127,12 +129,10 @@ def _pull_model(model: str, ollama_ok: bool) -> None:
     if not ollama_ok:
         _warn(f"Ollama not running — skipping {model} pull. Run 'ollama pull {model}' later.")
         return
-
     result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
     if model in result.stdout:
         _ok(f"{model} already available")
         return
-
     print(f"  Pulling {model} (this may take several minutes)...")
     subprocess.run(["ollama", "pull", model], check=True)
     _ok(f"{model} ready")
@@ -156,7 +156,6 @@ def _write_claude_md(dry_run: bool) -> None:
         print(f"  Would append SMOS policy to {claude_md}")
         print(_CLAUDE_MD_SNIPPET)
         return
-
     print(f"\n  The following will be appended to {claude_md}:")
     print(_CLAUDE_MD_SNIPPET)
     answer = input("  Append? [Y/n]: ").strip().lower()
@@ -169,9 +168,84 @@ def _write_claude_md(dry_run: bool) -> None:
         _warn("Skipped. Claude may not follow the correct file-reading policy without this.")
 
 
-def main() -> None:
-    dry_run = "--dry-run" in sys.argv
+# ── uninstall helpers ────────────────────────────────────────────────────────
 
+def _deregister_mcp(dry_run: bool) -> None:
+    if shutil.which("claude") is None:
+        _warn("Claude Code CLI not found — skipping MCP deregistration")
+        return
+    cmd = ["claude", "mcp", "remove", "smos"]
+    if dry_run:
+        print(f"  Would run: {' '.join(cmd)}")
+        return
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0 and "not found" not in (result.stderr + result.stdout).lower():
+        _warn(f"claude mcp remove: {result.stderr.strip()}")
+    else:
+        _ok("MCP server 'smos' removed from Claude Code")
+
+
+def _strip_claude_md(dry_run: bool) -> None:
+    claude_md = Path.home() / ".claude" / "CLAUDE.md"
+    if not claude_md.exists():
+        _ok("CLAUDE.md not found — nothing to remove")
+        return
+
+    text = claude_md.read_text(encoding="utf-8")
+    start = text.find(_SNIPPET_START)
+    if start == -1:
+        _ok("No SMOS block found in CLAUDE.md")
+        return
+
+    end = text.find(_SNIPPET_END, start)
+    if end == -1:
+        _warn(f"Found SMOS start marker but no end marker in {claude_md} — manual cleanup needed")
+        return
+
+    # Include the full end marker line
+    end_idx = text.find("\n", end + len(_SNIPPET_END))
+    end_idx = end_idx + 1 if end_idx != -1 else len(text)
+
+    # Absorb any blank line immediately before the block
+    trim_start = start
+    if trim_start > 0 and text[trim_start - 1] == "\n":
+        trim_start -= 1
+
+    cleaned = text[:trim_start] + text[end_idx:]
+
+    if dry_run:
+        print(f"  Would remove SMOS block from {claude_md}")
+        return
+
+    claude_md.write_text(cleaned, encoding="utf-8")
+    _ok(f"SMOS block removed from {claude_md}")
+
+
+def _remove_data(dry_run: bool) -> None:
+    smos_dir = Path.home() / ".smos"
+    if not smos_dir.exists():
+        _ok("No SMOS data directory found (~/.smos)")
+        return
+
+    total_bytes = sum(f.stat().st_size for f in smos_dir.rglob("*") if f.is_file())
+    size_mb = total_bytes / (1024 * 1024)
+    print(f"  Found: {smos_dir}  ({size_mb:.1f} MB)")
+
+    if dry_run:
+        print(f"  Would delete: {smos_dir}")
+        return
+
+    answer = input("  Delete all SMOS memory data? This cannot be undone. [y/N]: ").strip().lower()
+    if answer in ("y", "yes"):
+        shutil.rmtree(smos_dir)
+        _ok(f"Deleted {smos_dir}")
+    else:
+        _ok(f"Kept: {smos_dir}")
+
+
+# ── commands ─────────────────────────────────────────────────────────────────
+
+def _setup(dry_run: bool) -> None:
     print("SMOS Setup")
     print("=" * 40)
 
@@ -191,7 +265,7 @@ def main() -> None:
         env_path = Path.home() / ".smos" / ".env"
         env_path.parent.mkdir(parents=True, exist_ok=True)
         env_path.write_text(f"OLLAMA_MODEL={model}\n", encoding="utf-8")
-        _ok(f"Model saved to {env_path}")
+        _ok(f"Model preference saved to {env_path}")
 
     print("\nRegistering with Claude Code...")
     _register_mcp(dry_run)
@@ -208,3 +282,55 @@ def main() -> None:
     print(f"Data directory: {data_dir}")
     print()
     print("Verify with: claude mcp list")
+
+
+def _uninstall(dry_run: bool) -> None:
+    print("SMOS Uninstall")
+    print("=" * 40)
+
+    print("\nRemoving MCP server registration...")
+    _deregister_mcp(dry_run)
+
+    print("\nRemoving CLAUDE.md policy block...")
+    _strip_claude_md(dry_run)
+
+    print("\nMemory data...")
+    _remove_data(dry_run)
+
+    print()
+    print("=" * 40)
+    print("SMOS uninstalled. Restart Claude Code to apply.")
+    print()
+    print("To also remove the Python package:")
+    print("  pip uninstall smos-mcp")
+    print()
+    print("Ollama models are NOT removed (shared with other tools).")
+    print("To remove manually:  ollama rm qwen2.5:7b")
+
+
+# ── entry point ──────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="smos",
+        description="Semantic Memory Operating System — setup and management",
+    )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="setup",
+        choices=["setup", "uninstall"],
+        help="setup (default) or uninstall",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making any changes",
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "uninstall":
+        _uninstall(args.dry_run)
+    else:
+        _setup(args.dry_run)

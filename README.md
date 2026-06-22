@@ -19,7 +19,8 @@
   <a href="#install">Install</a> •
   <a href="#benchmarks">Benchmarks</a> •
   <a href="#tools">Tools</a> •
-  <a href="#configuration">Config</a>
+  <a href="#configuration">Config</a> •
+  <a href="#uninstall">Uninstall</a>
 </p>
 
 ---
@@ -167,7 +168,7 @@ Embedding is the ceiling on both paths — FAISS add and SQLite write together a
 SMOS is production-ready for ≤100K memories on standard hardware. The lifecycle manager runs O(M) deduplication where M is the batch size (50), independent of total corpus size — dedup cycles stay at ~1.1 seconds whether you have 10K or 1M memories stored.
 
 ```
-Component limits (tested: Ryzen 5 7640HS, 32 GB RAM, RTX 4050 4 GB VRAM)
+Component limits (tested: Ryzen 5 7640HS, 32 GB RAM, RTX 4050 Laptop 6 GB VRAM)
 ──────────────────────────────────────────────────────────────────────────
 Query < 20ms P95        ████████████████████  100K memories
 Lifecycle functional    ██████████████████████████████  1M+ memories
@@ -256,6 +257,34 @@ data/
 ```
 
 The database survives crashes: on restart, SMOS detects FAISS/SQLite divergence and rebuilds the index from SQLite automatically (re-embeds all content in batches of 256).
+
+---
+
+## Uninstall
+
+```bash
+smos uninstall
+```
+
+This removes:
+
+- **MCP registration** — `claude mcp remove smos` (runs automatically)
+- **CLAUDE.md policy block** — strips the injected file-reading policy from `~/.claude/CLAUDE.md`
+- **Memory data** — prompts before deleting `~/.smos/` (FAISS index + SQLite database)
+
+The Python package itself is **not** removed automatically — run `pip uninstall smos-mcp` afterward if you want that too.
+
+Ollama models (`qwen2.5:7b` etc.) are **not** removed — they are shared system-wide. To remove manually:
+
+```bash
+ollama rm qwen2.5:7b
+```
+
+Dry-run to preview what would be removed without touching anything:
+
+```bash
+smos uninstall --dry-run
+```
 
 ---
 
