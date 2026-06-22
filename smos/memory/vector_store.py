@@ -14,7 +14,7 @@ import numpy as np
 from smos.memory.embeddings import embed, embed_batch
 from smos.memory.schemas import MemoryObject
 
-_DEFAULT_DB_PATH = Path(__file__).parent.parent.parent / "data"
+_DEFAULT_DB_PATH = Path.home() / ".smos" / "data"
 _EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 output dimension
 _REBUILD_BATCH = 256  # rows per embed batch during crash-recovery rebuild
 

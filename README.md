@@ -470,13 +470,18 @@ Without Ollama, SMOS falls back to extractive summarization. Semantic querying a
 
 ## Data
 
-All data lives locally. Nothing leaves your machine.
+All data lives locally at `~/.smos/data/`. Nothing leaves your machine.
 
 ```
-data/
-├── faiss.index    — vector index (147 MB at 100K memories)
-└── metadata.db    — SQLite: content, tags, tiers, verbatim store
+~/.smos/
+├── data/
+│   ├── faiss.index    — vector index (147 MB at 100K memories)
+│   └── metadata.db    — SQLite: content, tags, tiers, verbatim store
+└── .env               — model preference (OLLAMA_MODEL=qwen2.5:7b)
 ```
+
+**Windows:** `C:\Users\<you>\.smos\`
+**macOS / Linux:** `~/.smos/`
 
 The database survives crashes: on restart, SMOS detects FAISS/SQLite divergence and rebuilds the index from SQLite automatically (re-embeds all content in batches of 256).
 
