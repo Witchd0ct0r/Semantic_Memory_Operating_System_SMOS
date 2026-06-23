@@ -17,6 +17,7 @@
   <a href="#the-problem">Problem</a> •
   <a href="#how-it-works">How it works</a> •
   <a href="#compression-in-practice">In practice</a> •
+  <a href="#repository-ingestion">Repo ingestion</a> •
   <a href="#real-world-test--smos-analyzed-itself">Self-test</a> •
   <a href="#install">Install</a> •
   <a href="#benchmarks">Benchmarks</a> •
@@ -317,12 +318,20 @@ Every first result is from the correct domain across all 40 queries. Top-5 bleed
 
 ### Ingest throughput
 
-| Path | Rate | Bottleneck |
-|------|-----:|-----------|
-| Real-time (store() call) | 42 docs/s | Embedding model (98% of time) |
-| Bulk import | 300 docs/s | Embedding model only |
+Measured with `benchmarks/repository_ingestion_benchmark.py` on 100 / 1000 / 5000 file corpora.
 
-Embedding is the ceiling on both paths — FAISS add and SQLite write together account for ~2% of ingest time.
+| Phase | 100 files | 1000 files | 5000 files | Notes |
+|---|---:|---:|---:|---|
+| Scan (metadata only) | 19,580/s | 21,697/s | 20,659/s | Pure filesystem walk — no I/O |
+| Parallel read | 1,525/s | 1,743/s | 1,863/s | 16 concurrent readers |
+| Embed batch | 322/s | 323/s | 314/s | all-MiniLM-L6-v2, CPU-only |
+| **Full ingest (fast mode)** | **72.7/s** | **73.3/s** | **70.8/s** | scan + read + embed + store |
+
+Full ingest of 5000 files: **70.59 seconds**, 27.8 MB peak RAM, query P95 = 16ms after all 5000 stored.
+
+**Throughput scales linearly with corpus size** — the rate stays constant because embedding (CPU-bound) dominates and doesn't grow with the index. With a CUDA GPU, embed throughput scales 10–30×.
+
+Real-time single-file store: 42 docs/s (embedding runs under the write lock — a known design issue; `store_batch()` fixes this by embedding outside the lock). Verbatim store (no embedding): ~3,000 docs/s.
 
 ### Scaling ceiling
 
@@ -356,7 +365,101 @@ SMOS pays off when the knowledge being accumulated exceeds what fits comfortably
 
 ---
 
-## Real-world test — SMOS analyzed itself
+## Repository ingestion
+
+Point SMOS at an entire repository and ingest everything in one call. Three new tools handle the full pipeline from directory scan through semantic storage.
+
+### `tool_recursive_semantic_ingest` — ingest a whole directory tree
+
+```
+tool_recursive_semantic_ingest(
+  path="/path/to/your/repo",
+  summarize=False,          # fast mode: 500-char snippet per file
+  include_patterns="*.py",  # optional: only Python files
+  exclude_patterns="test_*" # optional: skip test files
+)
+
+→ {
+    "status": "success",
+    "files_scanned": 1247,
+    "files_ingested": 1098,
+    "files_skipped": 149,
+    "duplicates_removed": 57,
+    "time_seconds": 38.2,
+    "memories_created": 1041
+  }
+```
+
+Automatically skips: `.git` `node_modules` `venv` `__pycache__` `build` `dist` `target`
+
+Supported file types: `.py .js .ts .tsx .jsx .java .go .rs .c .cpp .h .hpp .md .txt .rst .yaml .yml .json .toml .ini .cfg`
+
+**Two modes:**
+
+| Mode | How | Speed | Quality |
+|---|---|---|---|
+| `summarize=False` (default for large repos) | First 500 chars of each file | 70+ files/sec | Good — captures imports, signatures, docstrings |
+| `summarize=True` | Ollama LLM compresses each file | 1–3 files/sec | Best — full semantic compression |
+
+Run twice on the same directory: duplicate detection skips already-ingested files automatically (tracked in the `ingested_files` table).
+
+---
+
+### `tool_bulk_read` — parallel file reads
+
+```
+tool_bulk_read(paths="/repo/a.py,/repo/b.py,/repo/c.py")
+
+→ {
+    "paths_requested": 3,
+    "paths_read": 3,
+    "time_seconds": 0.012,
+    "results": [
+      {"path": "/repo/a.py", "content": "...", "size_bytes": 1420, "error": null},
+      ...
+    ]
+  }
+```
+
+16 parallel readers. Result order matches input order. Significantly faster than N sequential `tool_read_file_compress` calls when you just need the raw content.
+
+---
+
+### `tool_semantic_snapshot_repo` — full repository profile
+
+```
+tool_semantic_snapshot_repo(path="/path/to/repo")
+
+→ {
+    "repository_name": "my-api",
+    "language_breakdown": {"Python": 45, "YAML": 8, "Markdown": 3},
+    "file_count": 56,
+    "major_modules": ["src", "tests", "config"],
+    "important_files": ["README.md", "main.py", "pyproject.toml"],
+    "dependencies": {"python": ["fastapi", "sqlalchemy", "pydantic"]},
+    "import_graph_edge_count": 312,
+    "import_graph_sample": [{"from": "main.py", "to": "fastapi"}],
+    "architecture_summary": "FastAPI service with SQLAlchemy ORM...",
+    "memories_created": 53,
+    "snapshot_memory_id": "..."
+  }
+```
+
+One call:
+1. Scans all files → language breakdown, important-file detection
+2. Parses manifests → `requirements.txt`, `package.json`, `Cargo.toml`, `go.mod`
+3. Extracts import graph → Python `import`/`from`, JS/TS `import`/`require` via regex
+4. Ingests all files into semantic memory
+5. Generates architecture summary via Ollama
+6. Stores a "snapshot" memory tagged `snapshot,repo:NAME,architecture` — queryable in future sessions
+
+Retrieve it later:
+
+```
+tool_semantic_query("repository architecture", tags="snapshot")
+```
+
+---
 
 As a validation run, SMOS was used to analyze its own codebase. Claude read 10 source files using `tool_read_file_compress`, stored compressed summaries in the index, then ran 4 targeted `tool_semantic_query` calls to produce a full architecture analysis — without re-reading a single file at synthesis time.
 
@@ -436,6 +539,25 @@ Session 2 queries the compressed version stored in session 1 — no re-read, no 
 
 ---
 
+### Onboarding to an unfamiliar codebase
+
+```
+Ingest this entire repo and give me an architecture overview.
+```
+
+SMOS scans all 847 files, reads them in parallel, ingests the content into semantic memory, extracts the import graph, and produces an architecture summary — in a single `tool_semantic_snapshot_repo` call. The snapshot is stored as a queryable memory. Future sessions start with full repository context already in the index.
+
+```
+tool_semantic_snapshot_repo(path="/path/to/repo")
+# → language breakdown, modules, dependencies, import graph, LLM summary
+# → 847 memories created, snapshot stored and tagged
+
+# Next session — instant recall
+tool_semantic_query("authentication flow", tags="snapshot")
+```
+
+---
+
 ## How Claude uses it
 
 Once installed, Claude follows this policy automatically (injected via `~/.claude/CLAUDE.md`):
@@ -450,15 +572,25 @@ Once installed, Claude follows this policy automatically (injected via `~/.claud
 
 ## Tools
 
+### Single-file tools
+
 | Tool | Description |
 |------|------------|
 | `tool_read_file_compress` | Read a file, compress with local LLM, store summary. Raw file never enters context window. Accepts absolute paths. |
 | `tool_semantic_store` | Store any text as a queryable semantic memory. |
-| `tool_semantic_query` | Retrieve compressed context via natural language. Returns summary + confidence + sources. |
+| `tool_semantic_query` | Retrieve compressed context via natural language. Returns summary + confidence + sources. Supports `tags=` for domain scoping. |
 | `tool_semantic_write` | Store a typed, tagged memory object (doc / adr / log / issue). |
 | `tool_store_verbatim` | Store exact content losslessly — code, diffs, any artifact where exact bytes matter. Returns a retrieval key. |
 | `tool_retrieve` | Retrieve verbatim content by key. |
 | `tool_write_file_safe` | Write files to the sandboxed workspace directory. |
+
+### Repository ingestion tools (v0.1.4+)
+
+| Tool | Description |
+|------|------------|
+| `tool_recursive_semantic_ingest` | Scan and ingest an entire directory tree. Configurable include/exclude patterns, binary-file detection, duplicate skipping, fast or LLM-compressed mode. |
+| `tool_bulk_read` | Read a list of files in parallel (16 concurrent readers). Returns ordered content. Faster than N sequential reads. |
+| `tool_semantic_snapshot_repo` | Full repository profile: language breakdown, dependency parsing, regex import graph, LLM architecture summary, all files ingested in one call. |
 
 ---
 
@@ -583,8 +715,14 @@ smos uninstall --dry-run
 git clone https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS
 cd Semantic_Memory_Operating_System_SMOS
 pip install -e ".[dev]"
-pytest tests/          # 31 tests
+pytest tests/          # 86 tests
 python -m smos         # run the server directly
+
+# Ingestion benchmarks (100 / 1000 / 5000 files)
+python benchmarks/repository_ingestion_benchmark.py
+
+# Quick smoke test (100 files only)
+python benchmarks/repository_ingestion_benchmark.py --quick
 ```
 
 ---

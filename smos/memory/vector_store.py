@@ -85,6 +85,13 @@ class VectorStore:
                 timestamp TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ingested_files (
+                path        TEXT PRIMARY KEY,
+                memory_id   TEXT NOT NULL,
+                ingested_at TEXT NOT NULL
+            )
+        """)
         conn.commit()
         return conn
 
@@ -328,6 +335,91 @@ class VectorStore:
         if row is None:
             return None
         return {"key": row[0], "content": row[1], "label": row[2], "timestamp": row[3]}
+
+    def store_batch(
+        self,
+        memories: list[MemoryObject],
+        batch_size: int = 256,
+    ) -> list[str]:
+        """Batch-store memories with a single embedding call per batch.
+
+        Embeds outside the lock (fixes the known lock-contention issue for the write path).
+        Uses one SQLite commit per batch chunk instead of N individual transactions.
+        """
+        if not memories:
+            return []
+
+        all_ids: list[str] = []
+
+        for start in range(0, len(memories), batch_size):
+            chunk = memories[start : start + batch_size]
+
+            # Embed outside the lock — CPU-bound and safe to do concurrently with reads
+            vecs = embed_batch([m.content for m in chunk])
+            arr = np.array(vecs, dtype=np.float32)
+            faiss.normalize_L2(arr)
+
+            with self._lock:
+                row_ids: list[int] = []
+                for memory in chunk:
+                    cursor = self._db.execute(
+                        "INSERT INTO memories (uuid, type, content, timestamp, tags, tier) "
+                        "VALUES (?,?,?,?,?,?)",
+                        (
+                            memory.id,
+                            memory.type,
+                            memory.content,
+                            memory.timestamp.isoformat(),
+                            ",".join(memory.tags),
+                            memory.tier,
+                        ),
+                    )
+                    row_ids.append(cursor.lastrowid)
+                self._db.commit()
+
+                id_arr = np.array(row_ids, dtype=np.int64)
+                self._index.add_with_ids(arr, id_arr)
+                self._insert_count += len(chunk)
+
+            with self._new_ids_lock:
+                self._new_ids.extend(m.id for m in chunk)
+
+            all_ids.extend(m.id for m in chunk)
+
+        with self._lock:
+            self._save_index()
+
+        if self._lifecycle_callback:
+            self._lifecycle_callback(self._insert_count)
+
+        return all_ids
+
+    # ------------------------------------------------------------------
+    # File-ingestion tracking helpers
+    # ------------------------------------------------------------------
+
+    def get_ingested_paths(self) -> set[str]:
+        """Return the set of file paths already ingested into this store."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT path FROM ingested_files"
+            ).fetchall()
+        return {r[0] for r in rows}
+
+    def mark_files_ingested_batch(
+        self, path_id_pairs: list[tuple[str, str]]
+    ) -> None:
+        """Record that a batch of files has been ingested."""
+        if not path_id_pairs:
+            return
+        ts = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._db.executemany(
+                "INSERT OR REPLACE INTO ingested_files (path, memory_id, ingested_at) "
+                "VALUES (?,?,?)",
+                [(p, mid, ts) for p, mid in path_id_pairs],
+            )
+            self._db.commit()
 
     def close(self) -> None:
         with self._lock:

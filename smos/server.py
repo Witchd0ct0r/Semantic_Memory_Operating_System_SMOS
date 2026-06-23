@@ -10,6 +10,11 @@ from mcp.server.fastmcp import FastMCP
 from smos.memory.lifecycle import LifecycleManager
 from smos.memory.vector_store import VectorStore
 from smos.tools.file_tools import read_file_compress, write_file_safe
+from smos.tools.ingest_tools import (
+    do_recursive_semantic_ingest,
+    do_bulk_read,
+    do_semantic_snapshot_repo,
+)
 from smos.tools.semantic_tools import (
     _MIN_INPUT_CHARS,
     _INVALID_INPUT_RESPONSE,
@@ -185,6 +190,95 @@ def tool_write_file_safe(path: str, content: str) -> dict:
         return write_file_safe(path, content)
     except Exception as exc:
         return {"success": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+
+@app.tool()
+def tool_recursive_semantic_ingest(
+    path: str,
+    recursive: bool = True,
+    include_patterns: str = "",
+    exclude_patterns: str = "",
+    max_files: int = 5000,
+    summarize: bool = True,
+    store_raw_metadata: bool = True,
+) -> dict:
+    """Recursively scan a directory and ingest every supported text file into semantic memory.
+
+    Supported extensions: .py .js .ts .tsx .jsx .java .go .rs .c .cpp .h .hpp
+                          .md .txt .rst .yaml .yml .json .toml .ini .cfg
+
+    Automatically skips: .git node_modules venv __pycache__ build dist target
+
+    Returns a structured ingestion report with file counts and timing.
+
+    Args:
+        path: Absolute path to the directory to ingest.
+        recursive: Walk subdirectories (default True).
+        include_patterns: Comma-separated glob patterns — only matching files are ingested.
+                          Example: "*.py,*.md"  (empty = all supported files)
+        exclude_patterns: Comma-separated glob patterns — matching files are skipped.
+                          Example: "test_*.py,*_generated.*"
+        max_files: Hard cap on files to process in one call (default 5000).
+        summarize: True = use local LLM to compress each file (slower, better quality).
+                   False = store first 2000 chars verbatim (fast, good for large repos).
+        store_raw_metadata: Tag each memory with file size and extension (default True).
+    """
+    inc = [p.strip() for p in include_patterns.split(",") if p.strip()] or None
+    exc = [p.strip() for p in exclude_patterns.split(",") if p.strip()] or None
+    try:
+        return do_recursive_semantic_ingest(
+            path, _store,
+            recursive=recursive,
+            include_patterns=inc,
+            exclude_patterns=exc,
+            max_files=max_files,
+            summarize=summarize,
+            store_raw_metadata=store_raw_metadata,
+        )
+    except Exception as exc_:
+        return {"status": "error", "error": f"{type(exc_).__name__}: {str(exc_)[:300]}"}
+
+
+@app.tool()
+def tool_bulk_read(paths: str) -> dict:
+    """Read multiple files in parallel and return their contents in order.
+
+    Significantly faster than N sequential tool_read_file_compress calls for
+    pure content retrieval (no compression or storage).
+
+    Args:
+        paths: Comma-separated list of absolute file paths to read.
+               Example: "/repo/src/a.py,/repo/src/b.py,/repo/README.md"
+    """
+    path_list = [p.strip() for p in paths.split(",") if p.strip()]
+    try:
+        return do_bulk_read(path_list)
+    except Exception as exc_:
+        return {"status": "error", "error": f"{type(exc_).__name__}: {str(exc_)[:300]}"}
+
+
+@app.tool()
+def tool_semantic_snapshot_repo(path: str) -> dict:
+    """Generate a comprehensive semantic snapshot of an entire repository.
+
+    Pipeline:
+      1. Scan all files → language breakdown, important-file list
+      2. Parse dependency manifests (requirements.txt, package.json, etc.)
+      3. Extract import graph via lightweight regex (Python + JS/TS)
+      4. Ingest all files into semantic memory (fast mode)
+      5. Generate architecture summary via local LLM
+      6. Store snapshot as a queryable memory entry
+
+    The snapshot memory is retrievable later with:
+        tool_semantic_query(query="repository architecture", tags="snapshot")
+
+    Args:
+        path: Absolute path to the repository root.
+    """
+    try:
+        return do_semantic_snapshot_repo(path, _store)
+    except Exception as exc_:
+        return {"status": "error", "error": f"{type(exc_).__name__}: {str(exc_)[:300]}"}
 
 
 def run() -> None:
