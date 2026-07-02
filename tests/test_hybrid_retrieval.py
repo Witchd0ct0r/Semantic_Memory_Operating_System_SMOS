@@ -76,7 +76,17 @@ def test_bm25_only_hit_is_hydrated_via_get_by_uuid():
         "content": "JWTValidator token authentication middleware",
         "metadata": {"tags": []},
     }
-    store = _make_store_with_memories(memories, extra_bm25_docs=[bm25_only_record])
+    # Extra filler docs solely to give the corpus enough documents (N=4) for
+    # BM25 IDF to be meaningfully non-zero: with only 2 documents, a term
+    # appearing in exactly 1 of them always has idf == log(1.5/1.5) == 0
+    # (rank_bm25's formula), so "jwtvalidator" would score 0.0 even on the
+    # matching doc and get filtered out as zero-relevance padding by
+    # build_compressed_context()'s BM25 zero-score filter.
+    filler_docs = [
+        {"id": "filler-1", "content": "database migration script executed successfully", "metadata": {"tags": []}},
+        {"id": "filler-2", "content": "caching layer improves response latency", "metadata": {"tags": []}},
+    ]
+    store = _make_store_with_memories(memories, extra_bm25_docs=[bm25_only_record, *filler_docs])
 
     result = build_compressed_context("JWTValidator", k=2, store=store)
 

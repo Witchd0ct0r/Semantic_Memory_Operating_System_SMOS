@@ -270,8 +270,7 @@ class VectorStore:
                     continue
                 row_ids.append(int(row[0]))
                 self._db.execute("DELETE FROM memories WHERE uuid = ?", (uuid,))
-            for uuid in uuids:
-                self.bm25.remove(uuid)
+            self.bm25.remove_batch(uuids)
             if row_ids:
                 self._index.remove_ids(np.array(row_ids, dtype=np.int64))
                 self._db.commit()

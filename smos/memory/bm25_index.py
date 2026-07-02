@@ -41,6 +41,10 @@ class BM25Index:
             self._uuids.append(uuid)
             self._tokenized.append(tokens)
             # Rebuild: BM25Okapi has no incremental add; rebuild is cheap at <100K docs
+            # Known limitation: this full rebuild is O(n) per call, so single-item
+            # write paths (store()/delete()) are O(n^2) cumulative at scale. It runs
+            # under VectorStore._lock, so write latency grows with corpus size.
+            # Tracked for a future incremental-index phase (see roadmap).
             self._bm25 = BM25Okapi(self._tokenized)
 
     def add_batch(self, docs: list[tuple[str, str]]) -> None:
@@ -70,6 +74,39 @@ class BM25Index:
             idx = self._uuids.index(uuid)
             self._uuids.pop(idx)
             self._tokenized.pop(idx)
+            # Known limitation: this full rebuild is O(n) per call, so single-item
+            # write paths (store()/delete()) are O(n^2) cumulative at scale. It runs
+            # under VectorStore._lock, so write latency grows with corpus size.
+            # Tracked for a future incremental-index phase (see roadmap).
+            self._bm25 = BM25Okapi(self._tokenized) if self._tokenized else None
+
+    def remove_batch(self, uuids: list[str]) -> None:
+        """Remove multiple documents by uuid, rebuilding the BM25 index exactly once.
+
+        Uuids not present in the index are silently skipped (same behavior as
+        remove() for a single nonexistent uuid).
+        Avoids the O(n^2) rebuild cost of calling remove() once per document.
+        """
+        with self._lock:
+            if not uuids:
+                return
+            to_remove = set(uuids)
+            removed = False
+            kept_uuids: list[str] = []
+            kept_tokenized: list[list[str]] = []
+            for existing_uuid, tokens in zip(self._uuids, self._tokenized):
+                if existing_uuid in to_remove:
+                    removed = True
+                    continue
+                kept_uuids.append(existing_uuid)
+                kept_tokenized.append(tokens)
+            if not removed:
+                return
+            self._uuids = kept_uuids
+            self._tokenized = kept_tokenized
+            # Known limitation: this full rebuild is O(n) per call; batching at
+            # least amortizes it to once per call instead of once per uuid.
+            # Tracked for a future incremental-index phase (see roadmap).
             self._bm25 = BM25Okapi(self._tokenized) if self._tokenized else None
 
     def query(self, text: str, k: int) -> list[tuple[str, float]]:

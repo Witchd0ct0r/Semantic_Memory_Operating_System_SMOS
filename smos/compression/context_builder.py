@@ -23,8 +23,11 @@ def _rrf_merge(
     vector_results: list[dict],
     bm25_results: list[tuple[str, float]],
     top_k: int,
-) -> list[str]:
-    """Merge two ranked lists via Reciprocal Rank Fusion. Returns ordered UUIDs."""
+) -> list[tuple[str, float]]:
+    """Merge two ranked lists via Reciprocal Rank Fusion.
+
+    Returns ordered (uuid, rrf_score) pairs, highest score first.
+    """
     scores: dict[str, float] = {}
 
     for rank, item in enumerate(vector_results):
@@ -34,7 +37,8 @@ def _rrf_merge(
     for rank, (uid, _) in enumerate(bm25_results):
         scores[uid] = scores.get(uid, 0.0) + 1.0 / (_RRF_K + rank + 1)
 
-    return sorted(scores, key=lambda u: scores[u], reverse=True)[:top_k]
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
+    return ranked
 
 
 def build_compressed_context(
@@ -62,14 +66,20 @@ def build_compressed_context(
             mode="uncertain",
         )
 
+    # BM25Index.query() pads results with zero-score entries (insertion-order
+    # tied) when fewer than k terms match. Those carry no relevance signal, so
+    # drop them before fusion to avoid granting them undeserved rank credit.
+    bm25_results = [(uid, score) for uid, score in bm25_results if score > 0.0]
+
     # Hybrid merge via Reciprocal Rank Fusion
-    merged_uuids = _rrf_merge(vector_results, bm25_results, top_k=k * 2)
+    merged = _rrf_merge(vector_results, bm25_results, top_k=k * 2)
+    rrf_scores = {uid: score for uid, score in merged}
 
     # Hydrate merged results: prefer the vector hit (already carries FAISS
     # distance); fall back to the store for BM25-only hits.
     vector_by_id = {r["id"]: r for r in vector_results}
     candidates = []
-    for uid in merged_uuids:
+    for uid, _ in merged:
         if uid in vector_by_id:
             candidates.append(vector_by_id[uid])
         else:
@@ -77,10 +87,13 @@ def build_compressed_context(
             if record:
                 candidates.append(record)
 
-    # Final rerank: term overlap tiebreaker
+    # Final rerank: RRF fused score is the primary ranking signal; term
+    # overlap only breaks ties between candidates with equal (or very close)
+    # RRF scores.
     for c in candidates:
+        c["_rrf_score"] = rrf_scores.get(c.get("id", ""), 0.0)
         c["_final_score"] = _term_overlap(query, c.get("content", ""))
-    candidates.sort(key=lambda c: c.get("_final_score", 0.0), reverse=True)
+    candidates.sort(key=lambda c: (c["_rrf_score"], c["_final_score"]), reverse=True)
     top = candidates[:k]
 
     # compress_memories_full() needs a "distance" per memory to derive
