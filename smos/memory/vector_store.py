@@ -11,6 +11,7 @@ from typing import Callable, Optional
 import faiss
 import numpy as np
 
+from smos.memory.bm25_index import BM25Index
 from smos.memory.embeddings import embed, embed_batch
 from smos.memory.schemas import MemoryObject
 
@@ -42,6 +43,8 @@ class VectorStore:
         self._index: faiss.IndexIDMap = self._load_or_create_index()
         self._db: sqlite3.Connection = self._init_db()
         self._rebuild_index_if_stale()
+        self.bm25 = BM25Index()
+        self._seed_bm25()
         atexit.register(self._atexit_save)
 
     # ------------------------------------------------------------------
@@ -117,6 +120,13 @@ class VectorStore:
         self._index.add_with_ids(arr, row_ids)
         self._save_index()
 
+    def _seed_bm25(self) -> None:
+        """Build BM25 index from all memories in SQLite."""
+        rows = self._db.execute(
+            "SELECT uuid, content FROM memories ORDER BY row_id"
+        ).fetchall()
+        self.bm25.build([(r[0], r[1]) for r in rows])
+
     def _save_index(self) -> None:
         faiss.write_index(self._index, str(self._index_file))
 
@@ -152,6 +162,7 @@ class VectorStore:
             row_id = cursor.lastrowid
 
             self._index.add_with_ids(vector, np.array([row_id], dtype=np.int64))
+            self.bm25.update(memory.id, memory.content)
             self._insert_count += 1
             count = self._insert_count
             if count % self._save_interval == 0:
@@ -242,6 +253,7 @@ class VectorStore:
             self._index.remove_ids(np.array([row_id], dtype=np.int64))
             self._db.execute("DELETE FROM memories WHERE uuid = ?", (uuid,))
             self._db.commit()
+            self.bm25.remove(uuid)
             self._save_index()
         return True
 
@@ -258,6 +270,8 @@ class VectorStore:
                     continue
                 row_ids.append(int(row[0]))
                 self._db.execute("DELETE FROM memories WHERE uuid = ?", (uuid,))
+            for uuid in uuids:
+                self.bm25.remove(uuid)
             if row_ids:
                 self._index.remove_ids(np.array(row_ids, dtype=np.int64))
                 self._db.commit()

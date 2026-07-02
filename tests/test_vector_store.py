@@ -100,3 +100,31 @@ def test_store_verbatim_round_trip(store: VectorStore) -> None:
 
 def test_retrieve_verbatim_missing_returns_none(store: VectorStore) -> None:
     assert store.retrieve_verbatim("nonexistent") is None
+
+
+def test_bm25_index_seeded_on_init(tmp_path: Path) -> None:
+    data_path = tmp_path / "data"
+    store1 = VectorStore(persist_path=data_path)
+    mem = _mem("JWT token authentication middleware test")
+    store1.store(mem)
+
+    # Reload from disk — BM25 must be rebuilt from SQLite
+    store2 = VectorStore(persist_path=data_path)
+    results = store2.bm25.query("JWT", k=5)
+    assert len(results) > 0
+    assert results[0][0] == mem.id
+
+
+def test_bm25_updated_on_store(store: VectorStore) -> None:
+    mem = _mem("unique_function_name_xyz implementation")
+    store.store(mem)
+    results = store.bm25.query("unique_function_name_xyz", k=5)
+    assert any(r[0] == mem.id for r in results)
+
+
+def test_bm25_updated_on_delete(store: VectorStore) -> None:
+    mem = _mem("delete_me_token authentication test")
+    mid = store.store(mem)
+    store.delete(mid)
+    results = store.bm25.query("delete_me_token", k=5)
+    assert not any(r[0] == mid for r in results)
