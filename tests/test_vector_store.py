@@ -128,3 +128,16 @@ def test_bm25_updated_on_delete(store: VectorStore) -> None:
     store.delete(mid)
     results = store.bm25.query("delete_me_token", k=5)
     assert not any(r[0] == mid for r in results)
+
+
+def test_bm25_updated_on_store_batch(store: VectorStore) -> None:
+    mems = [
+        _mem("unique_batch_term_one repository ingestion"),
+        _mem("unique_batch_term_two repository ingestion"),
+        _mem("unique_batch_term_three repository ingestion"),
+    ]
+    store.store_batch(mems)
+    results = store.bm25.query("unique_batch_term_one unique_batch_term_two unique_batch_term_three", k=10)
+    ids = {r[0] for r in results}
+    for m in mems:
+        assert m.id in ids

@@ -43,6 +43,25 @@ class BM25Index:
             # Rebuild: BM25Okapi has no incremental add; rebuild is cheap at <100K docs
             self._bm25 = BM25Okapi(self._tokenized)
 
+    def add_batch(self, docs: list[tuple[str, str]]) -> None:
+        """Add multiple (uuid, content) pairs, rebuilding the BM25 index exactly once.
+
+        Skips uuids already present (same add-if-absent semantics as update()).
+        Avoids the O(n^2) rebuild cost of calling update() once per document.
+        """
+        with self._lock:
+            if not docs:
+                return
+            added = False
+            for doc_uuid, content in docs:
+                if doc_uuid in self._uuids:
+                    continue
+                self._uuids.append(doc_uuid)
+                self._tokenized.append(_tokenize(content))
+                added = True
+            if added:
+                self._bm25 = BM25Okapi(self._tokenized)
+
     def remove(self, uuid: str) -> None:
         """Remove a document by uuid. Rebuilds index."""
         with self._lock:

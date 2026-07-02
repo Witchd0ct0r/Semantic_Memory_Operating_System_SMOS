@@ -393,6 +393,7 @@ class VectorStore:
 
                 id_arr = np.array(row_ids, dtype=np.int64)
                 self._index.add_with_ids(arr, id_arr)
+                self.bm25.add_batch([(m.id, m.content) for m in chunk])
                 self._insert_count += len(chunk)
 
             with self._new_ids_lock:
