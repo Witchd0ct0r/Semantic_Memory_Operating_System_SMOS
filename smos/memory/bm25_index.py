@@ -54,7 +54,10 @@ class BM25Index:
             self._bm25 = BM25Okapi(self._tokenized) if self._tokenized else None
 
     def query(self, text: str, k: int) -> list[tuple[str, float]]:
-        """Return top-k (uuid, score) pairs for the query text."""
+        """Return top-k (uuid, score) pairs for the query text.
+
+        Note: Results may include zero-score entries (insertion-order tie-broken) when no query terms match the corpus.
+        Callers should not assume all returned entries are relevant matches."""
         with self._lock:
             if self._bm25 is None or not self._uuids:
                 return []
