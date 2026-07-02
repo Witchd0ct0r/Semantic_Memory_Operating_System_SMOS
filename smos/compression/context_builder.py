@@ -7,46 +7,8 @@ from smos.memory.schemas import CompressedContext
 from smos.memory.vector_store import VectorStore
 from smos.llm.summarizer import compress_memories_full
 
-_DOMAIN_KEYWORDS: dict[str, list[str]] = {
-    "security": [
-        "auth", "authentication", "authorization", "token", "jwt", "oauth",
-        "ssl", "tls", "encrypt", "password", "credential", "secret",
-        "permission", "rbac", "cors", "xss", "csrf", "injection",
-    ],
-    "api": [
-        "api", "rest", "graphql", "endpoint", "route", "request", "response",
-        "http", "grpc", "webhook", "openapi", "swagger", "fastapi", "flask",
-    ],
-    "infra": [
-        "kubernetes", "k8s", "docker", "container", "pod", "deployment",
-        "service", "ingress", "helm", "terraform", "aws", "gcp", "azure",
-        "cloud", "nginx", "loadbalancer",
-    ],
-    "db": [
-        "database", "postgres", "postgresql", "mysql", "sqlite", "redis",
-        "mongodb", "sql", "index", "query", "migration", "schema", "orm",
-        "vector", "faiss", "chroma",
-    ],
-    "frontend": [
-        "react", "vue", "angular", "component", "css", "html", "dom",
-        "ui", "frontend", "browser", "javascript", "typescript", "webpack",
-    ],
-}
-
 _CANDIDATE_MULTIPLIER = 4
-
-
-def _classify_domain(query: str) -> Optional[str]:
-    q = query.lower()
-    scores: dict[str, int] = {}
-    for domain, keywords in _DOMAIN_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw in q)
-        if score > 0:
-            scores[domain] = score
-    if not scores:
-        return None
-    best = max(scores, key=lambda d: scores[d])
-    return best if scores[best] >= 2 else None
+_RRF_K = 60  # standard RRF constant
 
 
 def _term_overlap(query: str, candidate: str) -> float:
@@ -57,16 +19,22 @@ def _term_overlap(query: str, candidate: str) -> float:
     return len(query_tokens & cand_tokens) / len(query_tokens)
 
 
-def _rerank(query: str, candidates: list[dict], top_k: int) -> list[dict]:
-    """70% FAISS cosine score + 30% query term overlap."""
-    if len(candidates) <= top_k:
-        return candidates
-    for c in candidates:
-        faiss_score = c.get("score", max(0.0, 1.0 - c["distance"]))
-        term_score = _term_overlap(query, c["content"])
-        c["_rerank_score"] = 0.7 * faiss_score + 0.3 * term_score
-    candidates.sort(key=lambda c: c["_rerank_score"], reverse=True)
-    return candidates[:top_k]
+def _rrf_merge(
+    vector_results: list[dict],
+    bm25_results: list[tuple[str, float]],
+    top_k: int,
+) -> list[str]:
+    """Merge two ranked lists via Reciprocal Rank Fusion. Returns ordered UUIDs."""
+    scores: dict[str, float] = {}
+
+    for rank, item in enumerate(vector_results):
+        uid = item["id"]
+        scores[uid] = scores.get(uid, 0.0) + 1.0 / (_RRF_K + rank + 1)
+
+    for rank, (uid, _) in enumerate(bm25_results):
+        scores[uid] = scores.get(uid, 0.0) + 1.0 / (_RRF_K + rank + 1)
+
+    return sorted(scores, key=lambda u: scores[u], reverse=True)[:top_k]
 
 
 def build_compressed_context(
@@ -77,22 +45,16 @@ def build_compressed_context(
 ) -> CompressedContext:
     candidate_k = max(k * _CANDIDATE_MULTIPLIER, 20)
 
-    if tags:
-        # Explicit tags take priority — skip auto-detection
-        retrieved = store.query_domain(query, k=candidate_k, domain_tags=tags)
-        if len(retrieved) < k:
-            retrieved = store.query_domain(query, k=candidate_k, domain_tags=None)
-    else:
-        domain = _classify_domain(query)
-        if domain:
-            domain_tags = _DOMAIN_KEYWORDS[domain]
-            retrieved = store.query_domain(query, k=candidate_k, domain_tags=domain_tags)
-            if len(retrieved) < k:
-                retrieved = store.query_domain(query, k=candidate_k, domain_tags=None)
-        else:
-            retrieved = store.query_domain(query, k=candidate_k, domain_tags=None)
+    # Vector retrieval — explicit tags scope the search; otherwise unfiltered.
+    domain_tags = tags or None
+    vector_results = store.query_domain(query, k=candidate_k, domain_tags=domain_tags)
+    if not vector_results:
+        vector_results = store.query(query, k=candidate_k)
 
-    if not retrieved:
+    # BM25 retrieval
+    bm25_results = store.bm25.query(query, k=candidate_k)
+
+    if not vector_results and not bm25_results:
         return CompressedContext(
             summary="No relevant memories found.",
             sources=[],
@@ -100,12 +62,45 @@ def build_compressed_context(
             mode="uncertain",
         )
 
-    reranked = _rerank(query, retrieved, top_k=k)
+    # Hybrid merge via Reciprocal Rank Fusion
+    merged_uuids = _rrf_merge(vector_results, bm25_results, top_k=k * 2)
 
-    summary, confidence, mode = compress_memories_full(reranked, query)
+    # Hydrate merged results: prefer the vector hit (already carries FAISS
+    # distance); fall back to the store for BM25-only hits.
+    vector_by_id = {r["id"]: r for r in vector_results}
+    candidates = []
+    for uid in merged_uuids:
+        if uid in vector_by_id:
+            candidates.append(vector_by_id[uid])
+        else:
+            record = store.get_by_uuid(uid)
+            if record:
+                candidates.append(record)
+
+    # Final rerank: term overlap tiebreaker
+    for c in candidates:
+        c["_final_score"] = _term_overlap(query, c.get("content", ""))
+    candidates.sort(key=lambda c: c.get("_final_score", 0.0), reverse=True)
+    top = candidates[:k]
+
+    # compress_memories_full() needs a "distance" per memory to derive
+    # confidence. BM25-only hits hydrated via get_by_uuid() don't carry a
+    # FAISS distance, so default them to a neutral mid-range value.
+    memories_for_compression = [
+        {
+            "id": c.get("id", ""),
+            "content": c.get("content", ""),
+            "distance": c.get("distance", 1.0),
+        }
+        for c in top
+    ]
+    sources = [c.get("id", "") for c in top]
+
+    summary, confidence, mode = compress_memories_full(memories_for_compression, query)
+
     return CompressedContext(
         summary=summary,
-        sources=[item["id"] for item in reranked],
+        sources=sources,
         confidence=confidence,
         mode=mode,
     )
