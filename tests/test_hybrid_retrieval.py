@@ -2,16 +2,26 @@ import pytest
 from unittest.mock import MagicMock
 
 
-def _make_store_with_memories(memories: list[dict]):
-    """Helper: mock VectorStore for context builder tests."""
+def _make_store_with_memories(memories: list[dict], extra_bm25_docs: list[dict] | None = None):
+    """Helper: mock VectorStore for context builder tests.
+
+    extra_bm25_docs: memories indexed into BM25 but NOT included in the
+    query_domain() return value — simulates a memory that only BM25 finds
+    (never surfaced by vector search). Each dict should match the real
+    store.get_by_uuid() return shape: {"id", "content", "metadata"} —
+    notably no top-level "distance" or "tags" keys, unlike vector-sourced
+    memory dicts.
+    """
     from smos.memory.bm25_index import BM25Index
+    extra_bm25_docs = extra_bm25_docs or []
     store = MagicMock()
     store.query_domain.return_value = memories
     bm25 = BM25Index()
-    bm25.build([(m["id"], m["content"]) for m in memories])
+    bm25.build([(m["id"], m["content"]) for m in memories + extra_bm25_docs])
     store.bm25 = bm25
+    all_records = memories + extra_bm25_docs
     store.get_by_uuid.side_effect = lambda uid: next(
-        (m for m in memories if m["id"] == uid), None
+        (m for m in all_records if m["id"] == uid), None
     )
     return store
 
@@ -43,3 +53,34 @@ def test_hybrid_returns_compressedcontext():
     store = _make_store_with_memories(memories)
     result = build_compressed_context("test content", k=1, store=store)
     assert isinstance(result, CompressedContext)
+
+
+def test_bm25_only_hit_is_hydrated_via_get_by_uuid():
+    """A memory found only by BM25 (absent from vector_results) must be
+    hydrated via store.get_by_uuid() and survive missing "distance"/"tags"
+    keys — get_by_uuid() results don't carry a FAISS distance the way
+    vector-sourced dicts do. Without the `.get("distance", 1.0)` default in
+    build_compressed_context(), this crashes with KeyError on bare
+    `c["distance"]` access.
+    """
+    from smos.compression.context_builder import build_compressed_context
+
+    memories = [
+        {"id": "id1", "content": "completely unrelated filler text about weather", "distance": 0.5, "tags": []},
+    ]
+    # This record is indexed into BM25 but deliberately excluded from the
+    # query_domain() mock return — it is only discoverable via BM25.
+    # Shape matches the real get_by_uuid() return: no "distance" key.
+    bm25_only_record = {
+        "id": "bm25-only-id",
+        "content": "JWTValidator token authentication middleware",
+        "metadata": {"tags": []},
+    }
+    store = _make_store_with_memories(memories, extra_bm25_docs=[bm25_only_record])
+
+    result = build_compressed_context("JWTValidator", k=2, store=store)
+
+    # The hydration branch (store.get_by_uuid) must actually have been
+    # exercised — this is what the previous tests failed to cover.
+    assert store.get_by_uuid.call_count >= 1
+    assert "bm25-only-id" in result.sources
