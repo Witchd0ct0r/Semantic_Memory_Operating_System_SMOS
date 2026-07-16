@@ -68,3 +68,10 @@ def test_semantic_query_no_results(mock_store: MagicMock) -> None:
 
     assert result["confidence"] == 0.0
     assert result["sources"] == []
+
+
+def test_semantic_query_bumps_recall(mock_store: MagicMock) -> None:
+    expected = CompressedContext(summary="s", sources=["id1", "id2"], confidence=0.5)
+    with patch("smos.tools.semantic_tools.build_compressed_context", return_value=expected):
+        semantic_query("database storage", 5, mock_store)
+    mock_store.bump_recall.assert_called_once_with(["id1", "id2"])

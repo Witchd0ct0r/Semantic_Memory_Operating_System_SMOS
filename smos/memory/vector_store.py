@@ -3,7 +3,7 @@ from __future__ import annotations
 import atexit
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Callable, Optional
@@ -81,6 +81,22 @@ class VectorStore:
         """)
         try:
             conn.execute("ALTER TABLE memories ADD COLUMN tier TEXT NOT NULL DEFAULT 'hot'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN source_ids TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN recall_count INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN last_recalled TEXT")
         except sqlite3.OperationalError:
             pass
         conn.execute("""
@@ -163,8 +179,8 @@ class VectorStore:
             faiss.normalize_L2(vector)
 
             cursor = self._db.execute(
-                "INSERT INTO memories (uuid, type, content, timestamp, tags, tier) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence) "
+                "VALUES (?,?,?,?,?,?,?,?)",
                 (
                     memory.id,
                     memory.type,
@@ -172,6 +188,8 @@ class VectorStore:
                     memory.timestamp.isoformat(),
                     ",".join(memory.tags),
                     memory.tier,
+                    ",".join(memory.source_ids),
+                    memory.confidence,
                 ),
             )
             self._db.commit()
@@ -314,6 +332,34 @@ class VectorStore:
             )
             self._db.commit()
 
+    def bump_recall(self, uuids: list[str]) -> None:
+        if not uuids:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._db.executemany(
+                "UPDATE memories SET recall_count = recall_count + 1, last_recalled = ? WHERE uuid = ?",
+                [(now, uuid) for uuid in uuids],
+            )
+            self._db.commit()
+
+    def recompute_tiers_by_frequency(self) -> None:
+        now = datetime.now(timezone.utc)
+        hot_cutoff = (now - timedelta(days=7)).isoformat()
+        warm_cutoff = (now - timedelta(days=30)).isoformat()
+        with self._lock:
+            self._db.execute(
+                """
+                UPDATE memories SET tier = CASE
+                    WHEN last_recalled >= ? OR recall_count > 10 THEN 'hot'
+                    WHEN last_recalled >= ? OR recall_count > 3 THEN 'warm'
+                    ELSE 'cold'
+                END
+                """,
+                (hot_cutoff, warm_cutoff),
+            )
+            self._db.commit()
+
     def get_all_uuids(self) -> list[str]:
         with self._lock:
             rows = self._db.execute(
@@ -324,13 +370,13 @@ class VectorStore:
     def get_by_uuid(self, uuid: str) -> Optional[dict]:
         with self._lock:
             row = self._db.execute(
-                "SELECT uuid, type, content, timestamp, tags, tier "
+                "SELECT uuid, type, content, timestamp, tags, tier, source_ids, confidence "
                 "FROM memories WHERE uuid = ?",
                 (uuid,),
             ).fetchone()
         if row is None:
             return None
-        uuid_, type_, content, timestamp, tags, tier = row
+        uuid_, type_, content, timestamp, tags, tier, source_ids, confidence = row
         return {
             "id": uuid_,
             "content": content,
@@ -339,8 +385,23 @@ class VectorStore:
                 "timestamp": timestamp,
                 "tags": tags,
                 "tier": tier,
+                "source_ids": [s for s in source_ids.split(",") if s] if source_ids else [],
+                "confidence": confidence,
             },
         }
+
+    def get_by_timestamp_range(self, since: str = "", until: str = "") -> list[dict]:
+        sql = "SELECT uuid, content FROM memories WHERE 1=1"
+        params: list[str] = []
+        if since:
+            sql += " AND timestamp >= ?"
+            params.append(since)
+        if until:
+            sql += " AND timestamp <= ?"
+            params.append(until)
+        with self._lock:
+            rows = self._db.execute(sql, params).fetchall()
+        return [{"id": r[0], "content": r[1]} for r in rows]
 
     def count(self) -> int:
         with self._lock:
@@ -396,8 +457,8 @@ class VectorStore:
                 row_ids: list[int] = []
                 for memory in chunk:
                     cursor = self._db.execute(
-                        "INSERT INTO memories (uuid, type, content, timestamp, tags, tier) "
-                        "VALUES (?,?,?,?,?,?)",
+                        "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence) "
+                        "VALUES (?,?,?,?,?,?,?,?)",
                         (
                             memory.id,
                             memory.type,
@@ -405,6 +466,8 @@ class VectorStore:
                             memory.timestamp.isoformat(),
                             ",".join(memory.tags),
                             memory.tier,
+                            ",".join(memory.source_ids),
+                            memory.confidence,
                         ),
                     )
                     row_ids.append(cursor.lastrowid)

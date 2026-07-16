@@ -24,6 +24,14 @@ _COMPRESS_SYSTEM = (
 
 _COMPRESS_SYSTEM_STRICT = _COMPRESS_SYSTEM + " Be concise. One paragraph maximum."
 
+_REFLECT_SYSTEM = (
+    "You are an agent reflecting on your own accumulated memory. "
+    "You receive multiple retrieved memory fragments and a query about what you know. "
+    "Reason about the fragments: note what is established, what gaps remain, "
+    "and any contradictions between fragments. "
+    "Output only the reflection — no preamble, no metadata."
+)
+
 
 def _is_valid_output(text: str) -> bool:
     stripped = text.strip()
@@ -120,6 +128,49 @@ def compress_memories_full(
     confidence = max(0.0, min(1.0, 1.0 - (avg_distance / 2.0)))
 
     return summary, confidence, mode
+
+
+def reflect_on_memories(memories: list[dict], query: str) -> tuple[str, float, str]:
+    """Return (reflection, confidence, mode). Distinct prompt from compress_memories_full —
+    reasons about the fragments rather than summarizing them."""
+    if not memories:
+        return "", 0.0, "uncertain"
+
+    sections = [f"[{m['id'][:8]}] {m['content']}" for m in memories]
+    combined = "\n\n".join(sections)
+    user_content = f"Query: {query}\n\nMemory fragments:\n{combined}"
+
+    client = get_llm_client()
+
+    def _call() -> str:
+        response = client.chat.completions.create(
+            model=OLLAMA_MODEL,
+            messages=[
+                {"role": "system", "content": _REFLECT_SYSTEM},
+                {"role": "user", "content": user_content},
+            ],
+            max_tokens=_MAX_TOKENS,
+            temperature=0.1,
+        )
+        return response.choices[0].message.content.strip()
+
+    try:
+        reflection = _call()
+        if not _is_valid_output(reflection):
+            reflection = _call()
+        if not _is_valid_output(reflection):
+            reflection = _extractive_fallback_from_memories(memories)
+            mode: str = "extractive"
+        else:
+            mode = "abstractive"
+    except Exception:
+        reflection = _extractive_fallback_from_memories(memories)
+        mode = "uncertain"
+
+    avg_distance = sum(m["distance"] for m in memories) / len(memories)
+    confidence = max(0.0, min(1.0, 1.0 - (avg_distance / 2.0)))
+
+    return reflection, confidence, mode
 
 
 def compress_memories(memories: list[dict], query: str) -> tuple[str, float]:

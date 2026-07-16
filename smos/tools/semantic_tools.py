@@ -34,6 +34,7 @@ def semantic_query(
     if not _validate_text(query):
         return _INVALID_INPUT_RESPONSE
     result = build_compressed_context(query, k, store, tags=tags)
+    store.bump_recall(result.sources)
     return result.model_dump()
 
 
@@ -66,4 +67,6 @@ def graph_query(term: str, store: VectorStore, max_hops: int = 2) -> dict:
     start_id = term if store.graph.get_node(term) else f"entity:{term}"
     nodes = store.graph.traverse(start_id, max_hops=max_hops)
     nodes.sort(key=lambda n: n["hop"])
+    memory_ids = [n["id"] for n in nodes if n["type"] == "memory"]
+    store.bump_recall(memory_ids)
     return {"term": term, "start_id": start_id, "nodes": nodes, "count": len(nodes)}
