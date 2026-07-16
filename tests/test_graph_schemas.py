@@ -23,6 +23,7 @@ def test_graph_edge_constructs_with_defaults():
     assert edge.weight == 1.0
     assert edge.id  # auto-generated
 
+
 def test_graph_edge_rejects_invalid_edge_type():
     with pytest.raises(ValidationError):
         GraphEdge(source_id="a", target_id="b", edge_type="not_a_real_edge_type")
