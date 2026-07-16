@@ -83,6 +83,22 @@ class VectorStore:
             conn.execute("ALTER TABLE memories ADD COLUMN tier TEXT NOT NULL DEFAULT 'hot'")
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN source_ids TEXT NOT NULL DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN recall_count INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN last_recalled TEXT")
+        except sqlite3.OperationalError:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS verbatim (
                 key       TEXT PRIMARY KEY,
@@ -163,8 +179,8 @@ class VectorStore:
             faiss.normalize_L2(vector)
 
             cursor = self._db.execute(
-                "INSERT INTO memories (uuid, type, content, timestamp, tags, tier) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence) "
+                "VALUES (?,?,?,?,?,?,?,?)",
                 (
                     memory.id,
                     memory.type,
@@ -172,6 +188,8 @@ class VectorStore:
                     memory.timestamp.isoformat(),
                     ",".join(memory.tags),
                     memory.tier,
+                    ",".join(memory.source_ids),
+                    memory.confidence,
                 ),
             )
             self._db.commit()
@@ -324,13 +342,13 @@ class VectorStore:
     def get_by_uuid(self, uuid: str) -> Optional[dict]:
         with self._lock:
             row = self._db.execute(
-                "SELECT uuid, type, content, timestamp, tags, tier "
+                "SELECT uuid, type, content, timestamp, tags, tier, source_ids, confidence "
                 "FROM memories WHERE uuid = ?",
                 (uuid,),
             ).fetchone()
         if row is None:
             return None
-        uuid_, type_, content, timestamp, tags, tier = row
+        uuid_, type_, content, timestamp, tags, tier, source_ids, confidence = row
         return {
             "id": uuid_,
             "content": content,
@@ -339,6 +357,8 @@ class VectorStore:
                 "timestamp": timestamp,
                 "tags": tags,
                 "tier": tier,
+                "source_ids": [s for s in source_ids.split(",") if s] if source_ids else [],
+                "confidence": confidence,
             },
         }
 
@@ -396,8 +416,8 @@ class VectorStore:
                 row_ids: list[int] = []
                 for memory in chunk:
                     cursor = self._db.execute(
-                        "INSERT INTO memories (uuid, type, content, timestamp, tags, tier) "
-                        "VALUES (?,?,?,?,?,?)",
+                        "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence) "
+                        "VALUES (?,?,?,?,?,?,?,?)",
                         (
                             memory.id,
                             memory.type,
@@ -405,6 +425,8 @@ class VectorStore:
                             memory.timestamp.isoformat(),
                             ",".join(memory.tags),
                             memory.tier,
+                            ",".join(memory.source_ids),
+                            memory.confidence,
                         ),
                     )
                     row_ids.append(cursor.lastrowid)
