@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from smos.memory.schemas import MemoryObject
-from smos.tools.agent_primitives import forget, learn, link, remember, snapshot
+from smos.tools.agent_primitives import compress, forget, learn, link, remember, snapshot
 
 
 @pytest.fixture
@@ -78,3 +78,56 @@ def test_snapshot_delegates_to_ingest(mock_store: MagicMock) -> None:
         result = snapshot("/repo/root", mock_store)
     assert result == {"status": "ok"}
     mock_snap.assert_called_once_with("/repo/root", mock_store)
+
+
+def test_compress_merges_sources_and_links_edges(mock_store: MagicMock) -> None:
+    mock_store.get_by_uuid.side_effect = lambda uid: {
+        "id": uid,
+        "content": f"content for {uid}",
+        "metadata": {"type": "doc", "timestamp": "t", "tags": "", "tier": "hot",
+                     "source_ids": [], "confidence": 1.0},
+    }
+    mock_store.store.return_value = "compressed-id-1"
+    with patch(
+        "smos.tools.agent_primitives.compress_memories_full",
+        return_value=("Merged summary.", 0.8, "abstractive"),
+    ):
+        result = compress(["id1", "id2"], mock_store)
+
+    assert result == "compressed-id-1"
+    call_arg: MemoryObject = mock_store.store.call_args[0][0]
+    assert call_arg.type == "compressed"
+    assert call_arg.content == "Merged summary."
+    assert call_arg.source_ids == ["id1", "id2"]
+    assert call_arg.confidence == 0.8
+    assert mock_store.graph.add_edge.call_count == 2
+    mock_store.graph.add_edge.assert_any_call("compressed-id-1", "id1", "generated_from")
+    mock_store.graph.add_edge.assert_any_call("compressed-id-1", "id2", "generated_from")
+
+
+def test_compress_skips_missing_sources(mock_store: MagicMock) -> None:
+    mock_store.get_by_uuid.side_effect = lambda uid: (
+        None if uid == "missing" else {"id": uid, "content": "real content", "metadata": {}}
+    )
+    mock_store.store.return_value = "compressed-id-2"
+    with patch(
+        "smos.tools.agent_primitives.compress_memories_full",
+        return_value=("Summary.", 0.5, "abstractive"),
+    ):
+        result = compress(["missing", "id2"], mock_store)
+    assert result == "compressed-id-2"
+    call_arg: MemoryObject = mock_store.store.call_args[0][0]
+    assert call_arg.source_ids == ["id2"]
+
+
+def test_compress_empty_ids_returns_empty(mock_store: MagicMock) -> None:
+    result = compress([], mock_store)
+    assert result == ""
+    mock_store.store.assert_not_called()
+
+
+def test_compress_all_sources_missing_returns_empty(mock_store: MagicMock) -> None:
+    mock_store.get_by_uuid.return_value = None
+    result = compress(["missing1", "missing2"], mock_store)
+    assert result == ""
+    mock_store.store.assert_not_called()

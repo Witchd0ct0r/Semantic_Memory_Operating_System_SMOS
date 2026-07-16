@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from smos.llm.summarizer import compress_memories_full
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 from smos.tools.ingest_tools import do_semantic_snapshot_repo
@@ -48,3 +49,31 @@ def link(id_a: str, id_b: str, edge_type: str, store: VectorStore) -> dict:
 
 def snapshot(project_root: str, store: VectorStore) -> dict:
     return do_semantic_snapshot_repo(project_root, store)
+
+
+_COMPRESS_MERGE_QUERY = "Merge these memory fragments into one dense, accurate summary."
+
+
+def compress(ids: list[str], store: VectorStore) -> str:
+    if not ids:
+        return ""
+    sources = [s for s in (store.get_by_uuid(i) for i in ids) if s is not None]
+    if not sources:
+        return ""
+
+    memories_for_compression = [
+        {"id": s["id"], "content": s["content"], "distance": 1.0} for s in sources
+    ]
+    summary, confidence, _mode = compress_memories_full(memories_for_compression, _COMPRESS_MERGE_QUERY)
+
+    memory = MemoryObject(
+        type="compressed",
+        content=summary,
+        timestamp=datetime.utcnow(),
+        source_ids=[s["id"] for s in sources],
+        confidence=confidence,
+    )
+    new_id = store.store(memory)
+    for source_id in memory.source_ids:
+        store.graph.add_edge(new_id, source_id, "generated_from")
+    return new_id
