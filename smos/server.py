@@ -8,7 +8,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from mcp.server.fastmcp import FastMCP
 
 from smos.memory.lifecycle import LifecycleManager
+from smos.memory.recall_engine import recall
 from smos.memory.vector_store import VectorStore
+from smos.tools.agent_primitives import (
+    compress,
+    forget,
+    learn,
+    link,
+    reflect,
+    remember,
+    snapshot,
+)
 from smos.tools.file_tools import read_file_compress, write_file_safe
 from smos.tools.ingest_tools import (
     do_recursive_semantic_ingest,
@@ -140,6 +150,141 @@ def tool_graph_query(term: str, max_hops: int = 2) -> dict:
             "term": term, "start_id": None, "nodes": [], "count": 0,
             "error": f"{type(exc).__name__}: {str(exc)[:200]}",
         }
+
+
+@app.tool()
+def tool_remember(content: str, type: str = "episodic") -> str:
+    """Store an episodic memory and return its ID.
+
+    Args:
+        content: The text content to remember.
+        type: Memory type (default "episodic").
+    """
+    try:
+        if err := _check_input(content, "content"):
+            return str(err)
+        return remember(content, type, _store)
+    except Exception as exc:
+        return str({"error": f"{exc.__class__.__name__}: {str(exc)[:200]}"})
+
+
+@app.tool()
+def tool_forget(memory_id: str) -> dict:
+    """Delete a memory and its graph edges.
+
+    Args:
+        memory_id: The memory's id to delete.
+    """
+    try:
+        ok = forget(memory_id, _store)
+        return {"success": ok, "error": None}
+    except Exception as exc:
+        return {"success": False, "error": f"{exc.__class__.__name__}: {str(exc)[:200]}"}
+
+
+@app.tool()
+def tool_learn(content: str) -> str:
+    """Store a semantic (high-confidence) memory and return its ID.
+
+    Args:
+        content: The text content to learn.
+    """
+    try:
+        if err := _check_input(content, "content"):
+            return str(err)
+        return learn(content, _store)
+    except Exception as exc:
+        return str({"error": f"{exc.__class__.__name__}: {str(exc)[:200]}"})
+
+
+@app.tool()
+def tool_link(id_a: str, id_b: str, edge_type: str) -> dict:
+    """Create an explicit graph edge between two memories.
+
+    Args:
+        id_a: Source memory id.
+        id_b: Target memory id.
+        edge_type: One of references, depends_on, related_to, implements,
+                   contains, evolves_into, generated_from.
+    """
+    try:
+        return link(id_a, id_b, edge_type, _store)
+    except Exception as exc:
+        return {"success": False, "error": f"{exc.__class__.__name__}: {str(exc)[:200]}"}
+
+
+@app.tool()
+def tool_compress(ids: str) -> str:
+    """Merge multiple memories into one compressed memory, preserving source links.
+
+    Sources are kept, not deleted — the new memory links back to them via
+    source_ids and generated_from graph edges.
+
+    Args:
+        ids: Comma-separated memory ids to merge.
+    """
+    try:
+        id_list = [i.strip() for i in ids.split(",") if i.strip()]
+        return compress(id_list, _store)
+    except Exception as exc:
+        return str({"error": f"{exc.__class__.__name__}: {str(exc)[:200]}"})
+
+
+@app.tool()
+def tool_reflect(query: str, k: int = 5) -> str:
+    """Reason about what the agent knows relevant to query, store the reflection, return its ID.
+
+    Args:
+        query: Natural language question about the agent's own knowledge.
+        k: Number of retrieved memories to reflect over (default 5).
+    """
+    try:
+        if err := _check_input(query, "query"):
+            return str(err)
+        return reflect(query, k, _store)
+    except Exception as exc:
+        return str({"error": f"{exc.__class__.__name__}: {str(exc)[:200]}"})
+
+
+@app.tool()
+def tool_snapshot() -> dict:
+    """Take a repository snapshot of the current project root (no path argument needed)."""
+    try:
+        return snapshot(str(_PROJECT_ROOT), _store)
+    except Exception as exc:
+        return {"status": "error", "error": f"{exc.__class__.__name__}: {str(exc)[:300]}"}
+
+
+@app.tool()
+def tool_recall(
+    query: str,
+    strategy: str = "hybrid",
+    k: int = 5,
+    since: str = "",
+    until: str = "",
+    seed_id: str = "",
+    component: str = "",
+) -> dict:
+    """Retrieve memories using an explicit strategy: hybrid, temporal, chain, or repo.
+
+    hybrid (default): the existing vector+BM25+graph retrieval pipeline.
+    temporal: filter by [since, until] ISO-8601 timestamps, then rank by similarity.
+    chain: follow evolves_into/related_to edges from seed_id; k is hop depth here, not result count.
+    repo: hybrid retrieval scoped to a single component tag.
+
+    Args:
+        query: Natural language query (unused for the chain strategy).
+        strategy: One of hybrid, temporal, chain, repo (default "hybrid").
+        k: Result count for hybrid/temporal/repo, or hop depth for chain (default 5).
+        since: ISO-8601 lower timestamp bound for temporal (empty = unbounded).
+        until: ISO-8601 upper timestamp bound for temporal (empty = unbounded).
+        seed_id: Starting memory id for the chain strategy.
+        component: Tag to scope the repo strategy to.
+    """
+    try:
+        return recall(query, strategy, k, since, until, seed_id, component, _store)
+    except Exception as exc:
+        return {"error": f"{exc.__class__.__name__}: {str(exc)[:200]}"}
 
 
 @app.tool()
