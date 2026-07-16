@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from smos.llm.summarizer import compress_memories_full
+from smos.llm.summarizer import compress_memories_full, reflect_on_memories
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 from smos.tools.ingest_tools import do_semantic_snapshot_repo
@@ -77,3 +77,31 @@ def compress(ids: list[str], store: VectorStore) -> str:
     for source_id in memory.source_ids:
         store.graph.add_edge(new_id, source_id, "generated_from")
     return new_id
+
+
+def reflect(query: str, k: int, store: VectorStore) -> str:
+    if not _validate_text(query):
+        return ""
+    # Vector-only candidates — full RRF hybrid fusion isn't needed for this
+    # introspective use case, and avoids depending on context_builder.py's
+    # tested-and-gated internals.
+    candidates = store.query_domain(query, k=k)
+    if not candidates:
+        candidates = store.query(query, k=k)
+    if not candidates:
+        return ""
+
+    memories_for_reflection = [
+        {"id": c["id"], "content": c["content"], "distance": c.get("distance", 1.0)}
+        for c in candidates
+    ]
+    reflection, confidence, _mode = reflect_on_memories(memories_for_reflection, query)
+
+    memory = MemoryObject(
+        type="reflection",
+        content=reflection,
+        timestamp=datetime.utcnow(),
+        source_ids=[c["id"] for c in candidates],
+        confidence=confidence,
+    )
+    return store.store(memory)

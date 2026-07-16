@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from smos.memory.schemas import MemoryObject
-from smos.tools.agent_primitives import compress, forget, learn, link, remember, snapshot
+from smos.tools.agent_primitives import compress, forget, learn, link, reflect, remember, snapshot
 
 
 @pytest.fixture
@@ -131,3 +131,35 @@ def test_compress_all_sources_missing_returns_empty(mock_store: MagicMock) -> No
     result = compress(["missing1", "missing2"], mock_store)
     assert result == ""
     mock_store.store.assert_not_called()
+
+
+def test_reflect_stores_reflection_with_source_ids(mock_store: MagicMock) -> None:
+    mock_store.query_domain.return_value = [
+        {"id": "id1", "content": "fact one", "distance": 0.1},
+        {"id": "id2", "content": "fact two", "distance": 0.2},
+    ]
+    mock_store.store.return_value = "reflection-id-1"
+    with patch(
+        "smos.tools.agent_primitives.reflect_on_memories",
+        return_value=("Reflection text.", 0.7, "abstractive"),
+    ):
+        result = reflect("what do I know about X?", 5, mock_store)
+    assert result == "reflection-id-1"
+    call_arg: MemoryObject = mock_store.store.call_args[0][0]
+    assert call_arg.type == "reflection"
+    assert call_arg.source_ids == ["id1", "id2"]
+    assert call_arg.confidence == 0.7
+
+
+def test_reflect_no_candidates_returns_empty(mock_store: MagicMock) -> None:
+    mock_store.query_domain.return_value = []
+    mock_store.query.return_value = []
+    result = reflect("unknown topic entirely", 5, mock_store)
+    assert result == ""
+    mock_store.store.assert_not_called()
+
+
+def test_reflect_rejects_short_query(mock_store: MagicMock) -> None:
+    result = reflect("hi", 5, mock_store)
+    assert result == ""
+    mock_store.query_domain.assert_not_called()
