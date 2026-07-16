@@ -57,3 +57,15 @@ def test_recall_bumps_recall_count(store: VectorStore) -> None:
         "SELECT recall_count FROM memories WHERE uuid = ?", (mem_id,)
     ).fetchone()
     assert row[0] == 1
+
+
+def test_recall_repo_filters_by_component(store: VectorStore) -> None:
+    auth_id = store.store(
+        MemoryObject(type="doc", content="Auth service handles login flows for users.", tags=["auth-service"])
+    )
+    billing_id = store.store(
+        MemoryObject(type="doc", content="Billing service handles invoices for customers.", tags=["billing-service"])
+    )
+    result = recall("service behavior", "repo", 5, "", "", "", "auth-service", store)
+    assert auth_id in result["sources"]
+    assert billing_id not in result["sources"]

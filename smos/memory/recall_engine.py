@@ -18,6 +18,16 @@ def recall(
 ) -> dict:
     if strategy not in _VALID_STRATEGIES:
         return {"error": f"unknown strategy: {strategy}"}
-    result = build_compressed_context(query, k, store).model_dump()
+
+    if strategy == "repo":
+        result = _recall_repo(query, k, component, store)
+    else:
+        result = build_compressed_context(query, k, store).model_dump()
+
     store.bump_recall(result.get("sources", []))
     return result
+
+
+def _recall_repo(query: str, k: int, component: str, store: VectorStore) -> dict:
+    tags = [component] if component else None
+    return build_compressed_context(query, k, store, tags=tags).model_dump()
