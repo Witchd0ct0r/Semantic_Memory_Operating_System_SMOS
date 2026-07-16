@@ -373,6 +373,19 @@ class VectorStore:
             },
         }
 
+    def get_by_timestamp_range(self, since: str = "", until: str = "") -> list[dict]:
+        sql = "SELECT uuid, content FROM memories WHERE 1=1"
+        params: list[str] = []
+        if since:
+            sql += " AND timestamp >= ?"
+            params.append(since)
+        if until:
+            sql += " AND timestamp <= ?"
+            params.append(until)
+        with self._lock:
+            rows = self._db.execute(sql, params).fetchall()
+        return [{"id": r[0], "content": r[1]} for r in rows]
+
     def count(self) -> int:
         with self._lock:
             return self._index.ntotal
