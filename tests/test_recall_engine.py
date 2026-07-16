@@ -69,3 +69,19 @@ def test_recall_repo_filters_by_component(store: VectorStore) -> None:
     result = recall("service behavior", "repo", 5, "", "", "", "auth-service", store)
     assert auth_id in result["sources"]
     assert billing_id not in result["sources"]
+
+
+def test_recall_temporal_respects_since_bound(store: VectorStore) -> None:
+    old_id = store.store(_mem("Old fact about caching.", timestamp=datetime.utcnow() - timedelta(days=10)))
+    new_id = store.store(_mem("New fact about caching.", timestamp=datetime.utcnow()))
+    since = (datetime.utcnow() - timedelta(days=1)).isoformat()
+    result = recall("caching", "temporal", 5, since, "", "", "", store)
+    assert new_id in result["sources"]
+    assert old_id not in result["sources"]
+
+
+def test_recall_temporal_no_matches_returns_uncertain(store: VectorStore) -> None:
+    since = (datetime.utcnow() + timedelta(days=1)).isoformat()  # future — nothing qualifies
+    result = recall("anything", "temporal", 5, since, "", "", "", store)
+    assert result["sources"] == []
+    assert result["mode"] == "uncertain"
