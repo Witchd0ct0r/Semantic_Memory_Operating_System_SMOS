@@ -40,3 +40,27 @@ def test_store_batch_persists_source_ids_and_confidence(store: VectorStore) -> N
     record = store.get_by_uuid(ids[0])
     assert record["metadata"]["source_ids"] == ["x"]
     assert record["metadata"]["confidence"] == pytest.approx(0.9)
+
+
+def test_bump_recall_increments_count_and_sets_timestamp(store: VectorStore) -> None:
+    memory_id = store.store(_mem("Fact to be recalled."))
+    store.bump_recall([memory_id])
+    row = store._db.execute(
+        "SELECT recall_count, last_recalled FROM memories WHERE uuid = ?", (memory_id,)
+    ).fetchone()
+    assert row[0] == 1
+    assert row[1] is not None
+
+
+def test_bump_recall_accumulates_across_calls(store: VectorStore) -> None:
+    memory_id = store.store(_mem("Fact recalled twice."))
+    store.bump_recall([memory_id])
+    store.bump_recall([memory_id])
+    row = store._db.execute(
+        "SELECT recall_count FROM memories WHERE uuid = ?", (memory_id,)
+    ).fetchone()
+    assert row[0] == 2
+
+
+def test_bump_recall_empty_list_is_noop(store: VectorStore) -> None:
+    store.bump_recall([])  # must not raise

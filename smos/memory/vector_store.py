@@ -332,6 +332,17 @@ class VectorStore:
             )
             self._db.commit()
 
+    def bump_recall(self, uuids: list[str]) -> None:
+        if not uuids:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._db.executemany(
+                "UPDATE memories SET recall_count = recall_count + 1, last_recalled = ? WHERE uuid = ?",
+                [(now, uuid) for uuid in uuids],
+            )
+            self._db.commit()
+
     def get_all_uuids(self) -> list[str]:
         with self._lock:
             rows = self._db.execute(
