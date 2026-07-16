@@ -41,25 +41,35 @@ Return: memory.id (UUID)
 
 ### 1.2 Read Path — `tool_semantic_query`
 
+> **Updated for Phase 1 (BM25 hybrid retrieval, merged 2026-07-02, commit `b890a19`).**
+> `_classify_domain` and the fixed 70/30 rerank are gone — see below.
+
 ```
 MCP client → FastMCP
   └─ semantic_query() → build_compressed_context() [compression/context_builder.py]
        │
-       ├─ _classify_domain(query) — keyword counting over 5 built-in domains
-       │
-       ├─ store.query_domain(query, candidate_k=max(k×4, 20), domain_tags)
+       ├─ store.query_domain(query, k=max(k×4, 20), domain_tags) [falls back to
+       │    store.query() if tags omitted or filter returns no results]
        │    └─ VectorStore._query_internal()
        │         acquire _lock
        │         ├─ embed(query) → vector  (CPU-bound, holds _lock)
        │         ├─ faiss.search(vector, n) → scores[], row_ids[]
        │         └─ for each id: SELECT ... WHERE row_id=?  (N round-trips)
        │         release _lock
-       │         [fallback to full search if domain filter returns < k results]
        │
-       ├─ _rerank(query, candidates, top_k=k)
-       │    └─ 0.7 × FAISS cosine score + 0.3 × query term overlap
+       ├─ store.bm25.query(query, k=candidate_k) → (uuid, score) pairs
+       │    zero-score entries (no term match) filtered out before fusion
        │
-       └─ compress_memories_full(reranked, query) [llm/summarizer.py]
+       ├─ _rrf_merge(vector_results, bm25_results, top_k=k×2)
+       │    └─ score = 1/(60+rank_vector) + 1/(60+rank_bm25), summed per uuid
+       │
+       ├─ hydrate merged uuids: prefer vector hit (carries FAISS distance);
+       │    BM25-only hits fetched via store.get_by_uuid(), distance defaulted
+       │
+       ├─ final sort: (rrf_score, term_overlap) — RRF is the primary key,
+       │    term overlap only breaks ties between equal/near-equal RRF scores
+       │
+       └─ compress_memories_full(top_k, query) [llm/summarizer.py]
             └─ Ollama API call (synchronous) → retry once → extractive fallback
 
 Return: CompressedContext {summary, sources, confidence, mode}
@@ -159,9 +169,10 @@ These were identified during self-analysis and are tracked for future releases.
 
 ### Medium priority
 
-4. **Domain classification is effectively dead code**  
-   `_classify_domain` filters by built-in keyword lists, then uses those keywords as tag filters. But `semantic_store` stores memories with no tags — tag filtering returns 0 results for virtually all queries, causing immediate fallback to full search. Domain classification adds a second FAISS query with no benefit.  
-   *Fix: expose `tags` on `tool_semantic_store` so callers can tag at store time.*
+4. ~~**Domain classification is effectively dead code**~~ — **Resolved in Phase 1**
+   (2026-07-02). `_classify_domain` and the fixed 70/30 rerank were removed; replaced
+   with BM25 hybrid retrieval via Reciprocal Rank Fusion (see §1.2). `tags` filtering
+   on `query_domain` is still opt-in/caller-supplied, not automatic classification.
 
 5. **`delete()` saves the full FAISS index on every single deletion**  
    Should batch saves or defer to the periodic `save_interval` logic.
@@ -169,13 +180,21 @@ These were identified during self-analysis and are tracked for future releases.
 6. **`lru_cache` on `_get_model()` is not thread-safe during first population**  
    If two threads call `embed()` simultaneously before the model is cached, both may attempt model load concurrently.
 
+7. **NEW (Phase 1) — `BM25Index.update()`/`.remove()` full-rebuild cost**
+   The single-item paths rebuild the entire `BM25Okapi` index per call — O(n) per
+   call, O(n²) cumulative at scale, held inside `VectorStore._lock`. `add_batch()`/
+   `remove_batch()` (used by `store_batch()`/`delete_batch()`) amortize this to once
+   per call, but single `store()`/`delete()` calls still pay the full rebuild.
+   Accepted as a documented Phase-1 limitation; needs an incremental-index redesign
+   before Phase 4 (HNSW) if corpora grow large.
+
 ### Low priority
 
-7. **Double input validation** — `server.py::_check_input()` and `semantic_tools.py::_validate_text()` both enforce the 10-char minimum. One is redundant.
+8. **Double input validation** — `server.py::_check_input()` and `semantic_tools.py::_validate_text()` both enforce the 10-char minimum. One is redundant.
 
-8. **Tier promotion is insertion-order-based, not recency-based** — the oldest 25% of entries (by row_id) are always "cold" regardless of how recent they are.
+9. **Tier promotion is insertion-order-based, not recency-based** — the oldest 25% of entries (by row_id) are always "cold" regardless of how recent they are.
 
-9. **`compress_memories` backward-compat wrapper discards `mode`** — callers cannot distinguish abstractive from extractive results.
+10. **`compress_memories` backward-compat wrapper discards `mode`** — callers cannot distinguish abstractive from extractive results.
 
 ---
 
@@ -187,4 +206,7 @@ These were identified during self-analysis and are tracked for future releases.
 - **Lifecycle guard** — `_running` non-blocking acquire prevents cycle pile-up under insert pressure.
 - **Path traversal protection** — null-byte check + `resolve()` + `relative_to()` in `file_tools.py`.
 - **WAL mode** — allows SQLite readers during writes; reduces metadata-read lock pressure.
-- **Hybrid reranking** — 70% FAISS cosine + 30% term overlap improves precision for keyword-heavy queries without full BM25.
+- **BM25 hybrid retrieval (Phase 1)** — Reciprocal Rank Fusion over FAISS vector search
+  and BM25Okapi fixes exact-term queries (function names, error codes, identifiers)
+  that pure vector search missed. Exact-term recall gate: 1.00 hybrid vs 0.33
+  vector-only on a tuned corpus.
