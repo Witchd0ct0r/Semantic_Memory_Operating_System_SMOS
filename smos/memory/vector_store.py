@@ -13,6 +13,8 @@ import numpy as np
 
 from smos.memory.bm25_index import BM25Index
 from smos.memory.embeddings import embed, embed_batch
+from smos.memory.entity_extractor import extract_entities
+from smos.memory.graph_store import GraphStore
 from smos.memory.schemas import MemoryObject
 
 _DEFAULT_DB_PATH = Path.home() / ".smos" / "data"
@@ -45,6 +47,7 @@ class VectorStore:
         self._rebuild_index_if_stale()
         self.bm25 = BM25Index()
         self._seed_bm25()
+        self.graph = GraphStore(self._db)
         atexit.register(self._atexit_save)
 
     # ------------------------------------------------------------------
@@ -127,6 +130,19 @@ class VectorStore:
         ).fetchall()
         self.bm25.build([(r[0], r[1]) for r in rows])
 
+    def _update_graph(self, memory_id: str, content: str) -> None:
+        """Extract entities from content and wire them into the graph.
+
+        Best-effort, additive only. Does not seed from pre-existing memories
+        on startup — only new store()/store_batch() calls populate the graph
+        (see docs/HANDOFF.md for the backfill caveat).
+        """
+        self.graph.add_node(memory_id, "memory", memory_id[:8])
+        for entity in extract_entities(content):
+            entity_id = f"entity:{entity.name}"
+            self.graph.add_node(entity_id, "entity", entity.name, metadata={"kind": entity.kind})
+            self.graph.add_edge(memory_id, entity_id, "references")
+
     def _save_index(self) -> None:
         faiss.write_index(self._index, str(self._index_file))
 
@@ -163,6 +179,7 @@ class VectorStore:
 
             self._index.add_with_ids(vector, np.array([row_id], dtype=np.int64))
             self.bm25.update(memory.id, memory.content)
+            self._update_graph(memory.id, memory.content)
             self._insert_count += 1
             count = self._insert_count
             if count % self._save_interval == 0:
@@ -254,6 +271,7 @@ class VectorStore:
             self._db.execute("DELETE FROM memories WHERE uuid = ?", (uuid,))
             self._db.commit()
             self.bm25.remove(uuid)
+            self.graph.remove_node(uuid)
             self._save_index()
         return True
 
@@ -271,6 +289,8 @@ class VectorStore:
                 row_ids.append(int(row[0]))
                 self._db.execute("DELETE FROM memories WHERE uuid = ?", (uuid,))
             self.bm25.remove_batch(uuids)
+            for uuid_to_unlink in uuids:
+                self.graph.remove_node(uuid_to_unlink)
             if row_ids:
                 self._index.remove_ids(np.array(row_ids, dtype=np.int64))
                 self._db.commit()
@@ -393,6 +413,8 @@ class VectorStore:
                 id_arr = np.array(row_ids, dtype=np.int64)
                 self._index.add_with_ids(arr, id_arr)
                 self.bm25.add_batch([(m.id, m.content) for m in chunk])
+                for memory in chunk:
+                    self._update_graph(memory.id, memory.content)
                 self._insert_count += len(chunk)
 
             with self._new_ids_lock:
