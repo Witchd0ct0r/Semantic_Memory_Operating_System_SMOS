@@ -37,6 +37,24 @@ history is the log.
   existing `bench_*.py` convention).
 - Test suite grew 103 → 142, all passing on merged `main`.
 
+**Phase 2 vs Phase 1 benchmark (`tests/bench_phase2_vs_phase1.py`, commit `25d6718`,
+run 2026-07-16):** isolates the two things Phase 2 actually changed, reproducing
+"Phase 1 state" exactly via monkeypatching (`store.graph.traverse` → `[]` for read
+path, `VectorStore._update_graph` → no-op for write path) on identical code, rather
+than checking out the old commit — so the comparison isn't confounded by unrelated
+drift.
+- **Retrieval recall**, 5 scenarios where a target memory shares an entity with the
+  top-ranked memory but has no lexical/semantic overlap with the query itself:
+  Phase 1 (graph off) **0/5 (0%)** vs Phase 2 (graph on) **5/5 (100%)** — confirms the
+  graph rescues exactly the class of query hybrid retrieval structurally cannot reach.
+- **Write-path latency**, 3 interleaved trials × 140 measured `store()` calls (10
+  warmup calls discarded per trial to remove one-time FAISS/SQLite file-creation
+  cost): Phase 1 12.28ms/store vs Phase 2 13.62ms/store — **+1.35ms/store (+11.0%)**,
+  consistent in sign across all 3 trials. (A first, single-trial pass without warmup
+  discard showed graph-on as *faster* — that was noise, not a real effect; embedding
+  cost (~12ms/call) dominates `store()` latency and swamps a single untrimmed trial.
+  Don't trust a one-shot timing on this path — rerun the script if re-verifying.)
+
 **Known limitation, accepted for this phase:** the graph is populated only by new
 `store()`/`store_batch()` calls going forward — it does **not** retroactively parse
 memories already in an existing `.smos/` corpus (unlike BM25's `_seed_bm25()`, which
