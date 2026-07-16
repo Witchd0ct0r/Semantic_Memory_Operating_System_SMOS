@@ -8,6 +8,7 @@ from smos.memory.embeddings import embed_batch
 from smos.memory.vector_store import VectorStore
 
 _VALID_STRATEGIES = {"hybrid", "temporal", "chain", "repo"}
+_CHAIN_EDGE_TYPES = ["evolves_into", "related_to"]
 
 
 def recall(
@@ -27,6 +28,8 @@ def recall(
         result = _recall_repo(query, k, component, store)
     elif strategy == "temporal":
         result = _recall_temporal(query, k, since, until, store)
+    elif strategy == "chain":
+        result = _recall_chain(seed_id, k, store)
     else:
         result = build_compressed_context(query, k, store).model_dump()
 
@@ -65,3 +68,9 @@ def _recall_temporal(query: str, k: int, since: str, until: str, store: VectorSt
         "confidence": confidence,
         "mode": mode,
     }
+
+
+def _recall_chain(seed_id: str, k: int, store: VectorStore) -> dict:
+    nodes = store.graph.traverse(seed_id, max_hops=max(k, 1), edge_types=_CHAIN_EDGE_TYPES)
+    memory_ids = [n["id"] for n in nodes if n["type"] == "memory"]
+    return {"sources": memory_ids, "chain": nodes, "confidence": 1.0, "mode": "extractive"}

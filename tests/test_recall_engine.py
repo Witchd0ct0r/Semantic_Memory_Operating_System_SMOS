@@ -85,3 +85,18 @@ def test_recall_temporal_no_matches_returns_uncertain(store: VectorStore) -> Non
     result = recall("anything", "temporal", 5, since, "", "", "", store)
     assert result["sources"] == []
     assert result["mode"] == "uncertain"
+
+
+def test_recall_chain_follows_evolves_into_edges(store: VectorStore) -> None:
+    m1 = store.store(_mem("Version one of the design doc."))
+    m2 = store.store(_mem("Version two of the design doc."))
+    store.graph.add_edge(m1, m2, "evolves_into")
+    result = recall("", "chain", 2, "", "", m1, "", store)
+    assert m2 in result["sources"]
+    assert result["mode"] == "extractive"
+
+
+def test_recall_chain_ignores_references_edges(store: VectorStore) -> None:
+    m1 = store.store(_mem("The `Foo` class is defined here."))
+    result = recall("", "chain", 2, "", "", m1, "", store)
+    assert result["sources"] == []
