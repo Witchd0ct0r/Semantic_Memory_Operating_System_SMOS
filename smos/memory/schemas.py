@@ -32,3 +32,24 @@ class FileReadResult(BaseModel):
 
 class FileWriteResult(BaseModel):
     success: bool
+
+
+class GraphNode(BaseModel):
+    id: str
+    type: Literal["entity", "concept", "memory", "repo_component", "snapshot", "agent"]
+    name: str
+    metadata: dict = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GraphEdge(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    source_id: str
+    target_id: str
+    edge_type: Literal[
+        "references", "depends_on", "related_to",
+        "implements", "contains", "evolves_into", "generated_from",
+    ]
+    weight: float = 1.0
+    metadata: dict = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)

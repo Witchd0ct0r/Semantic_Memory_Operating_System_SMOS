@@ -52,3 +52,18 @@ def semantic_write(
         tags=tags or [],
     )
     return store.store(memory)
+
+
+def graph_query(term: str, store: VectorStore, max_hops: int = 2) -> dict:
+    """Traverse the memory graph starting from an entity name or exact node id.
+
+    `term` is deliberately not passed through `_validate_text` (its 10-char
+    minimum is tuned for prose content, not short lookup terms like "JWT").
+    """
+    term = term.strip()
+    if not term:
+        return _INVALID_INPUT_RESPONSE
+    start_id = term if store.graph.get_node(term) else f"entity:{term}"
+    nodes = store.graph.traverse(start_id, max_hops=max_hops)
+    nodes.sort(key=lambda n: n["hop"])
+    return {"term": term, "start_id": start_id, "nodes": nodes, "count": len(nodes)}

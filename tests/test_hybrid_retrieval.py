@@ -19,6 +19,7 @@ def _make_store_with_memories(memories: list[dict], extra_bm25_docs: list[dict] 
     bm25 = BM25Index()
     bm25.build([(m["id"], m["content"]) for m in memories + extra_bm25_docs])
     store.bm25 = bm25
+    store.graph.traverse.return_value = []
     all_records = memories + extra_bm25_docs
     store.get_by_uuid.side_effect = lambda uid: next(
         (m for m in all_records if m["id"] == uid), None
