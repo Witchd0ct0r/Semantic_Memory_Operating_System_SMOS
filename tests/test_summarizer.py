@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from smos.llm.summarizer import compress_memories, summarize_text
+from smos.llm.summarizer import compress_memories, reflect_on_memories, summarize_text
 
 
 def _make_mock_client(response_text: str) -> MagicMock:
@@ -68,3 +68,34 @@ def test_compress_memories_includes_ids_in_prompt() -> None:
     user_msg = call_kwargs["messages"][1]["content"]
     assert "abcd1234" in user_msg
     assert "test query" in user_msg
+
+
+def test_reflect_on_memories_returns_reflection_and_confidence() -> None:
+    memories = [
+        {"id": "abc12345", "content": "PostgreSQL uses MVCC.", "distance": 0.1},
+        {"id": "def67890", "content": "Redis is single-threaded.", "distance": 0.3},
+    ]
+    mock_client = _make_mock_client("Both are used for different storage needs; no contradiction found.")
+    with patch("smos.llm.summarizer.get_llm_client", return_value=mock_client):
+        reflection, confidence, mode = reflect_on_memories(memories, "what do I know about storage?")
+    assert isinstance(reflection, str)
+    assert len(reflection) > 0
+    assert 0.0 <= confidence <= 1.0
+    assert mode == "abstractive"
+
+
+def test_reflect_on_memories_empty_returns_zero() -> None:
+    reflection, confidence, mode = reflect_on_memories([], "anything")
+    assert reflection == ""
+    assert confidence == 0.0
+    assert mode == "uncertain"
+
+
+def test_reflect_on_memories_uses_distinct_system_prompt() -> None:
+    memories = [{"id": "aaa00000", "content": "Some fact.", "distance": 0.2}]
+    mock_client = _make_mock_client("Reflection output.")
+    with patch("smos.llm.summarizer.get_llm_client", return_value=mock_client):
+        reflect_on_memories(memories, "query")
+    call_kwargs = mock_client.chat.completions.create.call_args[1]
+    system_msg = call_kwargs["messages"][0]["content"]
+    assert "reflecting" in system_msg.lower()
