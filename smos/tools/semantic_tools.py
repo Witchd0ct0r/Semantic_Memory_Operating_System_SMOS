@@ -34,6 +34,7 @@ def semantic_query(
     if not _validate_text(query):
         return _INVALID_INPUT_RESPONSE
     result = build_compressed_context(query, k, store, tags=tags)
+    store.bump_recall(result.sources)
     return result.model_dump()
 
 
