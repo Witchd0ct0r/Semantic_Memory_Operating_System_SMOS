@@ -3,7 +3,7 @@ from __future__ import annotations
 import atexit
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
 from typing import Callable, Optional
@@ -340,6 +340,23 @@ class VectorStore:
             self._db.executemany(
                 "UPDATE memories SET recall_count = recall_count + 1, last_recalled = ? WHERE uuid = ?",
                 [(now, uuid) for uuid in uuids],
+            )
+            self._db.commit()
+
+    def recompute_tiers_by_frequency(self) -> None:
+        now = datetime.now(timezone.utc)
+        hot_cutoff = (now - timedelta(days=7)).isoformat()
+        warm_cutoff = (now - timedelta(days=30)).isoformat()
+        with self._lock:
+            self._db.execute(
+                """
+                UPDATE memories SET tier = CASE
+                    WHEN last_recalled >= ? OR recall_count > 10 THEN 'hot'
+                    WHEN last_recalled >= ? OR recall_count > 3 THEN 'warm'
+                    ELSE 'cold'
+                END
+                """,
+                (hot_cutoff, warm_cutoff),
             )
             self._db.commit()
 

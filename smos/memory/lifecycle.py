@@ -34,17 +34,9 @@ class LifecycleManager:
             self._running.release()
 
     def _promote_tiers(self) -> None:
-        uuids = self._store.get_all_uuids()
-        n = len(uuids)
-        if n < _MIN_STORE_SIZE:
+        if self._store.count() < _MIN_STORE_SIZE:
             return
-        cold_cut = n // 4
-        warm_cut = n // 2
-        updates = (
-            [(uuid, "cold") for uuid in uuids[:cold_cut]]
-            + [(uuid, "warm") for uuid in uuids[cold_cut:warm_cut]]
-        )
-        self._store.update_tiers_batch(updates)
+        self._store.recompute_tiers_by_frequency()
 
     def _deduplicate(self) -> None:
         """Incremental dedup: O(M) per cycle where M = inserts since last drain."""
