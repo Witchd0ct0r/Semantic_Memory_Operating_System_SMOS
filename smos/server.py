@@ -18,6 +18,7 @@ from smos.tools.ingest_tools import (
 from smos.tools.semantic_tools import (
     _MIN_INPUT_CHARS,
     _INVALID_INPUT_RESPONSE,
+    graph_query,
     semantic_query,
     semantic_store,
     semantic_write,
@@ -115,6 +116,30 @@ def tool_semantic_write(type: str, content: str, tags: str = "") -> str:
         return semantic_write(type, content, _store, tags=tag_list)
     except Exception as exc:
         return str({"error": f"{type(exc).__name__}: {str(exc)[:200]}"})
+
+
+@app.tool()
+def tool_graph_query(term: str, max_hops: int = 2) -> dict:
+    """Traverse the memory graph starting from an entity or memory id.
+
+    Finds nodes connected to `term` within `max_hops` — e.g. term="JWT" finds
+    every memory that references JWT (1 hop) and other entities those
+    memories also reference (2 hops), transitively. If `term` isn't an
+    existing node id, it's resolved as `entity:{term}` automatically.
+
+    Returns {"term", "start_id", "nodes": [{"id","type","name","metadata","hop"}], "count"}.
+
+    Args:
+        term: Entity name (e.g. "JWT") or an exact node id.
+        max_hops: Traversal depth (default 2).
+    """
+    try:
+        return graph_query(term, _store, max_hops=max_hops)
+    except Exception as exc:
+        return {
+            "term": term, "start_id": None, "nodes": [], "count": 0,
+            "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+        }
 
 
 @app.tool()
