@@ -52,3 +52,13 @@ def test_graph_query_accepts_exact_memory_id(store: VectorStore) -> None:
     assert result["start_id"] == memory_id
     ids = {n["id"] for n in result["nodes"]}
     assert "entity:JWT" in ids
+
+
+def test_graph_query_bumps_recall_for_memory_nodes(store: VectorStore) -> None:
+    m = _mem("The `JWT` token is validated by the middleware.")
+    memory_id = store.store(m)
+    graph_query("JWT", store, max_hops=1)
+    row = store._db.execute(
+        "SELECT recall_count FROM memories WHERE uuid = ?", (memory_id,)
+    ).fetchone()
+    assert row[0] == 1
