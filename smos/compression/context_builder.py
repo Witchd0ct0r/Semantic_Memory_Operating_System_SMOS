@@ -96,6 +96,26 @@ def build_compressed_context(
     candidates.sort(key=lambda c: (c["_rrf_score"], c["_final_score"]), reverse=True)
     top = candidates[:k]
 
+    # Graph expansion — purely additive: pulls in memories that share an
+    # extracted entity with the top-ranked result, without altering the
+    # RRF-ranked order of `top` itself. Bounded to 2 extra memories so a
+    # densely-connected entity can't blow up the compression input.
+    if top:
+        graph_neighbors = store.graph.traverse(top[0].get("id", ""), max_hops=2, edge_types=["references"])
+        existing_ids = {c.get("id", "") for c in top}
+        added = 0
+        for node in graph_neighbors:
+            if added >= 2:
+                break
+            if node["type"] != "memory" or node["id"] in existing_ids:
+                continue
+            record = store.get_by_uuid(node["id"])
+            if record is None:
+                continue
+            top.append(record)
+            existing_ids.add(node["id"])
+            added += 1
+
     # compress_memories_full() needs a "distance" per memory to derive
     # confidence. BM25-only hits hydrated via get_by_uuid() don't carry a
     # FAISS distance, so default them to a neutral mid-range value.
