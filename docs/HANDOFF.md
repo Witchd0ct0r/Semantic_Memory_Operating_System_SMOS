@@ -9,119 +9,121 @@ history is the log.
 
 ## Where things stand (2026-07-16)
 
-**Phase 2 — Memory Graph: COMPLETE**, merged to `main` at commit `fa3ed64`
-(feature branch `phase2-memory-graph`, 9 commits, merged with `--no-ff`).
+**Phase 3 — Agent Memory Primitives: COMPLETE**, merged to `main` at commit `dedc3d5`
+(feature branch `phase3-agent-primitives`, 17 commits, merged with `--no-ff`).
 
-- Added `smos/memory/graph_store.py` — `GraphStore`: SQLite `graph_nodes`/`graph_edges`
-  tables (own connection sharing, `CREATE TABLE IF NOT EXISTS`), node/edge CRUD, and a
-  bounded recursive-CTE `traverse()` (undirected BFS, terminates on `hop < max_hops`
-  regardless of cycles).
-- Added `smos/memory/entity_extractor.py` — `extract_entities()`: Python `ast` walk
-  (functions/classes/import targets) + backtick-span regex (works on any content,
-  matches this project's own memory-file convention). Deduped, capped at 50/call.
-- Added `GraphNode`/`GraphEdge` Pydantic schemas (`smos/memory/schemas.py`) — `type`/
-  `edge_type` `Literal` enums kept in sync with `GraphStore`'s SQL `CHECK` constraints
-  (verified in the final whole-branch review).
-- Wired into `VectorStore` (`smos/memory/vector_store.py`): every `store()`/
-  `store_batch()` call extracts entities and adds a `memory` node + `entity` nodes +
-  `references` edges; `delete()`/`delete_batch()` remove the memory node and its edges
-  (entity nodes are left in place — they're shared vocabulary, not owned by one memory).
-- Added an **additive** graph-expansion step in `context_builder.py`: after the
-  existing RRF-ranked top-`k` is computed, up to 2 graph-linked memories the ranking
-  missed are appended (never reordering/removing what RRF already chose). Confirmed
-  via the Phase 1 exact-term recall gate (`tests/test_exact_term_recall.py`) that this
-  is a true no-op on non-code, backtick-free content — both its tests still pass.
-- Added `tool_graph_query` MCP tool (`smos/server.py` + `smos/tools/semantic_tools.py`)
-  for explicit "what connects to X" traversal queries.
-- Added `tests/bench_graph_retrieval.py` (standalone, non-pytest-collected, matches the
-  existing `bench_*.py` convention).
-- Test suite grew 103 → 142, all passing on merged `main`.
+- Added `smos/tools/agent_primitives.py` — 7 primitive functions: `remember`/`learn`
+  (thin `store()` wrappers differing only in `type`/`confidence` defaults), `forget`
+  (wraps existing `delete()`), `link` (validates both ids are graph nodes + valid
+  `edge_type` before `graph.add_edge()`), `snapshot` (defaults path to project root,
+  wraps `do_semantic_snapshot_repo`), `compress` (non-destructive: LLM-merges N
+  memories via the existing `compress_memories_full`, sources are **kept**, linked via
+  `source_ids` + `generated_from` graph edges), `reflect` (LLM reasons over retrieved
+  memories via a new, distinct prompt — `reflect_on_memories` in `summarizer.py` — and
+  stores the result back as a durable `type="reflection"` memory).
+- Added `smos/memory/recall_engine.py` — `recall(query, strategy, k, since, until,
+  seed_id, component, store)`: `hybrid` (default) and `repo` delegate to the existing,
+  **unmodified** `build_compressed_context()`; `temporal` filters by SQL timestamp
+  range then vector-reranks; `chain` follows `evolves_into`/`related_to` graph edges
+  from a seed memory (`k` means hop depth for this strategy only). `context_builder.py`
+  was deliberately never touched this phase, to keep the Phase 1/2 benchmark-gated
+  retrieval path stable.
+- Data model: `MemoryObject` gained `source_ids: list[str]` and `confidence: float`
+  (both default to no-ops for pre-existing rows); `memories` table gained
+  `source_ids`/`confidence`/`recall_count`/`last_recalled` columns via the same
+  `ALTER TABLE ADD COLUMN` pattern already used for `tier`.
+- Tier promotion fixed: `LifecycleManager._promote_tiers()` now calls
+  `VectorStore.recompute_tiers_by_frequency()` (single SQL `CASE WHEN` on
+  `recall_count`/`last_recalled`) instead of insertion-order positional slicing.
+  `hot` = recalled ≤7d or `recall_count>10`; `warm` = ≤30d or `recall_count>3`; else
+  `cold`. **Computation only** — tiers still don't filter search or drive eviction
+  (deliberately out of scope this phase; see tech debt below).
+- Every retrieval path now feeds tier tracking: `tool_semantic_query`,
+  `tool_graph_query`, and `recall()` all call the new `VectorStore.bump_recall()`.
+- Registered 8 new MCP tools in `server.py`: `tool_remember`, `tool_forget`,
+  `tool_learn`, `tool_link`, `tool_compress`, `tool_reflect`, `tool_snapshot`,
+  `tool_recall` — all follow the existing try/except-and-stringify-error convention.
+- Added `tests/bench_phase3_primitives.py` (standalone, non-pytest-collected).
+- Test suite grew 142 → 187, all passing on merged `main`.
 
-**Phase 2 vs Phase 1 benchmark (`tests/bench_phase2_vs_phase1.py`, commit `25d6718`,
-run 2026-07-16):** isolates the two things Phase 2 actually changed, reproducing
-"Phase 1 state" exactly via monkeypatching (`store.graph.traverse` → `[]` for read
-path, `VectorStore._update_graph` → no-op for write path) on identical code, rather
-than checking out the old commit — so the comparison isn't confounded by unrelated
-drift.
-- **Retrieval recall**, 5 scenarios where a target memory shares an entity with the
-  top-ranked memory but has no lexical/semantic overlap with the query itself:
-  Phase 1 (graph off) **0/5 (0%)** vs Phase 2 (graph on) **5/5 (100%)** — confirms the
-  graph rescues exactly the class of query hybrid retrieval structurally cannot reach.
-- **Write-path latency**, 3 interleaved trials × 140 measured `store()` calls (10
-  warmup calls discarded per trial to remove one-time FAISS/SQLite file-creation
-  cost): Phase 1 12.28ms/store vs Phase 2 13.62ms/store — **+1.35ms/store (+11.0%)**,
-  consistent in sign across all 3 trials. (A first, single-trial pass without warmup
-  discard showed graph-on as *faster* — that was noise, not a real effect; embedding
-  cost (~12ms/call) dominates `store()` latency and swamps a single untrimmed trial.
-  Don't trust a one-shot timing on this path — rerun the script if re-verifying.)
+**Pre-Phase-1 vs current (Phase 1+2+3) benchmark (`tests/bench_full_evolution.py`,
+commit `dedc3d5`, run 2026-07-16):** reproduces the pre-Phase-1 baseline (commit
+`23f051c`) on the current tree by monkeypatching BM25/graph off, same no-drift
+rationale as `bench_phase2_vs_phase1.py`, rather than checking out the old commit.
+- **Exact-term recall** (3 identifiers, 180 noise docs — what BM25 fixed):
+  pre-Phase-1 **1/3 (33%)** → now **3/3 (100%)**.
+- **Graph-rescue recall** (5 scenarios, target reachable only via a shared entity —
+  what the graph fixed): pre-Phase-1 **0/5 (0%)** → now **5/5 (100%)**.
+- **MCP tool surface**: pre-Phase-1 **10 tools** → now **19 tools** (+9, +90%).
 
-**Known limitation, accepted for this phase:** the graph is populated only by new
-`store()`/`store_batch()` calls going forward — it does **not** retroactively parse
-memories already in an existing `.smos/` corpus (unlike BM25's `_seed_bm25()`, which
-does rebuild from all of SQLite on init). A full-corpus graph backfill is out of scope;
-track as a future opportunistic task if a corpus needs it.
+**Known limitation, accepted for this phase:** no tier-based search filtering or
+eviction (tier is computed correctly now but has no behavioral consequence yet); no
+retroactive backfill of `source_ids`/`confidence`/recall-tracking for memories stored
+before this phase (same posture as Phase 2's graph backfill gap — new rows only).
 
-**Execution notes for future phases:** all 7 tasks were dispatched to Haiku
+**Execution notes for future phases:** all 9 tasks were dispatched to Haiku
 implementer subagents via `superpowers:subagent-driven-development`, working in a
-shared git worktree (`.worktrees/phase2-memory-graph`) sequentially — each task built
-on the previous task's commit. Every task and the final whole-branch review were
-reviewed **inline by the orchestrator**, not via separate reviewer subagents (standing
-preference — see `feedback-inline-reviews` in cross-session memory). One real
-mistake this session: the first implementer dispatch used `isolation: "worktree"` on
-the `Agent` tool, which silently created a *second*, disconnected worktree branched
-from stale `origin/main` instead of using the shared worktree named in the prompt —
-had to cherry-pick that commit onto the correct branch and clean up the orphan.
-**Never set `isolation` on `Agent` calls when coordinating sequential tasks in a
-pre-existing shared worktree** — only the "Work from: `<path>`" instruction in the
-prompt controls that, and `isolation: "worktree"` overrides it silently.
+shared git worktree (`.worktrees/phase3-agent-primitives`) sequentially. Every task's
+diff and the final whole-branch review were reviewed **inline by the orchestrator**
+(standing preference — see `feedback-inline-reviews` in cross-session memory) — no
+separate reviewer subagents were dispatched. All 17 commits matched the plan's literal
+code verbatim; no fix-subagent dispatches were needed this phase. One environment
+quirk worth carrying forward: this machine's `pytest` invocation goes through an `rtk`
+proxy hook that occasionally mis-reports **"No tests collected"** on a run that
+actually executed hundreds of tests correctly — confirmed by rerunning the identical
+command via `rtk proxy pytest ...` (bypasses the filtering) and getting the real
+pass count. **Don't trust a bare "No tests collected" result on this machine** — retry
+through `rtk proxy` before concluding anything is broken.
 
-**Housekeeping carried from the prior session (2026-07-16, same day):** project
-`CLAUDE.md` added (SMOS-tool-usage policy + governor/orchestrator/Haiku workflow),
-`ARCHITECTURE.md` corrected for post-Phase-1 drift, stale
-`HANDOFF-bm25-next-session.md` retired with a superseded banner, `docs/` brought under
-version control.
+One pre-existing, non-blocking test-design flake surfaced during Task 8 review:
+`tests/test_recall_engine.py::test_recall_hybrid_matches_build_compressed_context`
+asserts byte-identical output from two separate live LLM calls (temperature=0.1, not
+0), so it can occasionally fail on wording drift between calls even though both paths
+are correct. Passed clean on rerun with no code change. Worth a follow-up to assert
+structural equality (same `sources`, non-empty `summary`) instead of exact string
+equality — not scheduled yet.
 
-## Prior phase — BM25 Hybrid Retrieval (COMPLETE, merged `b890a19`, 2026-07-02)
+## Prior phases
 
-RRF fusion of FAISS + BM25Okapi in `context_builder.py`; new `BM25Index` class;
-exact-term recall gate went from 0.33 (vector-only) to 1.00 (hybrid). Known limitation
-carried forward: `BM25Index.update()`/`.remove()` (single-item paths) still do a full
-rebuild per call — O(n) per call, O(n²) cumulative at scale, held inside
-`VectorStore._lock`; batch paths amortize this. Needs an incremental-index redesign
-before Phase 4 (HNSW) if corpora grow large.
+- **Phase 2 — Memory Graph** (merged `fa3ed64`, 2026-07-16): SQLite graph layer
+  (`graph_nodes`/`graph_edges`), entity extraction (AST + backtick regex), additive
+  graph-expansion step in retrieval, `tool_graph_query`. Graph-rescue recall 0%→100%
+  vs Phase 1 baseline; write-path latency +11.0% (12.28ms→13.62ms/store).
+- **Phase 1 — BM25 Hybrid Retrieval** (merged `b890a19`, 2026-07-02): RRF fusion of
+  FAISS + BM25Okapi in `context_builder.py`; exact-term recall gate 0.33→1.00.
 
-## Next up — Phase 3: Agent Memory Primitives (est. 2 sessions)
+## Next up — Phase 4: HNSW Migration (est. 1 session)
 
-Plan pointer: `docs/superpowers/plans/2026-06-30-smos-roadmap.md`, "Phase 3" section
-(high-level only — write a detailed, tree-verified plan before executing, same as
-Phases 1 and 2).
+Plan pointer: `docs/superpowers/plans/2026-06-30-smos-roadmap.md`, "Phase 4" section
+(high-level only — write a detailed, tree-verified plan before executing, same
+discipline as Phases 1-3: read current signatures from the actual files, not from this
+handoff or the roadmap sketch).
 
-`remember`/`forget`/`compress`/`reflect`/`learn`/`link`/`snapshot`/`recall` MCP tools.
-Frequency-based tier promotion (replacing the current insertion-order-based promotion
-in `LifecycleManager`). Temporal + memory-chain retrieval modes. This phase is a
-natural place to also address the "tiers stored but never used to filter/evict"
-technical debt below, since tier semantics are central to it.
-
-Before writing literal code into that plan: read the *current* signatures of
-everything the plan snippet touches, in the actual files, at plan-writing time — not
-from this handoff, not from memory, not from the roadmap sketch. Both Phase 1 and
-Phase 2's plans needed this discipline; Phase 2 explicitly reused Phase 1's own tests/
-files/fixtures as ground truth rather than trusting the roadmap doc, and that caught
-what would otherwise have been silent drift.
+Replace `faiss.IndexFlatIP` with `faiss.IndexHNSWFlat` for O(log n) approximate
+search. Key open question the plan must resolve: HNSW doesn't support `remove_ids` —
+either soft-delete in SQLite + periodic rebuild, or wrap in `IndexIDMap2`. Target:
+query latency < 10ms at 100K vectors (currently ~35ms with `IndexFlatIP`). Consider
+folding in the `BM25Index.update()`/`.remove()` full-rebuild tech debt below at the
+same time, since both are "needs an incremental-index redesign at scale" problems.
 
 ## Standing technical debt (address opportunistically, not yet scheduled)
 
 - `embed()` called while holding `VectorStore._lock` — blocks all concurrent
   store/query/delete while an embedding computes.
 - N individual SQLite `SELECT`s per query result — no `WHERE uuid IN (...)` batching.
-- Tier labels (hot/warm/cold) stored but never used to filter FAISS search or drive
-  eviction — cosmetic only; scheduled for Phase 3.
+- Tier labels (hot/warm/cold) are now computed correctly (Phase 3) but still not used
+  to filter FAISS search or drive eviction — cosmetic only.
 - `compress_memories_full` has no input-size guard before the LLM call — large
-  candidate sets can silently exceed the model's context window.
-- `BM25Index.update()`/`.remove()` single-item full-rebuild cost (see Phase 1 section
-  above) — needs resolving before Phase 4 (HNSW) if corpora grow large.
-- `GraphStore` has no corpus backfill for pre-existing memories (see Phase 2 section
-  above) — same "needs a redesign if it matters at scale" shape as the BM25 item.
+  candidate sets can silently exceed the model's context window. `reflect_on_memories`
+  (Phase 3) shares this gap since it follows the same pattern.
+- `BM25Index.update()`/`.remove()` single-item full-rebuild cost — O(n) per call,
+  O(n²) cumulative at scale, held inside `VectorStore._lock`; batch paths amortize
+  this. Needs an incremental-index redesign before Phase 4 if corpora grow large.
+- `GraphStore` has no corpus backfill for pre-existing memories — same "needs a
+  redesign if it matters at scale" shape as the BM25 item.
+- `tests/test_recall_engine.py::test_recall_hybrid_matches_build_compressed_context`
+  is flaky (see Phase 3 section above) — asserts exact LLM-output equality across two
+  live calls instead of structural equality.
 
 ## Test commands
 
@@ -132,3 +134,7 @@ pytest tests/ -v --tb=short
 `pytest.ini` sets `python_files = ["test_*.py"]` — files named `bench_*.py` are
 **not** pytest-collectible; they're standalone `__main__` scripts, not `def test_*`
 suites. Don't point a regression gate at one and expect `pytest` to run it.
+
+On this machine, if a `pytest` run reports **"No tests collected"** unexpectedly,
+retry with `rtk proxy pytest tests/ -q --tb=short` before assuming something broke —
+see the Phase 3 execution notes above.
