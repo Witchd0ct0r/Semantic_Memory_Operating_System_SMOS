@@ -32,3 +32,8 @@ def test_graph_edge_rejects_invalid_edge_type():
 def test_graph_node_metadata_round_trips():
     node = GraphNode(id="e1", type="entity", name="JWT", metadata={"kind": "reference"})
     assert node.model_dump()["metadata"] == {"kind": "reference"}
+
+
+def test_graph_node_accepts_document_type():
+    node = GraphNode(id="doc1", type="document", name="doc1")
+    assert node.type == "document"
