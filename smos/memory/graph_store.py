@@ -24,10 +24,11 @@ class GraphStore:
 
     def _init_schema(self) -> None:
         with self._lock:
+            self._migrate_legacy_graph_nodes_check()
             self._db.execute("""
                 CREATE TABLE IF NOT EXISTS graph_nodes (
                     id         TEXT PRIMARY KEY,
-                    type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent')),
+                    type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document')),
                     name       TEXT NOT NULL,
                     metadata   TEXT,
                     created_at TEXT DEFAULT (datetime('now'))
@@ -49,6 +50,34 @@ class GraphStore:
                 )
             """)
             self._db.commit()
+
+    def _migrate_legacy_graph_nodes_check(self) -> None:
+        """Rebuild graph_nodes if it exists with the pre-Phase-5 CHECK constraint
+        (no 'document' type). SQLite has no ALTER TABLE for CHECK constraints, so
+        this copies existing rows into a freshly-constrained table. Only called
+        from _init_schema, which already holds self._lock — no locking here.
+        """
+        row = self._db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='graph_nodes'"
+        ).fetchone()
+        if row is None or row[0] is None or "'document'" in row[0]:
+            return  # table doesn't exist yet, or already migrated
+        self._db.execute("ALTER TABLE graph_nodes RENAME TO graph_nodes_legacy")
+        self._db.execute("""
+            CREATE TABLE graph_nodes (
+                id         TEXT PRIMARY KEY,
+                type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document')),
+                name       TEXT NOT NULL,
+                metadata   TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        self._db.execute(
+            "INSERT INTO graph_nodes (id, type, name, metadata, created_at) "
+            "SELECT id, type, name, metadata, created_at FROM graph_nodes_legacy"
+        )
+        self._db.execute("DROP TABLE graph_nodes_legacy")
+        self._db.commit()
 
     def add_node(
         self, node_id: str, type: str, name: str, metadata: Optional[dict] = None

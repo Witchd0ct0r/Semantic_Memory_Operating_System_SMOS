@@ -106,3 +106,39 @@ def test_traverse_filters_by_edge_type(graph: GraphStore) -> None:
     result = graph.traverse("mem1", max_hops=1, edge_types=["references"])
     ids = {n["id"] for n in result}
     assert ids == {"a"}
+
+
+def test_add_node_document_type_succeeds(graph: GraphStore) -> None:
+    graph.add_node("doc1", "document", "doc1")
+    node = graph.get_node("doc1")
+    assert node is not None
+    assert node["type"] == "document"
+
+
+def test_migrates_legacy_graph_nodes_check_constraint(tmp_path) -> None:
+    db_path = tmp_path / "legacy_nodes.db"
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn.execute("""
+        CREATE TABLE graph_nodes (
+            id         TEXT PRIMARY KEY,
+            type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent')),
+            name       TEXT NOT NULL,
+            metadata   TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute(
+        "INSERT INTO graph_nodes (id, type, name, metadata) VALUES ('mem1', 'memory', 'mem1', '{}')"
+    )
+    conn.commit()
+
+    store = GraphStore(conn)
+
+    old_node = store.get_node("mem1")
+    assert old_node is not None
+    assert old_node["type"] == "memory"
+
+    store.add_node("doc1", "document", "doc1")
+    new_node = store.get_node("doc1")
+    assert new_node is not None
+    assert new_node["type"] == "document"
