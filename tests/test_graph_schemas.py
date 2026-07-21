@@ -24,9 +24,12 @@ def test_graph_edge_constructs_with_defaults():
     assert edge.id  # auto-generated
 
 
-def test_graph_edge_rejects_invalid_edge_type():
-    with pytest.raises(ValidationError):
-        GraphEdge(source_id="a", target_id="b", edge_type="not_a_real_edge_type")
+def test_graph_edge_accepts_open_text_edge_type():
+    """edge_type validity is enforced in application code against the
+    adapter-extensible vocabulary (smos/ingest/adapters/registry.py), not by
+    this schema — Phase 5 decision, see docs/superpowers/specs/2026-07-17-*."""
+    edge = GraphEdge(source_id="a", target_id="b", edge_type="satisfies")
+    assert edge.edge_type == "satisfies"
 
 
 def test_graph_node_metadata_round_trips():
