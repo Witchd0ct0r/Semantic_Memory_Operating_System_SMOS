@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from smos.ingest.adapters.registry import all_edge_types
 from smos.llm.summarizer import compress_memories_full, reflect_on_memories
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 from smos.tools.ingest_tools import do_semantic_snapshot_repo
 
 _MIN_INPUT_CHARS = 10
-_VALID_EDGE_TYPES = {
-    "references", "depends_on", "related_to",
-    "implements", "contains", "evolves_into", "generated_from",
-}
 
 
 def _validate_text(text: str) -> bool:
@@ -39,7 +36,7 @@ def learn(content: str, store: VectorStore) -> str:
 
 
 def link(id_a: str, id_b: str, edge_type: str, store: VectorStore) -> dict:
-    if edge_type not in _VALID_EDGE_TYPES:
+    if edge_type not in all_edge_types():
         return {"success": False, "error": f"invalid edge_type: {edge_type}"}
     if store.graph.get_node(id_a) is None or store.graph.get_node(id_b) is None:
         return {"success": False, "error": "one or both ids do not exist as graph nodes"}
