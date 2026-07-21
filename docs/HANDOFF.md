@@ -9,9 +9,9 @@ history is the log.
 
 ## Where things stand (2026-07-21)
 
-**Phase 5.2 — Segmentation cascade: COMPLETE**, on branch
-`worktree-phase5-2-segmentation` (6 commits), not yet merged to `main` — see
-"Next actions" below.
+**Phase 5.2 — Segmentation cascade: COMPLETE**, merged to `main` at commit `5f42dd7`
+(feature branch `worktree-phase5-2-segmentation`, 7 commits, fast-forward merge,
+branch deleted after merge).
 
 Builds `smos/ingest/segmenter.py`: a structural → semantic → size-fit cascade
 (Pillar B) over a pure `Span` tree (no I/O, unit-testable on its own), plus an
@@ -101,10 +101,6 @@ sessions on this repo:**
 
 ## Next up — two independent tracks available
 
-**First: merge Phase 5.2.** Branch `worktree-phase5-2-segmentation` is complete and
-reviewed but not yet merged to `main` — run `superpowers:finishing-a-development-branch`
-to decide merge/PR/cleanup before starting new work.
-
 **Track A — Phase 5.3: Ingestion contract + `ingest_tools.py` integration.** Natural
 continuation of 5.2. Pydantic ingestion schema (Pillar G) with quarantine validation,
 wiring `ingest_document_text()` into the actual file-ingestion pipeline, and the
@@ -147,7 +143,7 @@ shipped):
 | Sub-phase | Content | Depends on | Status |
 |---|---|---|---|
 | **5.1** | Foundation: `document` node type, open edge vocab, segment metadata columns, adapter interface + minimal adapter, dedup-scoping exclusion | — | **DONE** (`363a553`) |
-| **5.2** | Segmentation cascade (structural → semantic → size-fit), containment tree (`section` node type, `ingest_document_text`) | 5.1 | **DONE** (branch `worktree-phase5-2-segmentation`, not yet merged) |
+| **5.2** | Segmentation cascade (structural → semantic → size-fit), containment tree (`section` node type, `ingest_document_text`) | 5.1 | **DONE** (`5f42dd7`) |
 | **5.3** | Ingestion contract (Pydantic schema, quarantine validation) + `ingest_tools.py` integration, resumable-checkpoint large-payload path | 5.1, 5.2 | next |
 | **5.4** | Two-stage retrieval: exact/verbatim strategy, ±1 neighbor expansion, `reconstruct()` | 5.1 | queued |
 | **5.5** | Multi-domain traceability & fan-out (Pillar F): domain classification, typed edges, evidence-gathering primitives | 5.1, 5.4 | queued |
