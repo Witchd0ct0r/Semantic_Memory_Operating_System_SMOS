@@ -190,3 +190,42 @@ def test_migrates_legacy_graph_nodes_check_constraint(tmp_path) -> None:
     new_node = store.get_node("doc1")
     assert new_node is not None
     assert new_node["type"] == "document"
+
+
+def test_add_node_section_type_succeeds(graph: GraphStore) -> None:
+    graph.add_node("doc1:section:0", "section", "doc1:section:0")
+    node = graph.get_node("doc1:section:0")
+    assert node is not None
+    assert node["type"] == "section"
+
+
+def test_migrates_5_1_schema_graph_nodes_check_constraint(tmp_path) -> None:
+    """A 5.1-era DB already has 'document' but not 'section' in its CHECK
+    constraint — the migration guard must key off 'section', not 'document',
+    or it will wrongly consider a 5.1 DB already migrated."""
+    db_path = tmp_path / "phase5_1_nodes.db"
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn.execute("""
+        CREATE TABLE graph_nodes (
+            id         TEXT PRIMARY KEY,
+            type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document')),
+            name       TEXT NOT NULL,
+            metadata   TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute(
+        "INSERT INTO graph_nodes (id, type, name, metadata) VALUES ('doc1', 'document', 'doc1', '{}')"
+    )
+    conn.commit()
+
+    store = GraphStore(conn)
+
+    old_node = store.get_node("doc1")
+    assert old_node is not None
+    assert old_node["type"] == "document"
+
+    store.add_node("doc1:section:0", "section", "doc1:section:0")
+    new_node = store.get_node("doc1:section:0")
+    assert new_node is not None
+    assert new_node["type"] == "section"

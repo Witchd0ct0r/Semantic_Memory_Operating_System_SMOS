@@ -29,7 +29,7 @@ class GraphStore:
             self._db.execute("""
                 CREATE TABLE IF NOT EXISTS graph_nodes (
                     id         TEXT PRIMARY KEY,
-                    type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document')),
+                    type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document','section')),
                     name       TEXT NOT NULL,
                     metadata   TEXT,
                     created_at TEXT DEFAULT (datetime('now'))
@@ -50,21 +50,25 @@ class GraphStore:
             self._db.commit()
 
     def _migrate_legacy_graph_nodes_check(self) -> None:
-        """Rebuild graph_nodes if it exists with the pre-Phase-5 CHECK constraint
-        (no 'document' type). SQLite has no ALTER TABLE for CHECK constraints, so
-        this copies existing rows into a freshly-constrained table. Only called
-        from _init_schema, which already holds self._lock — no locking here.
+        """Rebuild graph_nodes if it exists with a CHECK constraint that
+        predates the 'section' type (added Phase 5.2). Covers both pre-Phase-5
+        DBs (no 'document', no 'section') and 5.1-era DBs (has 'document', not
+        'section') — the guard keys off 'section' specifically so a 5.1 DB
+        isn't mistaken for already-migrated. SQLite has no ALTER TABLE for
+        CHECK constraints, so this copies existing rows into a freshly
+        constrained table. Only called from _init_schema, which already holds
+        self._lock — no locking here.
         """
         row = self._db.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='graph_nodes'"
         ).fetchone()
-        if row is None or row[0] is None or "'document'" in row[0]:
+        if row is None or row[0] is None or "'section'" in row[0]:
             return  # table doesn't exist yet, or already migrated
         self._db.execute("ALTER TABLE graph_nodes RENAME TO graph_nodes_legacy")
         self._db.execute("""
             CREATE TABLE graph_nodes (
                 id         TEXT PRIMARY KEY,
-                type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document')),
+                type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document','section')),
                 name       TEXT NOT NULL,
                 metadata   TEXT,
                 created_at TEXT DEFAULT (datetime('now'))
