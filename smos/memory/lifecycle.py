@@ -60,6 +60,9 @@ class LifecycleManager:
             if record is None:
                 processed.add(uuid)
                 continue
+            if record["metadata"]["type"] == "segment":
+                processed.add(uuid)
+                continue
 
             similar = self._store.query(record["content"], k=5)
             for s in similar:
