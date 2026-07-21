@@ -1,0 +1,99 @@
+<svg viewBox="0 0 900 760" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>SMOS multi-domain requirement evaluation flow</title>
+<desc>Answering "what do we need to verify this requirement": resolve the requirement node, traverse its typed traceability links (stakeholder, component, standards, tests), classify the domains it touches (legal, mechanical, EHS, technical), fetch governing documents per domain via two-stage retrieval, assemble an evidence bundle with provenance, run a coverage and gap check, and hand the agent enough to drive a verification conclusion.</desc>
+<defs>
+<marker id="m_arr" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--border-strong)"/></marker>
+<style>
+svg{--text-primary:#2c2b28;--text-secondary:#5f5e5a;--text-muted:#8a8981;--border:#d8d6cd;--border-strong:#b7b5ac;--surface-0:#ECEAFB;--surface-1:#ffffff;--text-accent:#5a4fc0;--font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-family:var(--font-sans)}
+.h{font-size:13px;font-weight:600;fill:var(--text-primary)}
+.sub{font-size:10.5px;fill:var(--text-secondary)}
+.title{font-size:16px;font-weight:700;fill:var(--text-primary)}
+.subtitle{font-size:11px;fill:var(--text-secondary)}
+.box{fill:var(--surface-1);stroke:var(--border-strong);stroke-width:1.5}
+.acc{fill:var(--surface-0);stroke:var(--text-accent);stroke-width:1.75}
+.cont{fill:var(--surface-1);stroke:var(--border-strong);stroke-width:1.5}
+.rb{font-size:11.5px;font-weight:700;fill:var(--text-primary)}
+.pill{fill:var(--surface-1);stroke:var(--border);stroke-width:1}
+.chip{fill:var(--surface-0);stroke:var(--text-accent);stroke-width:1.5}
+.ct{font-size:11px;font-weight:700;fill:var(--text-accent)}
+.pt{font-size:10px;fill:var(--text-primary)}
+.edge{font-size:9px;fill:var(--text-accent);font-weight:600}
+.dh{font-size:10.5px;font-weight:700;fill:var(--text-accent)}
+.ln{stroke:var(--border-strong);stroke-width:1.5}
+.cap{font-size:9.5px;fill:var(--text-muted)}
+</style>
+</defs>
+
+<rect x="0" y="0" width="900" height="760" fill="#F4F2EC"/>
+
+<text x="450" y="24" text-anchor="middle" class="title">Multi-Domain Requirement Evaluation</text>
+<text x="450" y="42" text-anchor="middle" class="subtitle">"What do we need to verify this requirement?"</text>
+
+<rect x="335" y="56" width="230" height="46" rx="8" class="acc"/>
+<text x="450" y="78" text-anchor="middle" class="h">Requirement · Sys.2-014</text>
+<text x="450" y="93" text-anchor="middle" class="sub">resolve &amp; source the node</text>
+<line x1="450" y1="102" x2="450" y2="122" class="ln" marker-end="url(#m_arr)"/>
+
+<rect x="60" y="124" width="780" height="102" rx="9" class="cont"/>
+<text x="76" y="144" class="rb">1 · Traceability traversal — follow typed links</text>
+<rect x="76" y="154" width="170" height="34" rx="6" class="pill"/>
+<text x="161" y="175" text-anchor="middle" class="pt">Sys.1 stakeholder</text>
+<rect x="264" y="154" width="170" height="34" rx="6" class="pill"/>
+<text x="349" y="175" text-anchor="middle" class="pt">component reqs</text>
+<rect x="452" y="154" width="170" height="34" rx="6" class="pill"/>
+<text x="537" y="175" text-anchor="middle" class="pt">standards</text>
+<rect x="640" y="154" width="170" height="34" rx="6" class="pill"/>
+<text x="725" y="175" text-anchor="middle" class="pt">test cases</text>
+<text x="161" y="208" text-anchor="middle" class="edge">derived_from</text>
+<text x="349" y="208" text-anchor="middle" class="edge">allocated_to</text>
+<text x="537" y="208" text-anchor="middle" class="edge">complies_with</text>
+<text x="725" y="208" text-anchor="middle" class="edge">verified_by</text>
+<line x1="450" y1="226" x2="450" y2="244" class="ln" marker-end="url(#m_arr)"/>
+
+<rect x="60" y="246" width="780" height="66" rx="9" class="cont"/>
+<text x="76" y="266" class="rb">2 · Classify the domains this requirement touches</text>
+<rect x="76" y="276" width="170" height="28" rx="14" class="chip"/>
+<text x="161" y="295" text-anchor="middle" class="ct">Legal</text>
+<rect x="264" y="276" width="170" height="28" rx="14" class="chip"/>
+<text x="349" y="295" text-anchor="middle" class="ct">Mechanical</text>
+<rect x="452" y="276" width="170" height="28" rx="14" class="chip"/>
+<text x="537" y="295" text-anchor="middle" class="ct">EHS</text>
+<rect x="640" y="276" width="170" height="28" rx="14" class="chip"/>
+<text x="725" y="295" text-anchor="middle" class="ct">Technical</text>
+<line x1="450" y1="312" x2="450" y2="330" class="ln" marker-end="url(#m_arr)"/>
+
+<rect x="60" y="332" width="780" height="150" rx="9" class="cont"/>
+<text x="76" y="352" class="rb">3 · Fetch governing docs per domain — two-stage retrieval</text>
+<text x="161" y="374" text-anchor="middle" class="dh">Legal</text>
+<text x="349" y="374" text-anchor="middle" class="dh">Mechanical</text>
+<text x="537" y="374" text-anchor="middle" class="dh">EHS</text>
+<text x="725" y="374" text-anchor="middle" class="dh">Technical</text>
+<rect x="86" y="382" width="150" height="22" rx="11" class="pill"/><text x="161" y="397" text-anchor="middle" class="pt">REACH</text>
+<rect x="86" y="410" width="150" height="22" rx="11" class="pill"/><text x="161" y="425" text-anchor="middle" class="pt">RoHS</text>
+<rect x="86" y="438" width="150" height="22" rx="11" class="pill"/><text x="161" y="453" text-anchor="middle" class="pt">national law</text>
+<rect x="274" y="382" width="150" height="22" rx="11" class="pill"/><text x="349" y="397" text-anchor="middle" class="pt">material spec</text>
+<rect x="274" y="410" width="150" height="22" rx="11" class="pill"/><text x="349" y="425" text-anchor="middle" class="pt">tolerance std</text>
+<rect x="462" y="382" width="150" height="22" rx="11" class="pill"/><text x="537" y="397" text-anchor="middle" class="pt">SDS</text>
+<rect x="462" y="410" width="150" height="22" rx="11" class="pill"/><text x="537" y="425" text-anchor="middle" class="pt">substance list</text>
+<rect x="650" y="382" width="150" height="22" rx="11" class="pill"/><text x="725" y="397" text-anchor="middle" class="pt">design spec</text>
+<rect x="650" y="410" width="150" height="22" rx="11" class="pill"/><text x="725" y="425" text-anchor="middle" class="pt">meeting notes</text>
+<line x1="450" y1="482" x2="450" y2="500" class="ln" marker-end="url(#m_arr)"/>
+
+<rect x="250" y="502" width="400" height="50" rx="8" class="acc"/>
+<text x="450" y="524" text-anchor="middle" class="h">4 · Evidence bundle</text>
+<text x="450" y="540" text-anchor="middle" class="sub">each item carries provenance: domain + link path</text>
+<line x1="450" y1="552" x2="450" y2="570" class="ln" marker-end="url(#m_arr)"/>
+
+<rect x="232" y="572" width="436" height="54" rx="8" class="box"/>
+<text x="450" y="593" text-anchor="middle" class="h">5 · Coverage &amp; gap check</text>
+<text x="450" y="609" text-anchor="middle" class="sub">missing domain doc? · no verified_by? · contradictions?</text>
+<line x1="450" y1="626" x2="450" y2="644" class="ln" marker-end="url(#m_arr)"/>
+
+<rect x="290" y="646" width="320" height="44" rx="8" class="acc"/>
+<text x="450" y="672" text-anchor="middle" class="h">Agent drives verification conclusion</text>
+
+<rect x="60" y="716" width="13" height="13" rx="3" class="acc"/>
+<text x="80" y="727" class="cap">accent = requirement · domains · synthesis (SE-specific)</text>
+<rect x="470" y="716" width="13" height="13" rx="3" class="pill"/>
+<text x="490" y="727" class="cap">neutral = source documents / linked items</text>
+</svg>

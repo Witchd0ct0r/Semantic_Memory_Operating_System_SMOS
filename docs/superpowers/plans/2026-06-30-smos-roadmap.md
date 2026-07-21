@@ -273,6 +273,41 @@ Benchmark target: query latency < 10ms at 100K vectors (currently ~35ms with Ind
 
 ---
 
+## Phase 5 — Domain-General Ingestion & Structure-Aware Retrieval
+
+**Estimated sessions:** multi-session, executed as sub-phases (5.1, 5.2, ...) rather than one
+monolithic phase — see `docs/HANDOFF.md`'s sub-phase table for the current breakdown and status.
+
+**Detailed design:** `docs/superpowers/specs/2026-07-17-domain-general-ingestion-and-retrieval-design.md`
+— **that spec is the source of truth for Phase 5**; this entry is a pointer only.
+Diagrams: `docs/superpowers/specs/diagrams/`.
+
+Evolve SMOS from a code-repo-oriented memory into a domain-general knowledge layer: ingest
+large structured documents (legal, requirements, standards) through a versioned ingestion
+contract, segment them on their *own* structure, store segments verbatim + searchable in a
+`document → section → paragraph` tree with lossless reconstruction, and retrieve in two
+stages (lean overview → iterative clarification → exact verbatim provisions) — including
+multi-domain traceability fan-out for systems-engineering evaluation.
+
+**Pillars:** A domain-adapter interface · B structure-aware segmentation cascade · C segment
+storage + linking + reconstruction · D two-stage retrieval + graph-propagation ranking ·
+E iterative clarification loop · F multi-domain traceability & evidence gathering ·
+G ingestion-contract integrity (standalone-server / API use).
+
+**Sequencing constraint — resolved 2026-07-21:** multilingual embeddings are kept as an
+optional, lazy-loaded extra rather than a hard dependency swap, so Phase 5 no longer needs to
+land before Phase 4 (HNSW) on dimensionality-change grounds. The two phases can now proceed
+in either order.
+
+**Status:** all ~13 open decisions in the spec's §11 were resolved with the Governor on
+2026-07-21 (see the spec's §11 and revision log for the full list) — implementation is
+unblocked. The "no new required runtime dependencies" tension was resolved the same way: format
+parsing lives entirely in client-side transformers (never in SMOS), and the multilingual
+embedding model is optional/swappable, so SMOS core still adds zero new required deps.
+Sub-phase 5.1 (Foundation) shipped 2026-07-21, merged `363a553`.
+
+---
+
 ## Known Technical Debt to Address (Any Phase)
 
 | Issue | File | Fix |

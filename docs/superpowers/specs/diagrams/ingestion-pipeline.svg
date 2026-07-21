@@ -1,0 +1,69 @@
+<svg viewBox="0 0 780 620" xmlns="http://www.w3.org/2000/svg" role="img">
+<title>SMOS document ingestion pipeline</title>
+<desc>A vertical pipeline: a document enters, format detection plus a domain adapter supply a structural grammar, a four-layer structure-aware segmentation cascade splits it, each segment is stored verbatim and embedded, a linked segment tree is built in the graph, and everything is persisted to FAISS, SQLite and the graph.</desc>
+<defs>
+<marker id="arr" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--border-strong)"/></marker>
+<style>
+svg{--text-primary:#2c2b28;--text-secondary:#5f5e5a;--text-muted:#8a8981;--border:#d8d6cd;--border-strong:#b7b5ac;--surface-0:#ECEAFB;--surface-1:#ffffff;--text-accent:#5a4fc0;--font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-family:var(--font-sans)}
+.h{font-size:13px;font-weight:600;fill:var(--text-primary)}
+.sub{font-size:10.5px;fill:var(--text-secondary)}
+.title{font-size:16px;font-weight:700;fill:var(--text-primary)}
+.box{fill:var(--surface-1);stroke:var(--border-strong);stroke-width:1.5}
+.acc{fill:var(--surface-1);stroke:var(--text-accent);stroke-width:1.75}
+.acctint{fill:var(--surface-0);stroke:var(--text-accent);stroke-width:1.75}
+.row{fill:var(--surface-1);stroke:var(--border);stroke-width:1}
+.rb{font-size:11px;font-weight:600;fill:var(--text-primary)}
+.rm{font-size:10px;fill:var(--text-muted)}
+.ln{stroke:var(--border-strong);stroke-width:1.5}
+</style>
+</defs>
+
+<rect x="0" y="0" width="780" height="620" fill="#F4F2EC"/>
+
+<text x="390" y="26" text-anchor="middle" class="title">Document Ingestion Pipeline</text>
+
+<rect x="160" y="44" width="460" height="46" rx="8" class="box"/>
+<text x="390" y="66" text-anchor="middle" class="h">Document in</text>
+<text x="390" y="81" text-anchor="middle" class="sub">PDF · DOCX · MD · statute · requirements spec — any domain</text>
+<line x1="390" y1="90" x2="390" y2="110" class="ln" marker-end="url(#arr)"/>
+
+<rect x="160" y="112" width="460" height="50" rx="8" class="acc"/>
+<text x="390" y="133" text-anchor="middle" class="h">Format detect + Domain adapter</text>
+<text x="390" y="149" text-anchor="middle" class="sub">adapter supplies this domain's structural grammar + extraction rules</text>
+<line x1="390" y1="162" x2="390" y2="182" class="ln" marker-end="url(#arr)"/>
+
+<rect x="160" y="184" width="460" height="158" rx="8" class="acctint"/>
+<text x="180" y="205" class="rb">Structure-aware segmentation</text>
+<text x="600" y="205" text-anchor="end" class="rm">fixed-size = last resort</text>
+<rect x="176" y="214" width="428" height="27" rx="5" class="row"/>
+<text x="188" y="231" class="rb">1 · Structural boundaries</text>
+<text x="596" y="231" text-anchor="end" class="rm">headings · § · clause numbers</text>
+<rect x="176" y="244" width="428" height="27" rx="5" class="row"/>
+<text x="188" y="261" class="rb">2 · Semantic split</text>
+<text x="596" y="261" text-anchor="end" class="rm">topic-shift detection</text>
+<rect x="176" y="274" width="428" height="27" rx="5" class="row"/>
+<text x="188" y="291" class="rb">3 · Fit + merge</text>
+<text x="596" y="291" text-anchor="end" class="rm">respect embed window</text>
+<rect x="176" y="304" width="428" height="27" rx="5" class="row"/>
+<text x="188" y="321" class="rb">4 · LLM propose boundaries</text>
+<text x="596" y="321" text-anchor="end" class="rm">hard / unstructured only</text>
+<line x1="390" y1="342" x2="390" y2="362" class="ln" marker-end="url(#arr)"/>
+
+<rect x="160" y="364" width="460" height="48" rx="8" class="box"/>
+<text x="390" y="386" text-anchor="middle" class="h">Store each segment — verbatim + embedded</text>
+<text x="390" y="401" text-anchor="middle" class="sub">exact text, individually searchable</text>
+<line x1="390" y1="412" x2="390" y2="432" class="ln" marker-end="url(#arr)"/>
+
+<rect x="160" y="434" width="460" height="62" rx="8" class="box"/>
+<text x="390" y="454" text-anchor="middle" class="h">Build the linked segment tree</text>
+<text x="390" y="470" text-anchor="middle" class="sub">document → contains → sections → paragraphs</text>
+<text x="390" y="485" text-anchor="middle" class="sub">+ ordinal &amp; char-offset · cross-doc references (extractor)</text>
+<line x1="390" y1="496" x2="390" y2="516" class="ln" marker-end="url(#arr)"/>
+
+<rect x="160" y="518" width="460" height="46" rx="8" class="box"/>
+<text x="390" y="540" text-anchor="middle" class="h">Persisted memory</text>
+<text x="390" y="555" text-anchor="middle" class="sub">FAISS vectors + SQLite + graph</text>
+
+<rect x="160" y="586" width="13" height="13" rx="3" class="acc"/>
+<text x="180" y="597" class="sub">accent = domain-adapted / structure-aware — the parts that differ from plain RAG</text>
+</svg>
