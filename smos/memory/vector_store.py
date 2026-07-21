@@ -99,6 +99,22 @@ class VectorStore:
             conn.execute("ALTER TABLE memories ADD COLUMN last_recalled TEXT")
         except sqlite3.OperationalError:
             pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN doc_id TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN ordinal INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN char_start INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            conn.execute("ALTER TABLE memories ADD COLUMN char_end INTEGER")
+        except sqlite3.OperationalError:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS verbatim (
                 key       TEXT PRIMARY KEY,
@@ -179,8 +195,9 @@ class VectorStore:
             faiss.normalize_L2(vector)
 
             cursor = self._db.execute(
-                "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
+                "doc_id, ordinal, char_start, char_end) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     memory.id,
                     memory.type,
@@ -190,6 +207,10 @@ class VectorStore:
                     memory.tier,
                     ",".join(memory.source_ids),
                     memory.confidence,
+                    memory.doc_id,
+                    memory.ordinal,
+                    memory.char_start,
+                    memory.char_end,
                 ),
             )
             self._db.commit()
@@ -370,13 +391,15 @@ class VectorStore:
     def get_by_uuid(self, uuid: str) -> Optional[dict]:
         with self._lock:
             row = self._db.execute(
-                "SELECT uuid, type, content, timestamp, tags, tier, source_ids, confidence "
+                "SELECT uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
+                "doc_id, ordinal, char_start, char_end "
                 "FROM memories WHERE uuid = ?",
                 (uuid,),
             ).fetchone()
         if row is None:
             return None
-        uuid_, type_, content, timestamp, tags, tier, source_ids, confidence = row
+        (uuid_, type_, content, timestamp, tags, tier, source_ids, confidence,
+         doc_id, ordinal, char_start, char_end) = row
         return {
             "id": uuid_,
             "content": content,
@@ -387,6 +410,10 @@ class VectorStore:
                 "tier": tier,
                 "source_ids": [s for s in source_ids.split(",") if s] if source_ids else [],
                 "confidence": confidence,
+                "doc_id": doc_id,
+                "ordinal": ordinal,
+                "char_start": char_start,
+                "char_end": char_end,
             },
         }
 
@@ -457,8 +484,9 @@ class VectorStore:
                 row_ids: list[int] = []
                 for memory in chunk:
                     cursor = self._db.execute(
-                        "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence) "
-                        "VALUES (?,?,?,?,?,?,?,?)",
+                        "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
+                        "doc_id, ordinal, char_start, char_end) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             memory.id,
                             memory.type,
@@ -468,6 +496,10 @@ class VectorStore:
                             memory.tier,
                             ",".join(memory.source_ids),
                             memory.confidence,
+                            memory.doc_id,
+                            memory.ordinal,
+                            memory.char_start,
+                            memory.char_end,
                         ),
                     )
                     row_ids.append(cursor.lastrowid)

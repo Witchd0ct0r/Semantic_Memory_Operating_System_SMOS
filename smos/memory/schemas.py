@@ -9,13 +9,17 @@ from pydantic import BaseModel, Field
 
 class MemoryObject(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    type: str  # adr / log / doc / issue / episodic / semantic / compressed / reflection
+    type: str  # adr / log / doc / issue / episodic / semantic / compressed / reflection / segment
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     tags: list[str] = Field(default_factory=list)
     tier: str = Field(default="hot")  # hot / warm / cold
     source_ids: list[str] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    doc_id: Optional[str] = None
+    ordinal: Optional[int] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
 
 
 class CompressedContext(BaseModel):
