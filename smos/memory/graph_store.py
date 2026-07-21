@@ -25,6 +25,7 @@ class GraphStore:
     def _init_schema(self) -> None:
         with self._lock:
             self._migrate_legacy_graph_nodes_check()
+            self._migrate_legacy_graph_edges_check()
             self._db.execute("""
                 CREATE TABLE IF NOT EXISTS graph_nodes (
                     id         TEXT PRIMARY KEY,
@@ -39,10 +40,7 @@ class GraphStore:
                     id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
                     source_id  TEXT NOT NULL,
                     target_id  TEXT NOT NULL,
-                    edge_type  TEXT NOT NULL CHECK(edge_type IN (
-                                   'references','depends_on','related_to',
-                                   'implements','contains','evolves_into','generated_from'
-                               )),
+                    edge_type  TEXT NOT NULL,
                     weight     REAL DEFAULT 1.0,
                     metadata   TEXT,
                     created_at TEXT DEFAULT (datetime('now')),
@@ -77,6 +75,38 @@ class GraphStore:
             "SELECT id, type, name, metadata, created_at FROM graph_nodes_legacy"
         )
         self._db.execute("DROP TABLE graph_nodes_legacy")
+        self._db.commit()
+
+    def _migrate_legacy_graph_edges_check(self) -> None:
+        """Rebuild graph_edges if it exists with the pre-Phase-5 CHECK constraint
+        that restricted edge_type to a fixed vocabulary. Phase 5 makes edge_type
+        open TEXT; validity is enforced in application code against the
+        adapter-extensible vocabulary (smos/ingest/adapters/registry.py). Only
+        called from _init_schema, which already holds self._lock.
+        """
+        row = self._db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='graph_edges'"
+        ).fetchone()
+        if row is None or row[0] is None or "CHECK(edge_type" not in row[0]:
+            return  # table doesn't exist yet, or already migrated
+        self._db.execute("ALTER TABLE graph_edges RENAME TO graph_edges_legacy")
+        self._db.execute("""
+            CREATE TABLE graph_edges (
+                id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+                source_id  TEXT NOT NULL,
+                target_id  TEXT NOT NULL,
+                edge_type  TEXT NOT NULL,
+                weight     REAL DEFAULT 1.0,
+                metadata   TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                UNIQUE(source_id, target_id, edge_type)
+            )
+        """)
+        self._db.execute(
+            "INSERT INTO graph_edges (id, source_id, target_id, edge_type, weight, metadata, created_at) "
+            "SELECT id, source_id, target_id, edge_type, weight, metadata, created_at FROM graph_edges_legacy"
+        )
+        self._db.execute("DROP TABLE graph_edges_legacy")
         self._db.commit()
 
     def add_node(

@@ -115,6 +115,54 @@ def test_add_node_document_type_succeeds(graph: GraphStore) -> None:
     assert node["type"] == "document"
 
 
+def test_add_edge_accepts_open_text_edge_type(graph: GraphStore) -> None:
+    graph.add_node("mem1", "memory", "mem1")
+    graph.add_node("req1", "entity", "REQ-1")
+    graph.add_edge("mem1", "req1", "satisfies")
+    assert graph.edge_count() == 1
+
+
+def test_migrates_legacy_graph_edges_check_constraint(tmp_path) -> None:
+    db_path = tmp_path / "legacy_edges.db"
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
+    conn.execute("""
+        CREATE TABLE graph_nodes (
+            id         TEXT PRIMARY KEY,
+            type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document')),
+            name       TEXT NOT NULL,
+            metadata   TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE graph_edges (
+            id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+            source_id  TEXT NOT NULL,
+            target_id  TEXT NOT NULL,
+            edge_type  TEXT NOT NULL CHECK(edge_type IN (
+                           'references','depends_on','related_to',
+                           'implements','contains','evolves_into','generated_from'
+                       )),
+            weight     REAL DEFAULT 1.0,
+            metadata   TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(source_id, target_id, edge_type)
+        )
+    """)
+    conn.execute("INSERT INTO graph_nodes (id, type, name, metadata) VALUES ('mem1','memory','mem1','{}')")
+    conn.execute("INSERT INTO graph_nodes (id, type, name, metadata) VALUES ('req1','entity','REQ-1','{}')")
+    conn.execute(
+        "INSERT INTO graph_edges (source_id, target_id, edge_type) VALUES ('mem1','req1','references')"
+    )
+    conn.commit()
+
+    store = GraphStore(conn)
+
+    assert store.edge_count() == 1
+    store.add_edge("mem1", "req1", "satisfies")
+    assert store.edge_count() == 2
+
+
 def test_migrates_legacy_graph_nodes_check_constraint(tmp_path) -> None:
     db_path = tmp_path / "legacy_nodes.db"
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
