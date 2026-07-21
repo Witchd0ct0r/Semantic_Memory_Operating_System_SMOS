@@ -8,6 +8,9 @@ import numpy as np
 
 from smos.ingest.adapters.base import DomainAdapter
 from smos.memory.embeddings import embed
+from smos.memory.graph_store import GraphStore
+from smos.memory.schemas import MemoryObject
+from smos.memory.vector_store import VectorStore
 
 # Character-based proxy for all-MiniLM-L6-v2's 256-token truncation window.
 # ~4 chars/token for English prose, with margin — avoids loading the
@@ -108,6 +111,27 @@ def _build_span_tree(full_text: str, start: int, end: int, adapter: DomainAdapte
     return node
 
 
+def _absorb_span(target: Span, extra: Span, prepend: bool) -> None:
+    """Fold `extra`'s range into `target` in place. If both are still plain
+    leaves, just widen target's start/end — the union range is correct on
+    its own. If either side already has children (was itself split further),
+    naively stretching start/end and extending .children would silently drop
+    whichever side's range isn't itemized as an actual leaf underneath the
+    merged node, since _flatten_leaves only ever walks .children. Instead,
+    represent each side's own range explicitly as a leaf before splicing, so
+    every absorbed character stays reachable."""
+    if target.is_leaf and extra.is_leaf:
+        target.start = min(target.start, extra.start)
+        target.end = max(target.end, extra.end)
+        return
+
+    target_pieces = target.children if not target.is_leaf else [Span(start=target.start, end=target.end)]
+    extra_pieces = extra.children if not extra.is_leaf else [Span(start=extra.start, end=extra.end)]
+    target.children = (extra_pieces + target_pieces) if prepend else (target_pieces + extra_pieces)
+    target.start = min(target.start, extra.start)
+    target.end = max(target.end, extra.end)
+
+
 def _merge_undersized(full_text: str, node: Span) -> None:
     for child in node.children:
         _merge_undersized(full_text, child)
@@ -121,18 +145,16 @@ def _merge_undersized(full_text: str, node: Span) -> None:
         if text_len < _MIN_SEGMENT_CHARS:
             if merged:
                 # Merge into previous
-                prev = merged[-1]
-                prev.end = child.end
-                prev.children.extend(child.children)
+                _absorb_span(merged[-1], child, prepend=False)
             else:
                 # First child is undersized, add it for now
                 merged.append(child)
         else:
             # Check if last merged item is undersized and merge it into this child
             if merged and len(full_text[merged[-1].start:merged[-1].end].strip()) < _MIN_SEGMENT_CHARS:
-                prev = merged[-1]
-                prev.end = child.end
-                prev.children.extend(child.children)
+                pending = merged.pop()
+                _absorb_span(child, pending, prepend=True)
+                merged.append(child)
             else:
                 merged.append(child)
     node.children[:] = merged
@@ -145,3 +167,79 @@ def _flatten_leaves(node: Span) -> list[Span]:
     for child in node.children:
         leaves.extend(_flatten_leaves(child))
     return leaves
+
+
+def _wire_containment(graph: GraphStore, doc_id: str, root: Span) -> int:
+    """Wire `contains` edges for the containment tree, capped at exactly
+    three levels (document -> section -> segment) per the Phase 5 spec's
+    resolved containment-depth decision — regardless of how deeply the
+    cascade nested structurally. A section node is only created for a
+    top-level child that was itself split further; a top-level child that is
+    already a leaf links directly under the document (skipping a redundant
+    single-child section). Returns the number of section nodes created.
+
+    GraphStore.traverse() treats edges as undirected, so a `contains`
+    traversal from a section node returns both its parent document AND its
+    leaf children in one hop — callers wanting only the children must filter
+    by node type (a section's non-memory neighbor is always its parent, by
+    construction of this three-level cap)."""
+    if root.is_leaf:
+        graph.add_edge(doc_id, root.memory_id, "contains")
+        return 0
+
+    section_count = 0
+    for i, child in enumerate(root.children):
+        if child.is_leaf:
+            graph.add_edge(doc_id, child.memory_id, "contains")
+            continue
+
+        section_id = f"{doc_id}:section:{i}"
+        graph.add_node(section_id, "section", section_id)
+        graph.add_edge(doc_id, section_id, "contains")
+        section_count += 1
+        for leaf in _flatten_leaves(child):
+            graph.add_edge(section_id, leaf.memory_id, "contains")
+
+    return section_count
+
+
+def ingest_document_text(
+    doc_id: str,
+    text: str,
+    store: VectorStore,
+    adapter: DomainAdapter,
+    doc_name: Optional[str] = None,
+) -> dict:
+    """Segment `text` via the structural -> semantic -> size-fit cascade,
+    store each leaf as a searchable `segment` memory, and wire the
+    containment tree (document -> section -> segment) into the memory graph
+    via `contains` edges."""
+    root = _build_span_tree(text, 0, len(text), adapter)
+    _merge_undersized(text, root)
+    leaves = _flatten_leaves(root)
+
+    store.graph.add_node(doc_id, "document", doc_name or doc_id)
+
+    memories = [
+        MemoryObject(
+            type="segment",
+            content=text[leaf.start:leaf.end],
+            doc_id=doc_id,
+            ordinal=i,
+            char_start=leaf.start,
+            char_end=leaf.end,
+        )
+        for i, leaf in enumerate(leaves)
+    ]
+    segment_ids = store.store_batch(memories)
+    for leaf, segment_id in zip(leaves, segment_ids):
+        leaf.memory_id = segment_id
+
+    section_count = _wire_containment(store.graph, doc_id, root)
+
+    return {
+        "doc_id": doc_id,
+        "segment_count": len(segment_ids),
+        "segment_ids": segment_ids,
+        "section_count": section_count,
+    }
