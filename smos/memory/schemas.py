@@ -42,7 +42,7 @@ class FileWriteResult(BaseModel):
 
 class GraphNode(BaseModel):
     id: str
-    type: Literal["entity", "concept", "memory", "repo_component", "snapshot", "agent", "document"]
+    type: Literal["entity", "concept", "memory", "repo_component", "snapshot", "agent", "document", "section"]
     name: str
     metadata: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)

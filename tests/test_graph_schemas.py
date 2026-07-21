@@ -40,3 +40,8 @@ def test_graph_node_metadata_round_trips():
 def test_graph_node_accepts_document_type():
     node = GraphNode(id="doc1", type="document", name="doc1")
     assert node.type == "document"
+
+
+def test_graph_node_accepts_section_type():
+    node = GraphNode(id="doc1:section:0", type="section", name="doc1:section:0")
+    assert node.type == "section"
