@@ -135,3 +135,16 @@ def test_flatten_leaves_returns_leaves_in_document_order():
     ])
     leaves = _flatten_leaves(root)
     assert [(s.start, s.end) for s in leaves] == [(0, 4), (4, 7), (7, 10)]
+
+
+def test_build_span_tree_matches_ingest_document_text_leaves():
+    from smos.ingest.adapters.markdown import MarkdownAdapter
+    from smos.ingest.segmenter import build_span_tree
+
+    text = "# Title\nIntro.\n## Section A\n" + ("Sentence about A. " * 60)
+    root = build_span_tree(text, MarkdownAdapter())
+    leaves = _flatten_leaves(root)
+
+    assert len(leaves) >= 2
+    reconstructed = "".join(text[leaf.start:leaf.end] for leaf in leaves)
+    assert reconstructed == text

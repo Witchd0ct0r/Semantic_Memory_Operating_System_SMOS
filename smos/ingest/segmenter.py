@@ -203,6 +203,15 @@ def _wire_containment(graph: GraphStore, doc_id: str, root: Span) -> int:
     return section_count
 
 
+def build_span_tree(text: str, adapter: DomainAdapter) -> Span:
+    """Build the structural -> semantic -> size-fit span tree for `text` and
+    merge any undersized fragments. Pure, no I/O — shared by `ingest_document_text`
+    and any caller that needs to store leaves itself (e.g. checkpointed ingestion)."""
+    root = _build_span_tree(text, 0, len(text), adapter)
+    _merge_undersized(text, root)
+    return root
+
+
 def ingest_document_text(
     doc_id: str,
     text: str,
@@ -214,8 +223,7 @@ def ingest_document_text(
     store each leaf as a searchable `segment` memory, and wire the
     containment tree (document -> section -> segment) into the memory graph
     via `contains` edges."""
-    root = _build_span_tree(text, 0, len(text), adapter)
-    _merge_undersized(text, root)
+    root = build_span_tree(text, adapter)
     leaves = _flatten_leaves(root)
 
     store.graph.add_node(doc_id, "document", doc_name or doc_id)
