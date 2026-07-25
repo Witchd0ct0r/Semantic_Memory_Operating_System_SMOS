@@ -8,6 +8,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from smos.ingest.adapters.base import DomainAdapter
 from smos.ingest.adapters.registry import all_edge_types
 from smos.memory.vector_store import VectorStore
 
@@ -101,3 +102,63 @@ def quarantine_payload(store: VectorStore, payload: IngestionPayload, errors: li
         errors=json.dumps(errors),
     )
     return key
+
+
+def blocks_to_full_text(blocks: list[ContentBlock]) -> tuple[str, list[tuple[int, int]]]:
+    parts: list[str] = []
+    spans: list[tuple[int, int]] = []
+    pos = 0
+    for block in blocks:
+        parts.append(block.text)
+        spans.append((pos, pos + len(block.text)))
+        pos += len(block.text)
+    return "".join(parts), spans
+
+
+class _NoopAdapter:
+    name = "noop"
+    edge_types: frozenset[str] = frozenset()
+
+    def structural_boundaries(self, text: str) -> list[tuple[int, int]]:
+        return []
+
+    def extract_references(self, text: str) -> list[tuple[str, str, str]]:
+        return []
+
+    def llm_boundary_prompt(self) -> Optional[str]:
+        return None
+
+
+class ContractBlockAdapter:
+    """Wraps a base DomainAdapter so the segmenter's structural layer uses the
+    contract's already-typed block boundaries directly instead of re-detecting
+    structure via regex. Only the top-level call (whose `text` argument equals
+    the entire `full_text`) returns the block spans; any recursive sub-call
+    from the segmenter (operating on a single block's substring) returns no
+    further structural boundaries, since a contract block is already the
+    finest structural unit the client provides — the segmenter's
+    semantic/size-fit layers take over from there."""
+
+    name = "contract-block"
+
+    def __init__(
+        self,
+        base_adapter: DomainAdapter,
+        full_text: str,
+        block_spans: list[tuple[int, int]],
+    ) -> None:
+        self._base = base_adapter
+        self._full_text = full_text
+        self._block_spans = block_spans
+        self.edge_types = base_adapter.edge_types
+
+    def structural_boundaries(self, text: str) -> list[tuple[int, int]]:
+        if text == self._full_text:
+            return self._block_spans
+        return []
+
+    def extract_references(self, text: str) -> list[tuple[str, str, str]]:
+        return self._base.extract_references(text)
+
+    def llm_boundary_prompt(self) -> Optional[str]:
+        return self._base.llm_boundary_prompt()
