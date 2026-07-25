@@ -140,6 +140,17 @@ class VectorStore:
                 quarantined_at TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ingest_checkpoints (
+                doc_id          TEXT PRIMARY KEY,
+                content_hash    TEXT NOT NULL,
+                total_leaves    INTEGER NOT NULL,
+                next_leaf_index INTEGER NOT NULL DEFAULT 0,
+                segment_ids     TEXT NOT NULL DEFAULT '',
+                status          TEXT NOT NULL DEFAULT 'in_progress',
+                updated_at      TEXT NOT NULL
+            )
+        """)
         conn.commit()
         return conn
 
@@ -587,6 +598,60 @@ class VectorStore:
             "key": row[0], "system": row[1], "native_id": row[2],
             "raw_payload": row[3], "errors": row[4], "quarantined_at": row[5],
         }
+
+    def get_segment_ids_by_doc(self, doc_id: str) -> list[str]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT uuid FROM memories WHERE doc_id = ?", (doc_id,)
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def get_checkpoint(self, doc_id: str) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT doc_id, content_hash, total_leaves, next_leaf_index, segment_ids, status, updated_at "
+                "FROM ingest_checkpoints WHERE doc_id = ?",
+                (doc_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "doc_id": row[0],
+            "content_hash": row[1],
+            "total_leaves": row[2],
+            "next_leaf_index": row[3],
+            "segment_ids": [s for s in row[4].split(",") if s] if row[4] else [],
+            "status": row[5],
+            "updated_at": row[6],
+        }
+
+    def save_checkpoint(
+        self,
+        doc_id: str,
+        content_hash: str,
+        total_leaves: int,
+        next_leaf_index: int,
+        segment_ids: list[str],
+        status: str,
+    ) -> None:
+        ts = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO ingest_checkpoints "
+                "(doc_id, content_hash, total_leaves, next_leaf_index, segment_ids, status, updated_at) "
+                "VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(doc_id) DO UPDATE SET "
+                "content_hash=excluded.content_hash, total_leaves=excluded.total_leaves, "
+                "next_leaf_index=excluded.next_leaf_index, segment_ids=excluded.segment_ids, "
+                "status=excluded.status, updated_at=excluded.updated_at",
+                (doc_id, content_hash, total_leaves, next_leaf_index, ",".join(segment_ids), status, ts),
+            )
+            self._db.commit()
+
+    def delete_checkpoint(self, doc_id: str) -> None:
+        with self._lock:
+            self._db.execute("DELETE FROM ingest_checkpoints WHERE doc_id = ?", (doc_id,))
+            self._db.commit()
 
     def close(self) -> None:
         with self._lock:
