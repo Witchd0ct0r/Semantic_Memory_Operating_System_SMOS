@@ -75,3 +75,48 @@ def recall_exact(query_text: str, k: int, store: VectorStore) -> dict:
         "confidence": 1.0,
         "mode": "extractive",
     }
+
+
+def reconstruct(store: VectorStore, node_id: str) -> dict:
+    """Rebuild the verbatim text under a `document` or `section` graph node
+    (spec §7): fetch its segments, order by `ordinal`, concatenate. Because
+    `GraphStore.traverse()` is undirected (see `_wire_containment`'s
+    docstring in `smos/ingest/segmenter.py`), a section's 1-hop neighbors
+    include its parent document alongside its leaf children — filtering to
+    `type == "memory"` excludes the parent without needing a directed
+    traversal. `complete` is False when the concatenated segments have a gap
+    (their char offsets aren't contiguous) — e.g. a document whose
+    containment tree isn't fully wired yet (still mid-checkpoint)."""
+    node = store.graph.get_node(node_id)
+    if node is None or node["type"] not in ("document", "section"):
+        return {
+            "node_id": node_id, "text": "", "segment_count": 0,
+            "complete": False, "error": "node not found, or not a document/section node",
+        }
+
+    direct = store.graph.traverse(node_id, max_hops=1, edge_types=["contains"])
+    segment_ids = [n["id"] for n in direct if n["type"] == "memory"]
+    for section in (n for n in direct if n["type"] == "section"):
+        section_children = store.graph.traverse(section["id"], max_hops=1, edge_types=["contains"])
+        segment_ids.extend(n["id"] for n in section_children if n["type"] == "memory")
+
+    records = [store.get_by_uuid(sid) for sid in segment_ids]
+    records = [r for r in records if r is not None and r["metadata"].get("ordinal") is not None]
+    records.sort(key=lambda r: r["metadata"]["ordinal"])
+
+    text = "".join(r["content"] for r in records)
+    complete = True
+    prev_end = None
+    for r in records:
+        char_start = r["metadata"].get("char_start")
+        if prev_end is not None and char_start != prev_end:
+            complete = False
+        prev_end = r["metadata"].get("char_end")
+
+    return {
+        "node_id": node_id,
+        "text": text,
+        "segment_count": len(records),
+        "complete": complete,
+        "error": None,
+    }
