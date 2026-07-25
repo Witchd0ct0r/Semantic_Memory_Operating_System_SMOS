@@ -100,3 +100,32 @@ def test_recall_chain_ignores_references_edges(store: VectorStore) -> None:
     m1 = store.store(_mem("The `Foo` class is defined here."))
     result = recall("", "chain", 2, "", "", m1, "", store)
     assert result["sources"] == []
+
+
+def test_recall_exact_returns_verbatim_segments(store: VectorStore) -> None:
+    store.store(_mem(
+        "Article 9(2)(b) permits processing with explicit consent.",
+        doc_id="doc-1", ordinal=0, char_start=0, char_end=58,
+    ))
+    result = recall("explicit consent processing", "exact", 3, "", "", "", "", store)
+    assert result["mode"] == "extractive"
+    assert result["segments"]
+    assert result["segments"][0]["content"] == "Article 9(2)(b) permits processing with explicit consent."
+
+
+def test_recall_exact_no_matches_returns_uncertain(store: VectorStore) -> None:
+    result = recall("nothing matches this", "exact", 3, "", "", "", "", store)
+    assert result["sources"] == []
+    assert result["mode"] == "uncertain"
+
+
+def test_recall_exact_bumps_recall_count(store: VectorStore) -> None:
+    mem_id = store.store(_mem(
+        "Requirement REQ-42 governs password rotation cadence.",
+        doc_id="doc-2", ordinal=0, char_start=0, char_end=54,
+    ))
+    recall("password rotation cadence", "exact", 3, "", "", "", "", store)
+    row = store._db.execute(
+        "SELECT recall_count FROM memories WHERE uuid = ?", (mem_id,)
+    ).fetchone()
+    assert row[0] == 1
