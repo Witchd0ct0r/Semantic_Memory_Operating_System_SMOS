@@ -292,13 +292,15 @@ class VectorStore:
                 if row_id == -1:
                     continue
                 row = self._db.execute(
-                    "SELECT uuid, type, content, timestamp, tags, tier "
+                    "SELECT uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
+                    "doc_id, ordinal, char_start, char_end "
                     "FROM memories WHERE row_id = ?",
                     (int(row_id),),
                 ).fetchone()
                 if row is None:
                     continue
-                uuid_, type_, content, timestamp, tags, tier = row
+                (uuid_, type_, content, timestamp, tags, tier, source_ids, confidence,
+                 doc_id, ordinal, char_start, char_end) = row
 
                 if domain_tags:
                     tag_set = {t.strip() for t in tags.split(",") if t.strip()}
@@ -313,6 +315,12 @@ class VectorStore:
                         "timestamp": timestamp,
                         "tags": tags,
                         "tier": tier,
+                        "source_ids": [s for s in source_ids.split(",") if s] if source_ids else [],
+                        "confidence": confidence,
+                        "doc_id": doc_id,
+                        "ordinal": ordinal,
+                        "char_start": char_start,
+                        "char_end": char_end,
                     },
                     "distance": float(1.0 - score),
                     "score": float(score),
@@ -605,6 +613,16 @@ class VectorStore:
                 "SELECT uuid FROM memories WHERE doc_id = ?", (doc_id,)
             ).fetchall()
         return [r[0] for r in rows]
+
+    def get_segment_by_ordinal(self, doc_id: str, ordinal: int) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT uuid FROM memories WHERE doc_id = ? AND ordinal = ?",
+                (doc_id, ordinal),
+            ).fetchone()
+        if row is None:
+            return None
+        return self.get_by_uuid(row[0])
 
     def get_checkpoint(self, doc_id: str) -> Optional[dict]:
         with self._lock:
