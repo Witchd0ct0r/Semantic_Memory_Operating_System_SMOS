@@ -24,7 +24,11 @@ from smos.tools.ingest_tools import (
     do_recursive_semantic_ingest,
     do_bulk_read,
     do_semantic_snapshot_repo,
+    do_ingest_document_schema,
 )
+from pydantic import ValidationError
+
+from smos.ingest.contract import IngestionPayload
 from smos.tools.semantic_tools import (
     _MIN_INPUT_CHARS,
     _INVALID_INPUT_RESPONSE,
@@ -423,6 +427,31 @@ def tool_bulk_read(paths: str) -> dict:
     path_list = [p.strip() for p in paths.split(",") if p.strip()]
     try:
         return do_bulk_read(path_list)
+    except Exception as exc_:
+        return {"status": "error", "error": f"{type(exc_).__name__}: {str(exc_)[:300]}"}
+
+
+@app.tool()
+def tool_ingest_document(payload_json: str) -> dict:
+    """Ingest a structure-preserving document via the versioned ingestion contract.
+
+    Non-conforming payloads are quarantined (not rejected) with validation
+    errors returned so the client can inspect and resubmit. Re-ingesting the
+    same external_handle (system + native_id) is an idempotent upsert: it
+    replaces a prior completed ingest, or resumes a prior interrupted one if
+    the content is unchanged.
+
+    Args:
+        payload_json: JSON string matching smos.ingest.contract.IngestionPayload
+                      (schema_version, external_handle{system,native_id,...},
+                      blocks[{block_type,text,heading_level?,source_anchor?}], ...).
+    """
+    try:
+        payload = IngestionPayload.model_validate_json(payload_json)
+    except ValidationError as exc:
+        return {"status": "error", "error": f"schema violation: {str(exc)[:500]}"}
+    try:
+        return do_ingest_document_schema(payload, _store)
     except Exception as exc_:
         return {"status": "error", "error": f"{type(exc_).__name__}: {str(exc_)[:300]}"}
 
