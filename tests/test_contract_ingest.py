@@ -151,3 +151,75 @@ def test_containment_not_wired_until_ingest_completes(store: VectorStore) -> Non
 
     neighbors = store.graph.traverse(doc_id, max_hops=1, edge_types=["contains"])
     assert neighbors == []
+
+
+def test_multi_chunk_ingest_exceeds_checkpoint_chunk_size(store: VectorStore) -> None:
+    # No sentence-terminal punctuation, so the segmenter's semantic layer sees
+    # one giant "sentence" and falls straight through to fixed-size 700-char
+    # windowing — deterministically ceil(50000/700) = 72 leaves, comfortably
+    # over _CHECKPOINT_CHUNK_SIZE (64), exercising the chunk loop's second
+    # iteration and its cross-chunk ordinal/index bookkeeping.
+    text = ("word " * 10000).strip()
+    payload = IngestionPayload(
+        external_handle=ExternalHandle(system="wiki", native_id="doc-multichunk"),
+        blocks=[ContentBlock(block_type="paragraph", text=text)],
+    )
+
+    result = do_ingest_document_schema(payload, store)
+
+    assert result["status"] == "success"
+    assert len(result["segment_ids"]) > 64
+    checkpoint = store.get_checkpoint(result["doc_id"])
+    assert checkpoint is not None
+    assert checkpoint["status"] == "complete"
+    assert checkpoint["next_leaf_index"] == len(result["segment_ids"])
+
+
+def test_resume_reconciles_orphan_segments_from_crash_window(store: VectorStore) -> None:
+    # Simulates the crash window between store.store_batch() committing a
+    # chunk's segments and store.save_checkpoint() recording that chunk: the
+    # segments physically exist under doc_id, but the checkpoint's
+    # segment_ids list doesn't include one of them (the "orphan"). On resume,
+    # do_ingest_document_schema must reconcile — delete the orphan and
+    # re-store fresh, deduplicated segments — rather than leaving the orphan
+    # alongside a freshly stored duplicate.
+    text = (
+        "# Title\nIntro paragraph text goes here.\n"
+        "## Section A\n" + ("Sentence about topic A. " * 60) + "\n"
+        "## Section B\nShort body B.\n"
+    )
+    payload = _markdown_payload(text, "wiki", "doc-orphan")
+    doc_id = derive_doc_id("wiki", "doc-orphan")
+    full_text, block_spans = blocks_to_full_text(payload.blocks)
+    adapter = ContractBlockAdapter(_NoopAdapter(), full_text, block_spans)
+    root = build_span_tree(full_text, adapter)
+    leaves = _flatten_leaves(root)
+    assert len(leaves) >= 3
+
+    partial_count = 2
+    partial_memories = [
+        MemoryObject(
+            type="segment", content=full_text[leaf.start:leaf.end],
+            doc_id=doc_id, ordinal=i, char_start=leaf.start, char_end=leaf.end,
+        )
+        for i, leaf in enumerate(leaves[:partial_count])
+    ]
+    partial_ids = store.store_batch(partial_memories)
+    store.graph.add_node(doc_id, "document", doc_id)
+    # Checkpoint only records the first id — the second is an "orphan" that
+    # was persisted (store_batch succeeded) but never made it into a
+    # checkpoint write (the process "crashed" before save_checkpoint ran).
+    orphan_id = partial_ids[1]
+    store.save_checkpoint(
+        doc_id=doc_id, content_hash=content_hash(full_text), total_leaves=len(leaves),
+        next_leaf_index=1, segment_ids=[partial_ids[0]], status="in_progress",
+    )
+
+    result = do_ingest_document_schema(payload, store)
+
+    assert result["status"] == "success"
+    assert result["resumed"] is True
+    assert result["segment_count"] == len(leaves)
+    assert len(result["segment_ids"]) == len(set(result["segment_ids"]))
+    assert orphan_id not in result["segment_ids"]
+    assert store.get_by_uuid(orphan_id) is None

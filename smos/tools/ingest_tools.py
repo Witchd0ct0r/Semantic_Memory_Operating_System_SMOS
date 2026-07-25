@@ -35,7 +35,7 @@ from smos.ingest.contract import (
     quarantine_payload,
     validate_payload,
 )
-from smos.ingest.segmenter import Span, _flatten_leaves, _wire_containment, build_span_tree
+from smos.ingest.segmenter import _flatten_leaves, _wire_containment, build_span_tree
 
 # ─── Filesystem constants ────────────────────────────────────────────────────
 
@@ -657,6 +657,27 @@ def do_ingest_document_schema(
     block_adapter = ContractBlockAdapter(base_adapter, full_text, block_spans)
     root = build_span_tree(full_text, block_adapter)
     leaves = _flatten_leaves(root)
+
+    if checkpoint is not None and checkpoint["total_leaves"] != len(leaves):
+        # Segmentation of identical content produced a different leaf count than
+        # the checkpointed run (should not happen since content_hash matched, but
+        # guards against non-determinism rather than silently misaligning leaves
+        # to the wrong stored segment ids).
+        delete_document_segments(store, doc_id)
+        store.delete_checkpoint(doc_id)
+        checkpoint = None
+        resumed = False
+
+    if resumed:
+        # A crash between store_batch() committing a chunk's segments and
+        # save_checkpoint() recording that chunk can leave segments stored
+        # under this doc_id that the checkpoint doesn't know about yet.
+        # Reconcile before continuing so they aren't duplicated below.
+        actual_ids = set(store.get_segment_ids_by_doc(doc_id))
+        checkpoint_ids = set(checkpoint["segment_ids"])
+        orphans = list(actual_ids - checkpoint_ids)
+        if orphans:
+            store.delete_batch(orphans)
 
     store.graph.add_node(doc_id, "document", payload.doc_name or doc_id)
 
