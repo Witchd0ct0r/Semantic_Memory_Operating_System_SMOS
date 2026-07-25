@@ -24,6 +24,18 @@ from smos.llm.client import get_llm_client, OLLAMA_MODEL
 from smos.llm.summarizer import summarize_text
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
+from smos.ingest.adapters.base import DomainAdapter
+from smos.ingest.contract import (
+    ContractBlockAdapter,
+    IngestionPayload,
+    _NoopAdapter,
+    blocks_to_full_text,
+    content_hash,
+    derive_doc_id,
+    quarantine_payload,
+    validate_payload,
+)
+from smos.ingest.segmenter import Span, _flatten_leaves, _wire_containment, build_span_tree
 
 # ─── Filesystem constants ────────────────────────────────────────────────────
 
@@ -585,4 +597,118 @@ def do_semantic_snapshot_repo(path: str, store: VectorStore) -> dict:
         "memories_created": ingest.get("memories_created", 0),
         "snapshot_memory_id": snapshot_id,
         "time_seconds": round(time.perf_counter() - t0, 2),
+    }
+
+
+# ─── Schema-driven ingestion (Pillar G) ───────────────────────────────────────
+
+_CHECKPOINT_CHUNK_SIZE = 64
+
+
+def delete_document_segments(store: VectorStore, doc_id: str) -> None:
+    """Remove all segments and section nodes for `doc_id`, leaving the
+    `document` graph node itself intact (re-sync repopulates underneath it,
+    it doesn't need to be recreated)."""
+    segment_ids = store.get_segment_ids_by_doc(doc_id)
+    if segment_ids:
+        store.delete_batch(segment_ids)
+    sections = [
+        n for n in store.graph.traverse(doc_id, max_hops=1, edge_types=["contains"])
+        if n["type"] == "section"
+    ]
+    for section in sections:
+        store.graph.remove_node(section["id"])
+
+
+def do_ingest_document_schema(
+    payload: IngestionPayload,
+    store: VectorStore,
+    adapter: Optional[DomainAdapter] = None,
+) -> dict:
+    """Validate, segment, and store a structure-preserving ingestion payload.
+
+    Deterministic-id upsert: re-ingesting the same external_handle
+    (system+native_id) resolves to the same doc_id. A prior complete ingest
+    is replaced; a prior in-progress checkpoint with matching content is
+    resumed from where it left off; a prior in-progress checkpoint with
+    different content (client sent an update mid-flight) is discarded and
+    restarted.
+    """
+    errors = validate_payload(payload)
+    if errors:
+        key = quarantine_payload(store, payload, errors)
+        return {"status": "quarantined", "quarantine_key": key, "errors": errors}
+
+    doc_id = derive_doc_id(payload.external_handle.system, payload.external_handle.native_id)
+    full_text, block_spans = blocks_to_full_text(payload.blocks)
+    text_hash = content_hash(full_text)
+
+    checkpoint = store.get_checkpoint(doc_id)
+    resumed = False
+    if checkpoint is not None:
+        if checkpoint["status"] == "complete" or checkpoint["content_hash"] != text_hash:
+            delete_document_segments(store, doc_id)
+            store.delete_checkpoint(doc_id)
+            checkpoint = None
+        else:
+            resumed = True
+
+    base_adapter = adapter or _NoopAdapter()
+    block_adapter = ContractBlockAdapter(base_adapter, full_text, block_spans)
+    root = build_span_tree(full_text, block_adapter)
+    leaves = _flatten_leaves(root)
+
+    store.graph.add_node(doc_id, "document", payload.doc_name or doc_id)
+
+    start_index = checkpoint["next_leaf_index"] if checkpoint else 0
+    segment_ids: list[str] = list(checkpoint["segment_ids"]) if checkpoint else []
+
+    for leaf, sid in zip(leaves[:start_index], segment_ids):
+        leaf.memory_id = sid
+
+    remaining = leaves[start_index:]
+    for offset in range(0, len(remaining), _CHECKPOINT_CHUNK_SIZE):
+        chunk = remaining[offset : offset + _CHECKPOINT_CHUNK_SIZE]
+        chunk_index_start = start_index + offset
+        memories = [
+            MemoryObject(
+                type="segment",
+                content=full_text[leaf.start : leaf.end],
+                doc_id=doc_id,
+                ordinal=chunk_index_start + i,
+                char_start=leaf.start,
+                char_end=leaf.end,
+            )
+            for i, leaf in enumerate(chunk)
+        ]
+        chunk_ids = store.store_batch(memories)
+        for leaf, sid in zip(chunk, chunk_ids):
+            leaf.memory_id = sid
+        segment_ids.extend(chunk_ids)
+        store.save_checkpoint(
+            doc_id=doc_id,
+            content_hash=text_hash,
+            total_leaves=len(leaves),
+            next_leaf_index=chunk_index_start + len(chunk),
+            segment_ids=segment_ids,
+            status="in_progress",
+        )
+
+    section_count = _wire_containment(store.graph, doc_id, root)
+    store.save_checkpoint(
+        doc_id=doc_id,
+        content_hash=text_hash,
+        total_leaves=len(leaves),
+        next_leaf_index=len(leaves),
+        segment_ids=segment_ids,
+        status="complete",
+    )
+
+    return {
+        "status": "success",
+        "doc_id": doc_id,
+        "segment_count": len(segment_ids),
+        "segment_ids": segment_ids,
+        "section_count": section_count,
+        "resumed": resumed,
     }
