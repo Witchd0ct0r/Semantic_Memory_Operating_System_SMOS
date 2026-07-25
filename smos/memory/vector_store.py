@@ -130,6 +130,16 @@ class VectorStore:
                 ingested_at TEXT NOT NULL
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS ingest_quarantine (
+                key            TEXT PRIMARY KEY,
+                system         TEXT NOT NULL,
+                native_id      TEXT NOT NULL,
+                raw_payload    TEXT NOT NULL,
+                errors         TEXT NOT NULL,
+                quarantined_at TEXT NOT NULL
+            )
+        """)
         conn.commit()
         return conn
 
@@ -551,6 +561,32 @@ class VectorStore:
                 [(p, mid, ts) for p, mid in path_id_pairs],
             )
             self._db.commit()
+
+    def save_quarantine(
+        self, key: str, system: str, native_id: str, raw_payload: str, errors: str
+    ) -> None:
+        ts = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO ingest_quarantine (key, system, native_id, raw_payload, errors, quarantined_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (key, system, native_id, raw_payload, errors, ts),
+            )
+            self._db.commit()
+
+    def get_quarantine(self, key: str) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT key, system, native_id, raw_payload, errors, quarantined_at "
+                "FROM ingest_quarantine WHERE key = ?",
+                (key,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "key": row[0], "system": row[1], "native_id": row[2],
+            "raw_payload": row[3], "errors": row[4], "quarantined_at": row[5],
+        }
 
     def close(self) -> None:
         with self._lock:
