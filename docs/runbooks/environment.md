@@ -26,3 +26,27 @@ Python version manager or anything else; the fix is simply to stop using
 A local `rtk` hook occasionally makes a bare `pytest tests/ ...` report "No
 tests collected" even though tests exist. Retry the exact same command via
 `rtk proxy pytest tests/ ...` before concluding anything is actually broken.
+
+## No `smos` MCP server is registered on this machine (as of 2026-07-27)
+
+`claude mcp list` does not show a `smos` server — despite this repo's own
+CLAUDE.md and `smos/install/cli.py` describing a `claude mcp add smos
+--scope user -- smos-server` registration step, that step has not been run
+(or was undone) on this machine. Don't assume a live SMOS MCP connection
+exists; verify with `claude mcp list` before writing a plan that depends on
+one (a headless `claude -p` subprocess connecting to it, an in-session
+`mcp__smos__*` tool call, etc.).
+
+If you need the real retrieval mechanism without the MCP layer, call the
+underlying functions directly instead: `smos.tools.semantic_tools.semantic_query`,
+`smos.memory.recall_engine.recall`, `smos.memory.exact_retrieval.reconstruct`,
+each bound to a `VectorStore(persist_path=...)` — these are exactly what
+`tool_semantic_query`/`tool_recall`/`tool_reconstruct` thinly wrap in
+`smos/server.py`. See `sandbox/toolchain-benchmark/scripts/smos_tools.py`
+(from the 2026-07-27 toolchain benchmark) for a working example.
+
+To actually install it: run `python -m smos.install.cli` (or however this
+repo's installer is invoked — check `smos/install/cli.py`'s `_setup()`) —
+this registers the MCP server at **user scope**, affecting every Claude
+Code project on this machine, not just this repo. Confirm with the user
+before running it.
