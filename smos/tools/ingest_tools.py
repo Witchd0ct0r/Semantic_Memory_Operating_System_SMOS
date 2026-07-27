@@ -679,7 +679,10 @@ def do_ingest_document_schema(
         if orphans:
             store.delete_batch(orphans)
 
-    store.graph.add_node(doc_id, "document", payload.doc_name or doc_id)
+    store.graph.add_node(
+        doc_id, "document", payload.doc_name or doc_id,
+        metadata={"domain_tags": payload.domain_tags},
+    )
 
     start_index = checkpoint["next_leaf_index"] if checkpoint else 0
     segment_ids: list[str] = list(checkpoint["segment_ids"]) if checkpoint else []
@@ -699,6 +702,7 @@ def do_ingest_document_schema(
                 ordinal=chunk_index_start + i,
                 char_start=leaf.start,
                 char_end=leaf.end,
+                tags=list(payload.domain_tags),
             )
             for i, leaf in enumerate(chunk)
         ]

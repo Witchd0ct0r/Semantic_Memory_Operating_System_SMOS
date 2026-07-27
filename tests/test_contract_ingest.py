@@ -245,3 +245,37 @@ def test_schema_ingest_reference_count_is_zero_without_adapter(store: VectorStor
     payload = _markdown_payload("# T\nBody text with no references.\n", "wiki", "doc-no-adapter")
     result = do_ingest_document_schema(payload, store)
     assert result["reference_count"] == 0
+
+
+def test_domain_tags_persist_on_document_node_metadata(store: VectorStore) -> None:
+    payload = IngestionPayload(
+        external_handle=ExternalHandle(system="wiki", native_id="doc-domains"),
+        blocks=[ContentBlock(
+            block_type="paragraph",
+            text="Body text about lead and cadmium exposure limits for covered products.",
+        )],
+        domain_tags=["legal", "environmental"],
+    )
+    result = do_ingest_document_schema(payload, store)
+
+    assert result["status"] == "success"
+    doc_node = store.graph.get_node(result["doc_id"])
+    assert doc_node["metadata"]["domain_tags"] == ["legal", "environmental"]
+
+
+def test_domain_tags_persist_on_segments_and_scope_query_domain(store: VectorStore) -> None:
+    payload = IngestionPayload(
+        external_handle=ExternalHandle(system="wiki", native_id="doc-domains-2"),
+        blocks=[ContentBlock(
+            block_type="paragraph",
+            text="Body text about lead and cadmium exposure limits for covered products.",
+        )],
+        domain_tags=["environmental"],
+    )
+    result = do_ingest_document_schema(payload, store)
+
+    scoped = store.query_domain("lead cadmium exposure limits", k=5, domain_tags=["environmental"])
+    assert any(r["id"] in result["segment_ids"] for r in scoped)
+
+    unscoped = store.query_domain("lead cadmium exposure limits", k=5, domain_tags=["unrelated-domain"])
+    assert not any(r["id"] in result["segment_ids"] for r in unscoped)
