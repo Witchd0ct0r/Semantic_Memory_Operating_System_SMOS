@@ -23,6 +23,10 @@ logs/
 *.db-wal
 *.index
 
+# Sandbox — isolated scratch projects (e.g. toolchain benchmark corpus + its
+# own fresh .smos/ store), kept out of this repo's own dogfood data
+sandbox/
+
 # Tests
 .pytest_cache/
 .coverage

@@ -103,6 +103,14 @@ session, not assumed from this note.
 8. **Evaluate the results** — token efficiency vs. answer quality/correctness across
    both runs; write up the comparison.
 
+**Designated project directory — RESOLVED (2026-07-27):** `sandbox/toolchain-benchmark/`
+inside this repo, not an external folder. `sandbox/` is gitignored wholesale (see
+`.gitignore`) so it and any `.smos/` store created under it never enter version control
+and never get scanned/ingested by this repo's own tooling — same isolation goal as an
+external folder, without leaving the repo. The corpus, the benchmark's own fresh
+`.smos/` store, and any question sets / result logs for this benchmark all live under
+that path.
+
 **Open decisions for the next session to resolve before starting:**
 - Where the corpus actually comes from (a real public k8s doc set already on disk,
   or something to fetch — check licensing before bulk-copying any external corpus).
@@ -111,9 +119,6 @@ session, not assumed from this note.
 - How answer quality gets scored (a rubric, a third independent judge, or manual
   grading) — needs to be decided before dispatching the two subagents so both are
   scored the same way.
-- Whether "designated project directory" means a new folder on this machine outside
-  `C:\private\semantic_memory` entirely (recommended, to keep `.smos/` isolated) or
-  a subdirectory — not yet decided.
 
 ---
 
