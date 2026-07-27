@@ -97,3 +97,32 @@ def test_segment_ordinals_are_sequential_and_reconstruct_original_text(store: Ve
         text[r["metadata"]["char_start"]:r["metadata"]["char_end"]] for r in records
     )
     assert reconstructed == text
+
+
+def test_ingest_document_text_wires_reference_edges_for_shared_concepts(store: VectorStore) -> None:
+    text = (
+        "# Title\n"
+        "## Definitions\nCovered Institution means any entity that holds more than ten billion dollars.\n"
+        "## Stress Test\nAnnual results for a [Covered Institution](#definitions) must be submitted by March 31.\n"
+    )
+    result = ingest_document_text("doc-refs", text, store, MarkdownAdapter())
+
+    assert result["reference_count"] >= 1
+    assert store.graph.get_node("concept:definitions") is not None
+
+    defs_id = next(
+        sid for sid in result["segment_ids"]
+        if "Covered Institution means" in store.get_by_uuid(sid)["content"]
+    )
+    stress_id = next(
+        sid for sid in result["segment_ids"]
+        if "Annual results" in store.get_by_uuid(sid)["content"]
+    )
+    neighbors = store.graph.traverse(defs_id, max_hops=2, edge_types=["references"])
+    assert any(n["id"] == stress_id and n["type"] == "memory" for n in neighbors)
+
+
+def test_ingest_document_text_reference_count_is_zero_without_adapter_support(store: VectorStore) -> None:
+    text = "A short document with no headings and no need to split further."
+    result = ingest_document_text("doc-no-refs", text, store, _NoStructureAdapter())
+    assert result["reference_count"] == 0

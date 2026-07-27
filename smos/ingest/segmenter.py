@@ -203,6 +203,46 @@ def _wire_containment(graph: GraphStore, doc_id: str, root: Span) -> int:
     return section_count
 
 
+_REFERENCE_LOOKBACK_CHARS = 300
+
+
+def _wire_references(
+    graph: GraphStore, adapter: DomainAdapter, full_text: str, leaves: list[Span]
+) -> int:
+    """Ask the adapter for cross-references near each leaf and wire them as
+    `segment --edge_type--> concept:{target_name}` edges — the same shape
+    `VectorStore._update_graph` already uses for code entities
+    (`memory --references--> entity:{name}`). Two segments whose extracted
+    triples share a target_name (normalized to lowercase) become connected
+    through the shared concept node; `context_builder.py`'s existing 2-hop
+    `edge_types=["references"]` graph-expansion step already walks exactly
+    this shape, so no retrieval-side change is needed for it to take effect.
+
+    Calls the adapter with a lookback window into `full_text` ending at each
+    leaf, not just the leaf's own text — a client-supplied ingestion payload
+    (Pillar G) commonly delivers a heading and its body as separate
+    ContentBlocks, which become separate leaves with no heading text of
+    their own; the lookback window recovers the nearest preceding heading
+    regardless of which leaf boundary split it from its body.
+
+    `source_name` is part of the DomainAdapter contract but unused here;
+    edge_type must be one the adapter actually declares (`adapter.edge_types`)."""
+    valid_edge_types = adapter.edge_types
+    count = 0
+    for leaf in leaves:
+        if leaf.memory_id is None:
+            continue
+        window = full_text[max(0, leaf.start - _REFERENCE_LOOKBACK_CHARS):leaf.end]
+        for _source_name, target_name, edge_type in adapter.extract_references(window):
+            if edge_type not in valid_edge_types:
+                continue
+            concept_id = f"concept:{target_name.strip().lower()}"
+            graph.add_node(concept_id, "concept", target_name.strip())
+            graph.add_edge(leaf.memory_id, concept_id, edge_type)
+            count += 1
+    return count
+
+
 def build_span_tree(text: str, adapter: DomainAdapter) -> Span:
     """Build the structural -> semantic -> size-fit span tree for `text` and
     merge any undersized fragments. Pure, no I/O — shared by `ingest_document_text`
@@ -244,10 +284,12 @@ def ingest_document_text(
         leaf.memory_id = segment_id
 
     section_count = _wire_containment(store.graph, doc_id, root)
+    reference_count = _wire_references(store.graph, adapter, text, leaves)
 
     return {
         "doc_id": doc_id,
         "segment_count": len(segment_ids),
         "segment_ids": segment_ids,
         "section_count": section_count,
+        "reference_count": reference_count,
     }
