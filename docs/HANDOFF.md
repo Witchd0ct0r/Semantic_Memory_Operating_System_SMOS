@@ -9,8 +9,14 @@ history is the log.
 
 ## Where things stand (2026-07-27)
 
-**Next up — full toolchain end-to-end benchmark (new, not yet started, see below the
-Phase 5.5a summary for the concrete brief.)**
+**Toolchain end-to-end benchmark: COMPLETE.** SMOS tools vs. raw file reading over a
+20-page Kubernetes-docs corpus — full results and methodology in
+`docs/toolchain-benchmark-results.md`. TL;DR: SMOS used 67% fewer tokens (41,869 vs.
+128,324) at comparable-to-slightly-better answer quality on 8/10 questions, but with one
+real synthesis hallucination (Q1) worth further investigation. Built in
+`.worktrees/toolchain-benchmark` (branch `worktree-toolchain-benchmark`). **Next up:**
+see "Next up — two independent tracks available" below (Track A' Phase 5.5b, or Track B
+Phase 4 HNSW) — pick whichever is more valuable next.
 
 **Phase 5.5a — Reference extraction & domain tagging: COMPLETE and MERGED to `main`**
 (fast-forward merge, `f12d7f6` → `ad9122f`, worktree and branch removed). Built via
@@ -70,55 +76,25 @@ machinery from markdown alone.
 
 ---
 
-## Next session: full toolchain end-to-end benchmark (Governor's request, 2026-07-27)
+## Toolchain end-to-end benchmark — COMPLETE (2026-07-27)
 
-Not a Phase 5.5b task — a separate, standalone validation of SMOS's actual value
-proposition (fewer tokens at comparable answer quality), run end-to-end through real
-subagents rather than the internal retrieval-metric benchmarks (`tests/bench_*.py`)
-that exist today. Nothing below has been started; every design choice (corpus source,
-question set, scoring method) is still open and needs deciding at the start of that
-session, not assumed from this note.
+Full results, methodology, and per-question scoring: `docs/toolchain-benchmark-results.md`.
+Plan: `docs/superpowers/plans/2026-07-27-toolchain-benchmark.md`. Spec:
+`docs/superpowers/specs/2026-07-27-toolchain-benchmark-design.md`.
 
-**The ask, verbatim from the Governor:**
-1. Set up a **designated project directory** (separate from this repo) so SMOS gets
-   its own fresh `.smos/` store, uncontaminated by this repo's own dogfood data —
-   consistent with this repo's own CLAUDE.md rule against using SMOS's tools on its
-   own source.
-2. Obtain a **long-form documentation corpus** — the Governor's example is
-   Kubernetes-scale documentation (large, multi-page, real-world technical prose).
-   Source/licensing/exact scope not yet decided.
-3. **Ingest it into SMOS** in that project directory (via `tool_ingest_document` /
-   `tool_recursive_semantic_ingest`, per whichever ingestion path fits the corpus
-   shape — decide at session start based on the actual corpus format).
-4. **Write a set of hard questions** about the ingested material — questions that
-   require synthesis or cross-reference across the corpus, not single-sentence
-   lookups (exact difficulty bar/count still to be decided).
-5. **Dispatch a Haiku subagent that answers using SMOS's tools** (semantic
-   query/recall against the ingested store, not raw file reads).
-6. **Dispatch a second Haiku subagent that answers from the raw source documents**
-   directly (no SMOS tools — plain `Read`), to serve as the comparison baseline.
-7. **Measure token consumption for both subagent runs** — exact measurement method
-   (session transcript token counts, `/cost`, or the Agent tool's own usage reporting)
-   not yet decided.
-8. **Evaluate the results** — token efficiency vs. answer quality/correctness across
-   both runs; write up the comparison.
-
-**Designated project directory — RESOLVED (2026-07-27):** `sandbox/toolchain-benchmark/`
-inside this repo, not an external folder. `sandbox/` is gitignored wholesale (see
-`.gitignore`) so it and any `.smos/` store created under it never enter version control
-and never get scanned/ingested by this repo's own tooling — same isolation goal as an
-external folder, without leaving the repo. The corpus, the benchmark's own fresh
-`.smos/` store, and any question sets / result logs for this benchmark all live under
-that path.
-
-**Open decisions for the next session to resolve before starting:**
-- Where the corpus actually comes from (a real public k8s doc set already on disk,
-  or something to fetch — check licensing before bulk-copying any external corpus).
-- How many questions, and what "hard" means operationally (single-hop lookup vs.
-  multi-document synthesis vs. requiring exact verbatim recall).
-- How answer quality gets scored (a rubric, a third independent judge, or manual
-  grading) — needs to be decided before dispatching the two subagents so both are
-  scored the same way.
+**One material deviation from the original plan, worth knowing before touching this area
+again:** no `smos` MCP server is registered anywhere on this machine (`claude mcp list`
+confirmed empty) — the plan's headless-`claude -p`-with-MCP isolation mechanism for the
+SMOS-tool run was unusable as designed. Rather than install SMOS globally (a user-scope
+change affecting every Claude Code project on the machine) just to unblock a benchmark,
+the Governor redirected the test to call `semantic_query()`/`recall()`/`reconstruct()`
+directly (the same functions the MCP tools thinly wrap) via a small helper script,
+`sandbox/toolchain-benchmark/scripts/smos_tools.py`. This tested the real retrieval
+mechanism, not the MCP transport — a reasonable substitution for what this benchmark was
+actually trying to measure, but means MCP-path overhead and a fair wall-clock comparison
+(a resident server vs. this workaround's cold-Python-process-per-query cost) are still
+untested. Also found and left unfixed (didn't affect the run): `reconstruct()` needs a
+document/section graph node id, not a `semantic_query`/`recall` source (segment) UUID.
 
 ---
 
