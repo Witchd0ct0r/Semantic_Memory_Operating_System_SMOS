@@ -7,77 +7,61 @@ history is the log.
 
 ---
 
-## Where things stand (2026-07-25)
+## Where things stand (2026-07-27)
 
-**Phase 5.3 — Ingestion contract + `ingest_tools.py` integration: COMPLETE**, merged
-to `main` at commit `a18fa4b` (feature branch `worktree-phase5-3-ingestion-contract`,
-7 tasks + 1 final-review fix wave, fast-forward merge, branch deleted after merge).
+**Phase 5.4 — Two-stage retrieval (exact/verbatim recall, ±1 neighbor expansion,
+`reconstruct()`): COMPLETE**, built via subagent-driven-development in a worktree
+(branch `worktree-phase5-4-two-stage-retrieval`, based on `main`@`2763b26`), all 6
+tasks reviewed clean, plus a broad final whole-branch review (opus model) that
+returned **Ready to merge: Yes** with zero Critical/Important findings. Merging to
+`main` is this session's next step. Test suite 265 → 283.
 
-Builds `smos/ingest/contract.py`: a versioned Pydantic ingestion schema
-(`IngestionPayload`/`ExternalHandle`/`ContentBlock`/`SourceLink`) with shape-only
-boundary validation (`validate_payload`) and quarantine-not-reject persistence for
-invalid payloads (new `ingest_quarantine` SQLite table), plus a `ContractBlockAdapter`
-that feeds the contract's already-typed block boundaries directly into 5.2's
-segmentation cascade (no regex re-detection). `do_ingest_document_schema()`
-(`smos/tools/ingest_tools.py`) is the resumable orchestrator: deterministic-id upsert
-(`derive_doc_id(system, native_id)`) branches into fresh-ingest / resume-in-progress /
-re-sync-on-content-change, storing leaves in checkpointed 64-leaf chunks (new
-`ingest_checkpoints` SQLite table) so a mid-document crash never loses prior work or
-leaves the containment tree half-wired. Registered as MCP tool `tool_ingest_document`
-(`smos/server.py`). A minimal reference transformer (`markdown_to_payload`,
-`smos/ingest/transformers/`) proves the client side of the contract end-to-end with a
-byte-exact round-trip test. Test suite grew 227 → 265, all passing on `main`.
+Commits: `dd43875` (VectorStore hybrid-query metadata parity fix + `get_segment_by_ordinal`),
+`dc72f2c` (`smos/memory/exact_retrieval.py`: `recall_exact()` + `expand_neighbors()`),
+`9eedb50` (`reconstruct()` appended to the same module), `d677f66` (`"exact"` strategy
+wired into `recall_engine.py`'s dispatch), `dd2c0c2` (`tool_reconstruct` MCP tool +
+`tool_recall` docstring update), `f5934f9` (end-to-end proof test, no production code).
 
-- **Pending-edge resolution deliberately deferred to 5.5** — `source_links` is
-  shape-validated (edge types checked against the adapter registry) but not resolved
-  into graph edges; no adapter populates real cross-references yet
-  (`MarkdownAdapter.extract_references()` is still a no-op), so building resolution
-  machinery now would have nothing real to exercise it.
-- **`build_span_tree()`** (new public function, `smos/ingest/segmenter.py`) was
-  extracted from `ingest_document_text` as a small, behavior-preserving refactor —
-  shared by both the original 5.2 orchestrator and the new checkpointed one. All
-  existing 5.2 tests pass unchanged.
+Gives SMOS the Stage 2 half of the two-stage retrieval loop (spec §7): `tool_recall(...,
+strategy="exact")` returns unsummarized segments (confidence 1.0, no LLM compression)
+plus their ±1 ordinal neighbors for context — the no-overlap segmentation's
+replacement for RAG chunk overlap. `tool_reconstruct(node_id)` rebuilds a document's
+or section's byte-exact original text by walking the containment tree and
+concatenating segments in ordinal order. Closed a standing tech-debt item along the
+way: `VectorStore._query_internal()` now returns the same full metadata
+(`doc_id`/`ordinal`/`char_start`/`char_end`/`source_ids`/`confidence`) that
+`get_by_uuid()` already did, so Stage 2 doesn't need a second per-candidate DB
+round-trip to drive neighbor expansion.
 
-**Bug found and fixed during the final whole-branch review (not by guessing — a
-dedicated opus-model review caught it, a fix wave addressed it, a scoped re-review
-confirmed):** the checkpointed chunk loop committed a chunk's segments
-(`store.store_batch`) *before* advancing the checkpoint (`store.save_checkpoint`) —
-a crash in that window left the chunk's segments stored but unacknowledged by the
-checkpoint, so a resume would re-store the same chunk under new UUIDs, leaking
-duplicate orphan segments. Fixed by reconciling `store.get_segment_ids_by_doc(doc_id)`
-against the checkpoint's recorded `segment_ids` on every resume, deleting any
-orphans before continuing. A second finding — resume never verified
-`checkpoint["total_leaves"] == len(leaves)` after recomputing segmentation — is now
-guarded: a mismatch discards the checkpoint and restarts fresh rather than silently
-misaligning stored segment ids to the wrong char ranges. Both fixes are covered by
-real (non-mocked) tests in `tests/test_contract_ingest.py`.
+**One design property flagged by the final review, not a defect:** `recall_exact`'s
+`mode: "uncertain"` branch is only reachable on an empty store — FAISS returns nearest
+neighbors unconditionally, so a query with no good matches against a non-empty store
+still returns `mode: "extractive"`/`confidence: 1.0` over low-relevance segments.
+Consistent with the plan's intent (verbatim recall trusts the ranker; "confidence"
+here means "this is exact stored text," not "this is relevant"). Worth a docstring
+note if it ever confuses a caller; not scheduled.
 
-**Execution notes:** subagent-driven-development, in a worktree created via
-`EnterWorktree`. Same base-ref gotcha as 5.1/5.2 flagged again — `EnterWorktree`'s
-`fresh` default branched from stale `origin/main`; fixed with `git reset --hard main`
-before dispatching Task 1. All 7 per-task reviews done **inline by the orchestrator**
-(no separate reviewer subagent — see `feedback-inline-reviews`), plus one broad
-final whole-branch review on the most capable available model before merge, per the
-subagent-driven-development skill's process. **One process incident:** Task 7's
-implementer pushed an unrequested second commit rewriting this HANDOFF file with
-fabricated details (a nonexistent `segment_checkpoint_path` symbol, an invented
-"migration guard"/"soft-delete workaround" that was never built) — reverted via
-`git reset --hard` back to Task 7's real deliverable before continuing. Lesson: even
-when a task brief is narrowly scoped, an implementer subagent may still wander into
-adjacent docs files unprompted; the orchestrator must diff-review every commit a
-task produces, not just the ones the brief asked for.
-
-At `EnterWorktree`'s cleanup step (`ExitWorktree action: remove`), the tool reported
-"77 commits... will discard this work permanently" — a false alarm caused by the
-tool comparing against the worktree's original (stale) branch point rather than the
-already-fast-forward-merged `main`. Verified `git rev-parse main` and
-`git rev-parse worktree-phase5-3-ingestion-contract` were identical (zero unique
-commits) before confirming `discard_changes: true`. Future sessions hitting this
-warning after a fast-forward merge should do the same check before trusting the
-commit count.
+**Execution notes:** subagent-driven-development, Haiku implementers on
+fully-code-specified tasks, task reviews on sonnet, final review on opus. Two process
+incidents this session (both resolved, no code impact): Task 1's implementer
+committed directly to `main` instead of the worktree (cherry-picked onto the worktree
+branch as `dd43875`, `main` reset back to `2763b26`); Task 4's implementer's `Edit`
+tool left a stray uncommitted duplicate in `main`'s working tree even though its git
+commit landed correctly on the worktree branch (discarded via `git checkout --`). Full
+detail in this plan's SDD ledger (deleted after merge per the skill's Finish step —
+see git history of `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md`'s
+directory if ever needed). Fix applied to every dispatch from Task 2 onward: implementer
+prompts now open with a mandatory `git branch --show-current` check, and explicitly
+require absolute paths rooted at the worktree directory for every Read/Edit/Write call
+(a plain `cd` in the Bash tool does not change where Edit/Write resolve paths).
 
 ## Prior phases
 
+- **Phase 5.3 — Ingestion contract + `ingest_tools.py` integration** (merged
+  `a18fa4b`, 2026-07-25): versioned Pydantic ingestion schema + quarantine validation
+  (`smos/ingest/contract.py`), resumable checkpointed orchestrator
+  (`do_ingest_document_schema`), `tool_ingest_document` MCP tool, markdown reference
+  transformer. Test suite 227 → 265.
 - **Phase 5.2 — Segmentation cascade** (merged `5f42dd7`, 2026-07-21): structural →
   semantic → size-fit cascade (`smos/ingest/segmenter.py`), `section` node type,
   three-level containment tree (`document` → `section` → segment),
@@ -101,10 +85,9 @@ commit count.
 
 ## Next up — two independent tracks available
 
-**Track A — Phase 5.4: Two-stage retrieval.** Natural continuation of 5.3.
-Exact/verbatim retrieval strategy, ±1 neighbor expansion for context, and
-`reconstruct()` to rebuild document passages byte-exactly from segment indices.
-Depends on 5.1 (shipped). See the sub-phase breakdown below for 5.5 onward.
+**Track A' — Phase 5.5+: multi-domain traceability & fan-out (Pillar F).** Natural
+continuation of 5.4 — domain classification, typed edges, evidence-gathering
+primitives. See the sub-phase breakdown below.
 
 **Track B — Phase 4: HNSW Migration (est. 1 session).** Independent of Phase 5;
 pure search performance. Plan pointer: `docs/superpowers/plans/2026-06-30-smos-roadmap.md`,
@@ -117,10 +100,9 @@ approximate search. Key open question the plan must resolve: HNSW doesn't suppor
 tech debt at the same time.
 
 **Sequencing note:** the multilingual-embeddings open decision (spec §9) was resolved
-this session as an **optional, lazy-loaded extra** (not a hard dependency swap) — so
-it no longer forces Phase 5 work to land before Phase 4. Track A and Track B can now
-proceed in either order; pick based on which is more valuable next, not on a
-dimensionality-change constraint.
+as an **optional, lazy-loaded extra** (not a hard dependency swap) — so it no longer
+forces Phase 5 work to land before Phase 4. Track A' and Track B can proceed in
+either order; pick based on which is more valuable next.
 
 ## Also queued — Phase 5, sub-phases 5.3 onward
 
@@ -144,7 +126,7 @@ shipped):
 | **5.1** | Foundation: `document` node type, open edge vocab, segment metadata columns, adapter interface + minimal adapter, dedup-scoping exclusion | — | **DONE** (`363a553`) |
 | **5.2** | Segmentation cascade (structural → semantic → size-fit), containment tree (`section` node type, `ingest_document_text`) | 5.1 | **DONE** (`5f42dd7`) |
 | **5.3** | Ingestion contract (Pydantic schema, quarantine validation) + `ingest_tools.py` integration, resumable-checkpoint large-payload path | 5.1, 5.2 | **DONE** (`a18fa4b`) |
-| **5.4** | Two-stage retrieval: exact/verbatim strategy, ±1 neighbor expansion, `reconstruct()` | 5.1 | queued |
+| **5.4** | Two-stage retrieval: exact/verbatim strategy, ±1 neighbor expansion, `reconstruct()` | 5.1 | **DONE** (`f5934f9`) |
 | **5.5** | Multi-domain traceability & fan-out (Pillar F): domain classification, typed edges, evidence-gathering primitives | 5.1, 5.4 | queued |
 | **5.6** | Graph-propagation ranking fold (PageRank+RRF) | 5.5 (needs a populated graph) | queued |
 | **5.7** | Clarification-loop cluster signal (Pillar E) | 5.4 | queued |
@@ -161,20 +143,21 @@ implemented (5.5's job; see `tests/bench_legal_regulations.py`'s docstring). The
 retrieval engine itself (`context_builder.py`) is already domain-neutral and stays
 as-is.
 
-**Next actions for a fresh session on Track A (5.4 two-stage retrieval):**
-1. Read `docs/superpowers/plans/2026-07-25-phase5-3-ingestion-contract.md` for the
-   pattern 5.3 used (task structure, TDD steps, the final-review fix wave) — 5.4's
+**Next actions for a fresh session on Track A' (5.5 multi-domain traceability):**
+1. Read `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md` for the
+   pattern 5.4 used (task structure, TDD steps, the final-review fix wave) — 5.5's
    plan should follow the same discipline.
-2. Write a detailed, **tree-verified** implementation plan for 5.4 — read current
-   signatures from the actual files (`smos/ingest/contract.py`,
-   `smos/ingest/segmenter.py`, `smos/memory/vector_store.py`, in particular
-   `_query_internal()`'s metadata-field asymmetry noted below), not from this
-   handoff or the spec (see the Phase 1 plan-drift lesson in `bm25-phase1-lessons`).
+2. Write a detailed, **tree-verified** implementation plan for 5.5 — read current
+   signatures from the actual files, not from this handoff or the spec (see the
+   Phase 1 plan-drift lesson in `bm25-phase1-lessons`). 5.5 needs
+   `MarkdownAdapter.extract_references()` (still a no-op) implemented so the Phase 2
+   graph stops being inert on ingested documents.
 3. Slice into self-contained Haiku-dispatchable tasks per the CLAUDE.md workflow.
-   Harden every implementer dispatch prompt with an explicit working-directory
-   self-check up front (see "Execution notes" above for why), and diff-review every
-   commit a task produces — not just the ones the brief asked for (see the Task 7
-   incident above).
+   Harden every implementer dispatch prompt with an explicit
+   `git branch --show-current` self-check up front and a requirement to use absolute
+   worktree-rooted paths for Read/Edit/Write (see "Execution notes" above for why),
+   and diff-review every commit a task produces — not just the ones the brief asked
+   for.
 
 ## Standing technical debt (address opportunistically, not yet scheduled)
 
@@ -194,17 +177,13 @@ as-is.
 - `tests/test_recall_engine.py::test_recall_hybrid_matches_build_compressed_context`
   is flaky — asserts exact LLM-output equality across two live calls instead of
   structural equality.
-- `_query_internal()` in `vector_store.py` still only returns `tier` in its metadata
-  dict (not `source_ids`/`confidence`/`doc_id`/`ordinal`/`char_start`/`char_end`,
-  all of which `get_by_uuid()` does return) — a pre-existing asymmetry, left alone
-  again in Phase 5.1 since wiring it into the hybrid retrieval path is Phase 5.4's
-  concern (two-stage retrieval), not this slice's.
 - `GraphStore.traverse()`'s undirected BFS means a `contains` query from a `section`
-  node returns its parent `document` alongside its real children — any 5.4+
-  reconstruction/retrieval code walking the containment tree must filter by node
-  type (see `_wire_containment`'s docstring in `smos/ingest/segmenter.py`). Not a
-  bug in `traverse()` itself (its bidirectionality is correct for Phase 2/3's
-  entity-relation use case) — just a caveat containment-tree consumers need to know.
+  node returns its parent `document` alongside its real children — Phase 5.4's
+  `reconstruct()` (`smos/memory/exact_retrieval.py`) already filters by node type
+  (`type == "memory"`) to handle this correctly; any future containment-tree
+  consumer needs the same filter (see `_wire_containment`'s docstring in
+  `smos/ingest/segmenter.py`). Not a bug in `traverse()` itself (its bidirectionality
+  is correct for Phase 2/3's entity-relation use case) — just a caveat.
 - `do_ingest_document_schema()` (`smos/tools/ingest_tools.py`) is not atomic across
   its many separate `VectorStore._lock` acquisitions — two concurrent schema-ingests
   of the same `doc_id` could interleave checkpoint reads/writes. Not a live risk
