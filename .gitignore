@@ -23,9 +23,13 @@ logs/
 *.db-wal
 *.index
 
-# Sandbox — isolated scratch projects (e.g. toolchain benchmark corpus + its
-# own fresh .smos/ store), kept out of this repo's own dogfood data
-sandbox/
+# Sandbox — isolated scratch projects (e.g. toolchain benchmark). Corpus text,
+# generated .smos/ stores, and raw payload dumps are bulky/regenerable and
+# stay untracked; scripts, question sets, and write-ups are tracked.
+sandbox/*/corpus/
+sandbox/*/.smos/
+sandbox/*/payloads/
+sandbox/*.json
 
 # Tests
 .pytest_cache/
