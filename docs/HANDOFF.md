@@ -10,17 +10,21 @@ history is the log.
 ## Where things stand (2026-07-27)
 
 **Phase 5.4 — Two-stage retrieval (exact/verbatim recall, ±1 neighbor expansion,
-`reconstruct()`): COMPLETE**, built via subagent-driven-development in a worktree
-(branch `worktree-phase5-4-two-stage-retrieval`, based on `main`@`2763b26`), all 6
-tasks reviewed clean, plus a broad final whole-branch review (opus model) that
-returned **Ready to merge: Yes** with zero Critical/Important findings. Merging to
-`main` is this session's next step. Test suite 265 → 283.
+`reconstruct()`): COMPLETE and MERGED to `main`** (merge commit `0ffc723`). Built via
+subagent-driven-development in a worktree (branch
+`worktree-phase5-4-two-stage-retrieval`, based on `main`@`2763b26`, now deleted —
+worktree removed), all 6 tasks reviewed clean, plus a broad final whole-branch review
+(opus model) that returned **Ready to merge: Yes** with zero Critical/Important
+findings. Merge required resolving one expected trivial conflict in this file
+(resolved by taking the branch's completion write-up). **283/283 tests passing on
+`main` post-merge, verified.** Test suite 265 → 283.
 
-Commits: `dd43875` (VectorStore hybrid-query metadata parity fix + `get_segment_by_ordinal`),
-`dc72f2c` (`smos/memory/exact_retrieval.py`: `recall_exact()` + `expand_neighbors()`),
-`9eedb50` (`reconstruct()` appended to the same module), `d677f66` (`"exact"` strategy
-wired into `recall_engine.py`'s dispatch), `dd2c0c2` (`tool_reconstruct` MCP tool +
-`tool_recall` docstring update), `f5934f9` (end-to-end proof test, no production code).
+Commits (now on `main`): `dd43875` (VectorStore hybrid-query metadata parity fix +
+`get_segment_by_ordinal`), `dc72f2c` (`smos/memory/exact_retrieval.py`:
+`recall_exact()` + `expand_neighbors()`), `9eedb50` (`reconstruct()` appended to the
+same module), `d677f66` (`"exact"` strategy wired into `recall_engine.py`'s dispatch),
+`dd2c0c2` (`tool_reconstruct` MCP tool + `tool_recall` docstring update), `f5934f9`
+(end-to-end proof test, no production code), `0ffc723` (merge to `main`).
 
 Gives SMOS the Stage 2 half of the two-stage retrieval loop (spec §7): `tool_recall(...,
 strategy="exact")` returns unsummarized segments (confidence 1.0, no LLM compression)
