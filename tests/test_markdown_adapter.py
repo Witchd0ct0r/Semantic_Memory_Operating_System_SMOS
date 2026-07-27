@@ -28,9 +28,41 @@ def test_structural_boundaries_empty_for_no_headings():
     assert adapter.structural_boundaries("Just plain text, no headings.") == []
 
 
-def test_extract_references_returns_empty_for_now():
+def test_extract_references_emits_self_topic_triple_when_heading_present():
     adapter = MarkdownAdapter()
-    assert adapter.extract_references("# Title\nSome text with `no refs`.") == []
+    assert adapter.extract_references("# Title\nSome text with `no refs`.") == [
+        ("Title", "Title", "references")
+    ]
+
+
+def test_extract_references_returns_empty_without_heading():
+    adapter = MarkdownAdapter()
+    assert adapter.extract_references("Just plain text, no headings, no links.") == []
+
+
+def test_extract_references_captures_anchor_link_target():
+    adapter = MarkdownAdapter()
+    text = "## Stress Test\nAnnual results for a [Covered Institution](#definitions) must be submitted.\n"
+    triples = adapter.extract_references(text)
+    assert ("Stress Test", "Stress Test", "references") in triples
+    assert ("Stress Test", "definitions", "references") in triples
+
+
+def test_extract_references_captures_wikilink_target():
+    adapter = MarkdownAdapter()
+    text = "## Section A\nSee [[Covered Institution]] for the definition.\n"
+    triples = adapter.extract_references(text)
+    assert ("Section A", "Covered Institution", "references") in triples
+
+
+def test_extract_references_skips_external_urls():
+    adapter = MarkdownAdapter()
+    text = "## External\nSee [the site](https://example.com) for more.\n"
+    assert adapter.extract_references(text) == [("External", "External", "references")]
+
+
+def test_markdown_adapter_declares_references_edge_type():
+    assert MarkdownAdapter.edge_types == frozenset({"references"})
 
 
 def test_llm_boundary_prompt_is_none():
