@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 
 from smos.memory.lifecycle import LifecycleManager
 from smos.memory.recall_engine import recall
+from smos.memory.exact_retrieval import reconstruct
 from smos.memory.vector_store import VectorStore
 from smos.tools.agent_primitives import (
     compress,
@@ -269,17 +270,20 @@ def tool_recall(
     seed_id: str = "",
     component: str = "",
 ) -> dict:
-    """Retrieve memories using an explicit strategy: hybrid, temporal, chain, or repo.
+    """Retrieve memories using an explicit strategy: hybrid, temporal, chain, repo, or exact.
 
     hybrid (default): the existing vector+BM25+graph retrieval pipeline.
     temporal: filter by [since, until] ISO-8601 timestamps, then rank by similarity.
     chain: follow evolves_into/related_to edges from seed_id; k is hop depth here, not result count.
     repo: hybrid retrieval scoped to a single component tag.
+    exact: verbatim segments (no LLM compression) plus +/-1 ordinal neighbor context —
+           Stage 2 of the two-stage retrieval loop. Pair with tool_reconstruct to rebuild
+           the full surrounding document or section from the matched segments.
 
     Args:
         query: Natural language query (unused for the chain strategy).
-        strategy: One of hybrid, temporal, chain, repo (default "hybrid").
-        k: Result count for hybrid/temporal/repo, or hop depth for chain (default 5).
+        strategy: One of hybrid, temporal, chain, repo, exact (default "hybrid").
+        k: Result count for hybrid/temporal/repo/exact, or hop depth for chain (default 5).
         since: ISO-8601 lower timestamp bound for temporal (empty = unbounded).
         until: ISO-8601 upper timestamp bound for temporal (empty = unbounded).
         seed_id: Starting memory id for the chain strategy.
@@ -289,6 +293,34 @@ def tool_recall(
         return recall(query, strategy, k, since, until, seed_id, component, _store)
     except Exception as exc:
         return {"error": f"{exc.__class__.__name__}: {str(exc)[:200]}"}
+
+
+@app.tool()
+def tool_reconstruct(node_id: str) -> dict:
+    """Reconstruct the verbatim text of a document or section from its stored segments.
+
+    Fetches every segment under `node_id` (a document or section graph node id —
+    e.g. the "doc_id" returned by tool_ingest_document, or a section id such as
+    "<doc_id>:section:0"), orders them by ordinal, and concatenates their exact
+    stored text. Pair with tool_recall(strategy="exact") for the two-stage
+    retrieval loop: exact finds the matching segments, reconstruct rebuilds
+    their surrounding document.
+
+    Returns {"node_id", "text", "segment_count", "complete", "error"}.
+    `complete` is False when the segments have a gap (e.g. an in-progress
+    ingest, or char offsets aren't contiguous) — the text may not be fully
+    byte-exact in that case.
+
+    Args:
+        node_id: A document or section graph node id.
+    """
+    try:
+        return reconstruct(_store, node_id)
+    except Exception as exc:
+        return {
+            "node_id": node_id, "text": "", "segment_count": 0,
+            "complete": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+        }
 
 
 @app.tool()

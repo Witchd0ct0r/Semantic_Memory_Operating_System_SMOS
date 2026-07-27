@@ -5,9 +5,10 @@ import numpy as np
 from smos.compression.context_builder import build_compressed_context
 from smos.llm.summarizer import compress_memories_full
 from smos.memory.embeddings import embed_batch
+from smos.memory.exact_retrieval import recall_exact
 from smos.memory.vector_store import VectorStore
 
-_VALID_STRATEGIES = {"hybrid", "temporal", "chain", "repo"}
+_VALID_STRATEGIES = {"hybrid", "temporal", "chain", "repo", "exact"}
 _CHAIN_EDGE_TYPES = ["evolves_into", "related_to"]
 
 
@@ -30,6 +31,8 @@ def recall(
         result = _recall_temporal(query, k, since, until, store)
     elif strategy == "chain":
         result = _recall_chain(seed_id, k, store)
+    elif strategy == "exact":
+        result = recall_exact(query, k, store)
     else:
         result = build_compressed_context(query, k, store).model_dump()
 
