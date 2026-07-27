@@ -9,14 +9,17 @@ history is the log.
 
 ## Where things stand (2026-07-27)
 
-**Phase 5.5a — Reference extraction & domain tagging: COMPLETE, reviewed clean, not
-yet merged to `main`** (branch `worktree-phase5-5a-reference-extraction-domain-tagging`,
-based on `main`@`f12d7f6`). Built via subagent-driven-development in a worktree, 5 tasks,
-every task reviewed inline by the orchestrator (per session preference — no
-task-reviewer subagents dispatched this session) plus a final whole-branch review, all
-clean. **296/296 tests passing.** Test suite 283 → 296.
+**Next up — full toolchain end-to-end benchmark (new, not yet started, see below the
+Phase 5.5a summary for the concrete brief.)**
 
-Commits (on the worktree branch, not yet merged): `5a0fe40` (`MarkdownAdapter.extract_references()`:
+**Phase 5.5a — Reference extraction & domain tagging: COMPLETE and MERGED to `main`**
+(fast-forward merge, `f12d7f6` → `ad9122f`, worktree and branch removed). Built via
+subagent-driven-development in a worktree, 5 tasks, every task reviewed inline by the
+orchestrator (per session preference — no task-reviewer subagents dispatched this
+session) plus a final whole-branch review, all clean. **296/296 tests passing on
+`main` post-merge, verified.** Test suite 283 → 296.
+
+Commits (now on `main`): `5a0fe40` (`MarkdownAdapter.extract_references()`:
 real link/wiki-link/self-topic-triple extraction, replacing the no-op stub;
 `edge_types` now `frozenset({"references"})`), `849aeb7` (`_wire_references()` added to
 `smos/ingest/segmenter.py` — turns extracted triples into `segment --edge_type-->
@@ -64,6 +67,55 @@ evidence-gathering primitives (`resolve`/`classify_domains`/per-domain `recall`/
 (`refines`/`satisfies`/`verified_by`/etc.) — deliberately held until there's a concrete
 non-markdown adapter to validate them against, rather than bootstrapping speculative
 machinery from markdown alone.
+
+---
+
+## Next session: full toolchain end-to-end benchmark (Governor's request, 2026-07-27)
+
+Not a Phase 5.5b task — a separate, standalone validation of SMOS's actual value
+proposition (fewer tokens at comparable answer quality), run end-to-end through real
+subagents rather than the internal retrieval-metric benchmarks (`tests/bench_*.py`)
+that exist today. Nothing below has been started; every design choice (corpus source,
+question set, scoring method) is still open and needs deciding at the start of that
+session, not assumed from this note.
+
+**The ask, verbatim from the Governor:**
+1. Set up a **designated project directory** (separate from this repo) so SMOS gets
+   its own fresh `.smos/` store, uncontaminated by this repo's own dogfood data —
+   consistent with this repo's own CLAUDE.md rule against using SMOS's tools on its
+   own source.
+2. Obtain a **long-form documentation corpus** — the Governor's example is
+   Kubernetes-scale documentation (large, multi-page, real-world technical prose).
+   Source/licensing/exact scope not yet decided.
+3. **Ingest it into SMOS** in that project directory (via `tool_ingest_document` /
+   `tool_recursive_semantic_ingest`, per whichever ingestion path fits the corpus
+   shape — decide at session start based on the actual corpus format).
+4. **Write a set of hard questions** about the ingested material — questions that
+   require synthesis or cross-reference across the corpus, not single-sentence
+   lookups (exact difficulty bar/count still to be decided).
+5. **Dispatch a Haiku subagent that answers using SMOS's tools** (semantic
+   query/recall against the ingested store, not raw file reads).
+6. **Dispatch a second Haiku subagent that answers from the raw source documents**
+   directly (no SMOS tools — plain `Read`), to serve as the comparison baseline.
+7. **Measure token consumption for both subagent runs** — exact measurement method
+   (session transcript token counts, `/cost`, or the Agent tool's own usage reporting)
+   not yet decided.
+8. **Evaluate the results** — token efficiency vs. answer quality/correctness across
+   both runs; write up the comparison.
+
+**Open decisions for the next session to resolve before starting:**
+- Where the corpus actually comes from (a real public k8s doc set already on disk,
+  or something to fetch — check licensing before bulk-copying any external corpus).
+- How many questions, and what "hard" means operationally (single-hop lookup vs.
+  multi-document synthesis vs. requiring exact verbatim recall).
+- How answer quality gets scored (a rubric, a third independent judge, or manual
+  grading) — needs to be decided before dispatching the two subagents so both are
+  scored the same way.
+- Whether "designated project directory" means a new folder on this machine outside
+  `C:\private\semantic_memory` entirely (recommended, to keep `.smos/` isolated) or
+  a subdirectory — not yet decided.
+
+---
 
 **Phase 5.4 — Two-stage retrieval (exact/verbatim recall, ±1 neighbor expansion,
 `reconstruct()`): COMPLETE and MERGED to `main`** (merge commit `0ffc723`). Built via
@@ -187,7 +239,7 @@ shipped):
 | **5.2** | Segmentation cascade (structural → semantic → size-fit), containment tree (`section` node type, `ingest_document_text`) | 5.1 | **DONE** (`5f42dd7`) |
 | **5.3** | Ingestion contract (Pydantic schema, quarantine validation) + `ingest_tools.py` integration, resumable-checkpoint large-payload path | 5.1, 5.2 | **DONE** (`a18fa4b`) |
 | **5.4** | Two-stage retrieval: exact/verbatim strategy, ±1 neighbor expansion, `reconstruct()` | 5.1 | **DONE** (`f5934f9`) |
-| **5.5a** | Reference extraction & domain tagging: `MarkdownAdapter.extract_references()`, `_wire_references()` graph wiring (both ingestion paths), `domain_tags` persistence | 5.1, 5.3, 5.4 | **DONE** (`56686c1`), not yet merged |
+| **5.5a** | Reference extraction & domain tagging: `MarkdownAdapter.extract_references()`, `_wire_references()` graph wiring (both ingestion paths), `domain_tags` persistence | 5.1, 5.3, 5.4 | **DONE** (`56686c1`), merged to `main` (`ad9122f`) |
 | **5.5b** | Multi-domain traceability & fan-out (Pillar F): domain classification, typed edges, evidence-gathering primitives, coverage/gap signal | 5.5a, needs a non-markdown adapter | queued |
 | **5.6** | Graph-propagation ranking fold (PageRank+RRF) | 5.5b (needs a populated graph) | queued |
 | **5.7** | Clarification-loop cluster signal (Pillar E) | 5.4 | queued |
@@ -207,19 +259,18 @@ domain until that domain gets its own adapter. The retrieval engine itself
 (`context_builder.py`) is already domain-neutral and stays as-is — 5.5a's graph-rescue
 mechanism required zero changes to it.
 
-**Next actions for a fresh session on Track A' (5.5b multi-domain traceability):**
-1. Merge the 5.5a branch (`worktree-phase5-5a-reference-extraction-domain-tagging`,
-   based on `main`@`f12d7f6`) to `main` first, if not already done.
-2. Read `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md` for the
+**Next actions for a fresh session on Track A' (5.5b multi-domain traceability) — note
+the toolchain benchmark above takes priority for the very next session:**
+1. Read `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md` for the
    pattern 5.4 used (task structure, TDD steps, the final-review fix wave) — 5.5b's
    plan should follow the same discipline.
-3. Write a detailed, **tree-verified** implementation plan for 5.5b — read current
+2. Write a detailed, **tree-verified** implementation plan for 5.5b — read current
    signatures from the actual files, not from this handoff or the spec (see the
    Phase 1 plan-drift lesson in `bm25-phase1-lessons`). 5.5b needs a concrete
    non-markdown adapter (e.g. a legal or requirements adapter) before domain
    classification or the fan-out primitives can be validated against anything real —
    don't build them speculatively against markdown alone.
-4. Slice into self-contained Haiku-dispatchable tasks per the CLAUDE.md workflow.
+3. Slice into self-contained Haiku-dispatchable tasks per the CLAUDE.md workflow.
    Harden every implementer dispatch prompt with an explicit
    `git branch --show-current` self-check up front and a requirement to use absolute
    worktree-rooted paths for Read/Edit/Write (see "Execution notes" above for why),
