@@ -30,6 +30,7 @@ sandbox/*/corpus/
 sandbox/*/.smos/
 sandbox/*/payloads/
 sandbox/*/*.json
+sandbox/*/*.txt
 
 # Tests
 .pytest_cache/
