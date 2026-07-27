@@ -35,7 +35,7 @@ from smos.ingest.contract import (
     quarantine_payload,
     validate_payload,
 )
-from smos.ingest.segmenter import _flatten_leaves, _wire_containment, build_span_tree
+from smos.ingest.segmenter import _flatten_leaves, _wire_containment, _wire_references, build_span_tree
 
 # ─── Filesystem constants ────────────────────────────────────────────────────
 
@@ -716,6 +716,7 @@ def do_ingest_document_schema(
         )
 
     section_count = _wire_containment(store.graph, doc_id, root)
+    reference_count = _wire_references(store.graph, block_adapter, full_text, leaves)
     store.save_checkpoint(
         doc_id=doc_id,
         content_hash=text_hash,
@@ -731,5 +732,6 @@ def do_ingest_document_schema(
         "segment_count": len(segment_ids),
         "segment_ids": segment_ids,
         "section_count": section_count,
+        "reference_count": reference_count,
         "resumed": resumed,
     }

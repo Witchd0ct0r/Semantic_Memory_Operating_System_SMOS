@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from smos.ingest.adapters.markdown import MarkdownAdapter
 from smos.ingest.contract import (
     ContentBlock,
     ContractBlockAdapter,
@@ -223,3 +224,24 @@ def test_resume_reconciles_orphan_segments_from_crash_window(store: VectorStore)
     assert len(result["segment_ids"]) == len(set(result["segment_ids"]))
     assert orphan_id not in result["segment_ids"]
     assert store.get_by_uuid(orphan_id) is None
+
+
+def test_schema_ingest_wires_reference_edges_when_adapter_supports_it(store: VectorStore) -> None:
+    text = (
+        "# Title\n"
+        "## Definitions\nCovered Institution means any entity that holds more than ten billion dollars.\n"
+        "## Stress Test\nAnnual results for a [Covered Institution](#definitions) must be submitted by March 31.\n"
+    )
+    payload = _markdown_payload(text, "wiki", "doc-schema-refs")
+
+    result = do_ingest_document_schema(payload, store, adapter=MarkdownAdapter())
+
+    assert result["status"] == "success"
+    assert result["reference_count"] >= 1
+    assert store.graph.get_node("concept:definitions") is not None
+
+
+def test_schema_ingest_reference_count_is_zero_without_adapter(store: VectorStore) -> None:
+    payload = _markdown_payload("# T\nBody text with no references.\n", "wiki", "doc-no-adapter")
+    result = do_ingest_document_schema(payload, store)
+    assert result["reference_count"] == 0
