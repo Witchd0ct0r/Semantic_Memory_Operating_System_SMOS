@@ -29,7 +29,7 @@ logs/
 sandbox/*/corpus/
 sandbox/*/.smos/
 sandbox/*/payloads/
-sandbox/*.json
+sandbox/*/*.json
 
 # Tests
 .pytest_cache/
