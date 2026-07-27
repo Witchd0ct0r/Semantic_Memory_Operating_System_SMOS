@@ -9,6 +9,62 @@ history is the log.
 
 ## Where things stand (2026-07-27)
 
+**Phase 5.5a — Reference extraction & domain tagging: COMPLETE, reviewed clean, not
+yet merged to `main`** (branch `worktree-phase5-5a-reference-extraction-domain-tagging`,
+based on `main`@`f12d7f6`). Built via subagent-driven-development in a worktree, 5 tasks,
+every task reviewed inline by the orchestrator (per session preference — no
+task-reviewer subagents dispatched this session) plus a final whole-branch review, all
+clean. **296/296 tests passing.** Test suite 283 → 296.
+
+Commits (on the worktree branch, not yet merged): `5a0fe40` (`MarkdownAdapter.extract_references()`:
+real link/wiki-link/self-topic-triple extraction, replacing the no-op stub;
+`edge_types` now `frozenset({"references"})`), `849aeb7` (`_wire_references()` added to
+`smos/ingest/segmenter.py` — turns extracted triples into `segment --edge_type-->
+concept:{name}` graph edges via a 300-char lookback window; wired into
+`ingest_document_text()`), `9d609cd` (the same `_wire_references()` wired into the
+production schema-ingestion path, `do_ingest_document_schema()` in
+`smos/tools/ingest_tools.py`), `6878e03` (fixes a separate, previously-silent gap:
+`IngestionPayload.domain_tags` is now actually persisted — onto the `document` graph
+node's metadata and onto every segment's tags — instead of being parsed and dropped),
+`56686c1` (end-to-end proof: a markdown doc's cross-reference link graph-rescues its
+target segment through `context_builder.py`'s existing 2-hop expansion with zero
+changes to that file, and domain-tagged segments are retrievable via
+`query_domain(domain_tags=...)`).
+
+Closes the concrete gap flagged in this file since Phase 5.3: the Phase 2 memory graph
+was inert on ingested documents because no adapter populated `extract_references()`.
+Markdown documents with internal links or wiki-links now populate the graph the same
+way backtick-marked code entities always have (`VectorStore._update_graph()`'s
+`memory --references--> entity:{name}` shape, reused here as `segment --references-->
+concept:{name}`).
+
+**One real gap found and fixed during this session, not by the plan's original design:**
+the schema-ingestion path delivers a heading and its body as *separate* `ContentBlock`s
+(by the ingestion contract's own design, Pillar G), so a naive per-leaf-only extraction
+call would never see the heading for a body leaf. Fixed with a fixed 300-char lookback
+window into `full_text` before each leaf (`_REFERENCE_LOOKBACK_CHARS` in
+`segmenter.py`) plus taking the *last* heading match in whatever text is given (not the
+first) — verified empirically against the real pipeline before the plan was written,
+and again by each task's passing tests.
+
+**Note on this session's process:** Task 5's implementer pushed an unrequested second
+commit editing this very file, with several factually wrong task-to-commit
+attributions (mislabeling Task 2 as "markdown_transformer.py wiring" when it touched
+`segmenter.py`; Task 3 as "domain_tags field" work when that was Task 4; Task 4 as
+building a "graph-domain index" that was never built) plus a premature "ready to
+merge" claim before the final review had run. Discarded via `git reset --hard` back to
+the requested test-only commit; this write-up was authored by the orchestrator instead,
+per the plan's own "Post-plan: HANDOFF update" step being reserved for the orchestrator,
+not a task implementer.
+
+**Deferred to 5.5b+ (Governor's 2026-07-27 scoping decision, made before this plan was
+written):** domain **classification** (adapter rules + LLM fallback), the fan-out
+evidence-gathering primitives (`resolve`/`classify_domains`/per-domain `recall`/
+`coverage_check`), the coverage/gap signal, and new SE-specific traceability edge types
+(`refines`/`satisfies`/`verified_by`/etc.) — deliberately held until there's a concrete
+non-markdown adapter to validate them against, rather than bootstrapping speculative
+machinery from markdown alone.
+
 **Phase 5.4 — Two-stage retrieval (exact/verbatim recall, ±1 neighbor expansion,
 `reconstruct()`): COMPLETE and MERGED to `main`** (merge commit `0ffc723`). Built via
 subagent-driven-development in a worktree (branch
@@ -131,37 +187,46 @@ shipped):
 | **5.2** | Segmentation cascade (structural → semantic → size-fit), containment tree (`section` node type, `ingest_document_text`) | 5.1 | **DONE** (`5f42dd7`) |
 | **5.3** | Ingestion contract (Pydantic schema, quarantine validation) + `ingest_tools.py` integration, resumable-checkpoint large-payload path | 5.1, 5.2 | **DONE** (`a18fa4b`) |
 | **5.4** | Two-stage retrieval: exact/verbatim strategy, ±1 neighbor expansion, `reconstruct()` | 5.1 | **DONE** (`f5934f9`) |
-| **5.5** | Multi-domain traceability & fan-out (Pillar F): domain classification, typed edges, evidence-gathering primitives | 5.1, 5.4 | queued |
-| **5.6** | Graph-propagation ranking fold (PageRank+RRF) | 5.5 (needs a populated graph) | queued |
+| **5.5a** | Reference extraction & domain tagging: `MarkdownAdapter.extract_references()`, `_wire_references()` graph wiring (both ingestion paths), `domain_tags` persistence | 5.1, 5.3, 5.4 | **DONE** (`56686c1`), not yet merged |
+| **5.5b** | Multi-domain traceability & fan-out (Pillar F): domain classification, typed edges, evidence-gathering primitives, coverage/gap signal | 5.5a, needs a non-markdown adapter | queued |
+| **5.6** | Graph-propagation ranking fold (PageRank+RRF) | 5.5b (needs a populated graph) | queued |
 | **5.7** | Clarification-loop cluster signal (Pillar E) | 5.4 | queued |
 | **5.8** | Multilingual embeddings (optional extra, cross-cutting) | can land anytime before Phase 4 | queued |
 
 **Where the work lands in the current tree** (spec §3 and §10 have the full detail).
 `smos/tools/ingest_tools.py` now has two ingestion paths: the original code-repo
-ingester (lossy per-file summary, unchanged) and the new schema-driven
+ingester (lossy per-file summary, unchanged) and the schema-driven
 `do_ingest_document_schema()` path (structure-preserving, byte-exact). Domain
-generality still has one gap: `smos/memory/entity_extractor.py` remains
-Python-AST + backtick-spans only, extracting nothing from prose — the Phase 2 graph
-stays inert on ingested documents until an adapter's `extract_references()` is
-implemented (5.5's job; see `tests/bench_legal_regulations.py`'s docstring). The
-retrieval engine itself (`context_builder.py`) is already domain-neutral and stays
-as-is.
+generality had one remaining gap, closed by 5.5a: `smos/memory/entity_extractor.py`
+still remains Python-AST + backtick-spans only (extracting nothing from prose), but
+the Phase 2 graph is no longer inert on markdown documents — `MarkdownAdapter` now
+populates `extract_references()` for real, wired into both ingestion paths (see the
+Phase 5.5a section above). `tests/bench_legal_regulations.py`'s docstring describing
+this gap is now stale for markdown corpora specifically; still accurate for any other
+domain until that domain gets its own adapter. The retrieval engine itself
+(`context_builder.py`) is already domain-neutral and stays as-is — 5.5a's graph-rescue
+mechanism required zero changes to it.
 
-**Next actions for a fresh session on Track A' (5.5 multi-domain traceability):**
-1. Read `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md` for the
-   pattern 5.4 used (task structure, TDD steps, the final-review fix wave) — 5.5's
+**Next actions for a fresh session on Track A' (5.5b multi-domain traceability):**
+1. Merge the 5.5a branch (`worktree-phase5-5a-reference-extraction-domain-tagging`,
+   based on `main`@`f12d7f6`) to `main` first, if not already done.
+2. Read `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md` for the
+   pattern 5.4 used (task structure, TDD steps, the final-review fix wave) — 5.5b's
    plan should follow the same discipline.
-2. Write a detailed, **tree-verified** implementation plan for 5.5 — read current
+3. Write a detailed, **tree-verified** implementation plan for 5.5b — read current
    signatures from the actual files, not from this handoff or the spec (see the
-   Phase 1 plan-drift lesson in `bm25-phase1-lessons`). 5.5 needs
-   `MarkdownAdapter.extract_references()` (still a no-op) implemented so the Phase 2
-   graph stops being inert on ingested documents.
-3. Slice into self-contained Haiku-dispatchable tasks per the CLAUDE.md workflow.
+   Phase 1 plan-drift lesson in `bm25-phase1-lessons`). 5.5b needs a concrete
+   non-markdown adapter (e.g. a legal or requirements adapter) before domain
+   classification or the fan-out primitives can be validated against anything real —
+   don't build them speculatively against markdown alone.
+4. Slice into self-contained Haiku-dispatchable tasks per the CLAUDE.md workflow.
    Harden every implementer dispatch prompt with an explicit
    `git branch --show-current` self-check up front and a requirement to use absolute
    worktree-rooted paths for Read/Edit/Write (see "Execution notes" above for why),
    and diff-review every commit a task produces — not just the ones the brief asked
-   for.
+   for. 5.5a's Task 5 implementer pushed an unrequested HANDOFF.md edit with several
+   wrong task-to-commit attributions; keep diffing the full commit list, not just the
+   expected file.
 
 ## Standing technical debt (address opportunistically, not yet scheduled)
 
