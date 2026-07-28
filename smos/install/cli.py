@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 _REPO_URL = "https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS.git"
 
@@ -17,6 +18,45 @@ def _current_version() -> str:
         return importlib.metadata.version("smos-mcp")
     except importlib.metadata.PackageNotFoundError:
         return "unknown"
+
+
+def _is_local_checkout(root: Optional[Path] = None) -> bool:
+    """True if `root` (default: cwd) looks like this project's own git working
+    tree -- pyproject.toml declares the smos-mcp package name and .git exists.
+    Distinguishes "developing on this repo" from "smos-mcp installed elsewhere
+    as a regular dependency", so _update() knows whether to reinstall from the
+    local checkout instead of the published GitHub remote -- which lags behind
+    local commits that were never pushed (this repo's own history: origin/main
+    has sat dozens of commits behind local main for months)."""
+    root = root or Path.cwd()
+    pyproject = root / "pyproject.toml"
+    if not (root / ".git").exists() or not pyproject.exists():
+        return False
+    try:
+        return 'name = "smos-mcp"' in pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _check_smos_package() -> None:
+    """Fail loudly if smos-mcp's own package metadata is missing, instead of
+    silently registering an MCP server pointing at a phantom entry point. This
+    catches a real failure mode: an interrupted pip uninstall/reinstall on
+    Windows can leave orphaned '~mos_mcp-*.dist-info' directories in
+    site-packages (pip's tilde-rename safety net, never rolled back or
+    finalized) while the 'smos'/'smos-server' console scripts are still on
+    PATH -- pip then reports the package as not installed even though the
+    scripts still run."""
+    version = _current_version()
+    if version == "unknown":
+        _fail(
+            "smos-mcp package metadata not found even though the 'smos' command ran -- "
+            "a previous install/uninstall likely left an orphaned dist-info record "
+            "(look for stray '~mos_mcp-*.dist-info' folders in site-packages). Fix: "
+            "reinstall cleanly -- 'pip install -e .' from this repo if developing "
+            "locally, or 'pip install smos-mcp' otherwise -- then re-run 'smos setup'."
+        )
+    _ok(f"smos-mcp package metadata OK ({version})")
 
 _SNIPPET_START = "<!-- smos: semantic memory operating system — file reading policy -->"
 _SNIPPET_END = "<!-- end smos -->"
@@ -162,6 +202,9 @@ def _register_mcp(dry_run: bool) -> None:
 
 def _write_claude_md(dry_run: bool) -> None:
     claude_md = Path.home() / ".claude" / "CLAUDE.md"
+    if claude_md.exists() and _SNIPPET_START in claude_md.read_text(encoding="utf-8"):
+        _ok(f"SMOS policy already present in {claude_md} -- skipping")
+        return
     if dry_run:
         print(f"  Would append SMOS policy to {claude_md}")
         print(_CLAUDE_MD_SNIPPET)
@@ -263,10 +306,16 @@ def _remove_data(dry_run: bool) -> None:
 def _update(dry_run: bool) -> None:
     print(f"SMOS Update  (current: {_current_version()})")
     print("=" * 40)
-    cmd = [
-        sys.executable, "-m", "pip", "install", "--upgrade",
-        f"git+{_REPO_URL}",
-    ]
+    if _is_local_checkout():
+        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "-e", "."]
+        print("  Local git checkout detected at this directory -- reinstalling in")
+        print("  editable mode from here instead of the GitHub remote (which can")
+        print("  lag behind local commits that were never pushed).")
+    else:
+        cmd = [
+            sys.executable, "-m", "pip", "install", "--upgrade",
+            f"git+{_REPO_URL}",
+        ]
     if dry_run:
         print(f"  Would run: {' '.join(cmd)}")
         return
@@ -279,12 +328,13 @@ def _update(dry_run: bool) -> None:
 
 # ── commands ─────────────────────────────────────────────────────────────────
 
-def _setup(dry_run: bool) -> None:
+def _setup(dry_run: bool, skip_claude_md: bool = False) -> None:
     print("SMOS Setup")
     print("=" * 40)
 
     print("\nChecking prerequisites...")
     _check_python()
+    _check_smos_package()
     _check_claude_cli()
     ollama_ok = _check_ollama()
 
@@ -305,7 +355,10 @@ def _setup(dry_run: bool) -> None:
     _register_mcp(dry_run)
 
     print("\nBehavioural instructions...")
-    _write_claude_md(dry_run)
+    if skip_claude_md:
+        _ok("Skipping global CLAUDE.md write (--skip-claude-md)")
+    else:
+        _write_claude_md(dry_run)
 
     print()
     print("=" * 40)
@@ -361,6 +414,12 @@ def main() -> None:
         help="Show what would be done without making any changes",
     )
     parser.add_argument(
+        "--skip-claude-md",
+        action="store_true",
+        help="Don't write the SMOS file-reading policy to the global ~/.claude/CLAUDE.md "
+             "(useful when a project's own CLAUDE.md already carries an SMOS policy)",
+    )
+    parser.add_argument(
         "--version",
         action="version",
         version=f"smos {_current_version()}",
@@ -373,4 +432,4 @@ def main() -> None:
     elif args.command == "update":
         _update(args.dry_run)
     else:
-        _setup(args.dry_run)
+        _setup(args.dry_run, args.skip_claude_md)
