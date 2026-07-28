@@ -7,16 +7,21 @@ history is the log.
 
 ---
 
-## Where things stand (2026-07-27)
+## Where things stand (2026-07-28)
 
-**Toolchain end-to-end benchmark: COMPLETE.** SMOS tools vs. raw file reading over a
-20-page Kubernetes-docs corpus — full results and methodology in
+**This repo now live-dogfoods SMOS on itself — MCP server registered, code + docs
+ingested, project policy flipped to active use.** Full detail in "Live SMOS
+dogfooding setup — COMPLETE (2026-07-28)" below. **Next up:** the doc-sync ingest
+runs immediately after this handoff write (per the new session-end step in
+`CLAUDE.md`), then see "Next up — two independent tracks available" further down
+(Track A' Phase 5.5b, or Track B Phase 4 HNSW) for the next substantive work.
+
+**Toolchain end-to-end benchmark: COMPLETE** (2026-07-27). SMOS tools vs. raw file
+reading over a 20-page Kubernetes-docs corpus — full results and methodology in
 `docs/toolchain-benchmark-results.md`. TL;DR: SMOS used 67% fewer tokens (41,869 vs.
 128,324) at comparable-to-slightly-better answer quality on 8/10 questions, but with one
 real synthesis hallucination (Q1) worth further investigation. Built in
-`.worktrees/toolchain-benchmark` (branch `worktree-toolchain-benchmark`). **Next up:**
-see "Next up — two independent tracks available" below (Track A' Phase 5.5b, or Track B
-Phase 4 HNSW) — pick whichever is more valuable next.
+`.worktrees/toolchain-benchmark` (branch `worktree-toolchain-benchmark`).
 
 **Phase 5.5a — Reference extraction & domain tagging: COMPLETE and MERGED to `main`**
 (fast-forward merge, `f12d7f6` → `ad9122f`, worktree and branch removed). Built via
@@ -73,6 +78,79 @@ evidence-gathering primitives (`resolve`/`classify_domains`/per-domain `recall`/
 (`refines`/`satisfies`/`verified_by`/etc.) — deliberately held until there's a concrete
 non-markdown adapter to validate them against, rather than bootstrapping speculative
 machinery from markdown alone.
+
+---
+
+## Live SMOS dogfooding setup — COMPLETE (2026-07-28)
+
+Governor's direction this session: stop treating SMOS-on-itself as validation-only,
+and actually live-test it as this project's own daily-driver memory tool. Five tracks
+identified during brainstorming; built via subagent-driven-development in a worktree
+for the first two, direct orchestrator work for the rest (small, well-scoped fixes —
+no worktree needed).
+
+**Track 4 + 5 (the skill + product improvement) — merged to `main`** (fast-forward,
+worktree `worktree-smos-doc-sync` based on `main`@`e8854c9`, both cleaned up after
+merge). Spec: `docs/superpowers/specs/2026-07-28-smos-doc-sync-design.md`. Plan:
+`docs/superpowers/plans/2026-07-28-smos-doc-sync.md`. Commits: `e3ed74e`
+(`markdown_to_payload` now types markdown lists/tables as their own `ContentBlock`s
+instead of one opaque paragraph blob — zero schema change, `ContentBlock.block_type`
+already allowed `"list"`/`"table"`, the transformer just never emitted them), `f32ad12`
+(new project skill `.claude/skills/smos-doc-sync/`: `scripts/sync_docs.py` walks a
+curated document list — `docs/HANDOFF.md`, `README.md`, `ARCHITECTURE.md`,
+`CLAUDE.md`, `docs/runbooks/*.md`, specs, plans — hashes each doc's content, and only
+re-ingests ones whose hash changed since `.smos/doc_sync_manifest.json`'s last
+record; wired into `CLAUDE.md`'s session-continuity section to run at session end).
+Test suite 296 → 305.
+
+**Track 1 (global MCP install) — DONE, with a real bug found and fixed along the
+way.** The installed `smos-mcp` was corrupted: `pip show smos-mcp` reported "not
+found" while `smos`/`smos-server` console scripts still ran, because site-packages
+had orphaned `~mos_mcp-*.dist-info` directories (pip's tilde-rename safety net from
+an interrupted Windows uninstall, never finalized). That orphaned dist-info's
+`direct_url.json` also showed the prior install came from `pip install
+git+https://github.com/.../SMOS.git` pinned at the same stale commit as
+`origin/main` — meaningless for this repo's workflow since origin has sat dozens of
+commits behind local `main` for months. Fixed by revising `smos/install/cli.py`
+(commit `a7464e9`, direct orchestrator work, no worktree): `_check_smos_package()`
+now fails loudly on a missing/orphaned dist-info instead of silently registering a
+phantom entry point; `_update()` reinstalls editable (`pip install -e .`) from a
+local git checkout instead of the GitHub remote when one is detected
+(`_is_local_checkout()`); `_write_claude_md()` is now idempotent (checks for the
+marker block before appending, so re-running `smos setup` no longer duplicates the
+global policy block); new `--skip-claude-md` flag for projects whose own `CLAUDE.md`
+already carries the policy. Test suite 305 → 318 (13 new installer tests).
+Then executed directly (not via the interactive `smos setup` wizard — it has a
+blocking model-choice prompt unsuitable for a non-interactive shell): removed the
+orphaned dirs, `pip install -e .` (verified editable, `direct_url.json` →
+`file:///C:/private/semantic_memory`, no GitHub pin), `claude mcp add smos --scope
+user -- smos-server`. **`claude mcp list` now shows `smos: smos-server —
+✔ Connected`.** Global `~/.claude/CLAUDE.md` deliberately left untouched (Governor's
+explicit instruction).
+
+**Track 2 (policy flip) — DONE** (commit `7d19c85`). This repo's `CLAUDE.md` no
+longer overrides the global policy with "validation only" — it now uses the standard
+active SMOS file-reading policy on its own source too. The Phase 1
+`_init_db_and_index()` hallucination (`bm25-phase1-lessons`) is kept as a documented
+caveat in the new section ("spot-check before trusting for anything
+security/logic-critical or before an Edit"), not as a reason to avoid the tools —
+Governor's call: surfacing that kind of failure under real use is the point of a
+live test.
+
+**Track 3 (initial full-repo ingestion) — DONE.** Documents: covered by
+`smos-doc-sync`'s first real run (Task 2 of the plan above) — every curated doc
+ingested with zero quarantines. Code: new `docs/runbooks/scripts/ingest_code.py`
+(direct `do_recursive_semantic_ingest()` call, no MCP dependency, `include_patterns`
+restricted to code extensions so it never overlaps with the doc-sync skill's
+markdown-only path) — 97/97 `.py`/etc. files ingested, 0 errors, ~33 minutes
+(CPU-bound Ollama summarization, slower than the README's GPU-accelerated
+benchmarks — expect this to run long). Spot-checked with a real `semantic_query()`
+call against the freshly-ingested `vector_store.py` content.
+
+**Not yet done:** re-running `smos-doc-sync` to pick up docs edited *during* this
+session (`CLAUDE.md`, `docs/runbooks/environment.md`) plus this handoff write itself
+— Governor asked to do that immediately after this handoff lands, as this session's
+very last step, so the handoff's own final content gets captured too.
 
 ---
 
@@ -240,8 +318,7 @@ domain until that domain gets its own adapter. The retrieval engine itself
 (`context_builder.py`) is already domain-neutral and stays as-is — 5.5a's graph-rescue
 mechanism required zero changes to it.
 
-**Next actions for a fresh session on Track A' (5.5b multi-domain traceability) — note
-the toolchain benchmark above takes priority for the very next session:**
+**Next actions for a fresh session on Track A' (5.5b multi-domain traceability):**
 1. Read `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md` for the
    pattern 5.4 used (task structure, TDD steps, the final-review fix wave) — 5.5b's
    plan should follow the same discipline.
