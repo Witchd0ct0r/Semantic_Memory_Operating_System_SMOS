@@ -8,8 +8,8 @@ and query them back by meaning instead of re-reading raw source. See `README.md`
 the pitch and tool list, `ARCHITECTURE.md` for data flow / locking / failure modes.
 
 This repository *is* the SMOS product. Its own source is therefore also, confusingly,
-a valid target for its own tools — see "SMOS tool usage" below for why that's handled
-specially here.
+a valid target for its own tools — as of 2026-07-28 this project opts into using them
+on itself as a live dogfooding test, see "SMOS active — file reading policy" below.
 
 ## Current state & handoff
 
@@ -26,30 +26,34 @@ Other references:
 - `docs/superpowers/plans/2026-06-30-smos-roadmap.md` — the 4-phase roadmap
   (BM25 hybrid → Memory Graph → Agent Primitives → HNSW).
 
-## SMOS tool usage — validation only, never general reading
+## SMOS active — file reading policy
 
-Do **not** use this repo's own SMOS MCP tools (`tool_read_file_compress`,
-`tool_semantic_query`, `tool_semantic_store`, `tool_store_verbatim`, `tool_bulk_read`,
-`tool_recursive_semantic_ingest`, `tool_semantic_snapshot_repo`, etc.) for ordinary
-file reading, code exploration, or session bootstrapping in this repository. Use the
-built-in `Read` / `Grep` / `Glob` tools instead — always, for every file.
+This repo uses its own SMOS tools for ordinary file reading (opted into 2026-07-28
+as a live dogfooding test — this **replaces** the previous "validation only, never
+general reading" restriction that used to apply specifically to this repo, and now
+matches the standard global `~/.claude/CLAUDE.md` SMOS policy instead of overriding
+it).
 
-**This overrides the global `~/.claude/CLAUDE.md` SMOS file-reading policy for work
-inside this repo.**
+For any file you are NOT about to edit, use `tool_read_file_compress` instead of
+the built-in Read tool. Pass the absolute path. The full file content will NOT
+enter the context window — only a compressed summary is returned and stored.
 
-**Why:** this repo is the thing that implements those tools. Using them on their own
-source is uncontrolled dogfooding — self-referential and hard to sanity-check. It
-already caused a real bug: `tool_read_file_compress` hallucinated a nonexistent
+Use the built-in Read tool ONLY immediately before an Edit or Write call.
+
+Before reading any file, call `tool_semantic_query` first. If the query returns
+useful context, skip the read entirely.
+
+Storage routing:
+- Prose, analysis, notes → `tool_semantic_store` (LLM-compressed, queryable)
+- Code, diffs, exact text → `tool_store_verbatim` (lossless, retrieve by key)
+
+**Known risk, watch for it:** `tool_read_file_compress` hallucinated a nonexistent
 `_init_db_and_index()` method when compress-reading `vector_store.py` during Phase 1
-(see the `bm25-phase1-lessons` cross-session memory). A direct `Read` doesn't have
-that failure mode, and the token savings the tool exists to provide aren't worth
-seeded confusion about this codebase's own shape.
-
-**When SMOS tools *are* appropriate here:** only when SMOS itself is the subject under
-test — verifying `tool_semantic_query` returns expected results for a benchmark,
-checking compression fidelity/recall, exercising the MCP surface end-to-end for a
-regression test. That's validating the product; it is not a substitute for reading
-the codebase that builds it.
+(see the `bm25-phase1-lessons` cross-session memory). That's exactly the kind of
+failure this live test exists to surface, not avoid — but it means a compressed
+summary of this repo's own code is not automatically trustworthy. Spot-check it
+against the real source (built-in `Read`) before relying on it for anything
+security- or logic-critical, and always before it informs an `Edit`.
 
 ## Workflow
 
