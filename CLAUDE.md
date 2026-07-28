@@ -16,6 +16,9 @@ specially here.
 **Read `docs/HANDOFF.md` first, every session.** It holds the current phase, what
 shipped last session, and next steps. **Update it at the end of every session**
 (what changed, what's next) so a fresh session can orient from that file alone.
+**Then run the `smos-doc-sync` skill** (`.claude/skills/smos-doc-sync/`) to
+re-ingest any changed docs — including this file — into SMOS before ending
+the session.
 
 Other references:
 - `ARCHITECTURE.md` — data flow, locking, failure modes, scaling ceilings; kept
