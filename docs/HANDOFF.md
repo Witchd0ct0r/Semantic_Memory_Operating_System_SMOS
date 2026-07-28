@@ -7,14 +7,26 @@ history is the log.
 
 ---
 
-## Where things stand (2026-07-28)
+## Where things stand (2026-07-28, session 2)
 
 **This repo now live-dogfoods SMOS on itself — MCP server registered, code + docs
 ingested, project policy flipped to active use.** Full detail in "Live SMOS
-dogfooding setup — COMPLETE (2026-07-28)" below. **Next up:** the doc-sync ingest
-runs immediately after this handoff write (per the new session-end step in
-`CLAUDE.md`), then see "Next up — two independent tracks available" further down
-(Track A' Phase 5.5b, or Track B Phase 4 HNSW) for the next substantive work.
+dogfooding setup — COMPLETE (2026-07-28)" below. The doc-sync re-run this session
+confirmed it: 0 ingested, all docs (including `CLAUDE.md` and
+`docs/runbooks/environment.md`) already matched the manifest from the prior
+session's ingest — that "not yet done" item is now confirmed done, not just
+attempted.
+
+**Phase 5.5b, slice 1 (legal adapter) — DESIGNED, not yet planned or built.**
+Brainstormed this session (`superpowers:brainstorming`, sections approved one at a
+time) and committed: `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md`.
+Governor resolved the open scoping question from the prior session's next-actions
+note (which non-markdown adapter, and how much of Pillar F to attempt) — see "Phase
+5.5b slice 1 — design complete" below for the decisions. **Next up:** a fresh
+session runs `writing-plans` against that spec to produce a tree-verified
+implementation plan, then executes it (subagent-driven-development per the
+project's usual workflow) — deliberately deferred to a new session, not started
+this session.
 
 **Toolchain end-to-end benchmark: COMPLETE** (2026-07-27). SMOS tools vs. raw file
 reading over a 20-page Kubernetes-docs corpus — full results and methodology in
@@ -51,6 +63,48 @@ Markdown documents with internal links or wiki-links now populate the graph the 
 way backtick-marked code entities always have (`VectorStore._update_graph()`'s
 `memory --references--> entity:{name}` shape, reused here as `segment --references-->
 concept:{name}`).
+
+---
+
+## Phase 5.5b slice 1 — design complete (2026-07-28, session 2)
+
+Spec: `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md`. Answers
+the prior session's open question ("5.5b needs a concrete non-markdown adapter
+before domain classification or the fan-out primitives can be validated against
+anything real") with three Governor decisions, made via `AskUserQuestion` during
+brainstorming:
+
+1. **Adapter choice: legal/regulations**, not requirements — matches the
+   `"consequences of X under Hungarian law"` driving use case in the parent design
+   spec (§1). Governor's intent is to broaden to other non-markdown adapters (e.g.
+   requirements) later; this is the first, not the only, one.
+2. **Scope: bounded to adapter + reference extraction only** — `LegalAdapter`
+   (structural grammar + `extract_references()`), proving cross-reference
+   graph-rescue on legal prose closes the 0%-recall gap `tests/bench_legal_regulations.py`
+   already measures (see `legal-regulations-retrieval-gap` cross-session memory).
+   Domain classification, typed traceability edges, the fan-out primitives
+   (`resolve`/`traverse`/`classify_domains`/`coverage_check`), and the coverage/gap
+   signal are all deferred to a later sub-phase (tentatively 5.5c) — mirrors how
+   5.1–5.5a each shipped one bounded slice, rather than building four new
+   subsystems against one unproven adapter at once.
+3. **Term-matching mechanism: heuristic phrase matching**, not a two-pass
+   corpus-wide term registry — mirrors `MarkdownAdapter`'s existing self-topic-triple
+   trick (a segment defining a term and a segment using it both resolve to the same
+   `concept:{name}` graph node purely from matching text, no whole-document pass
+   needed). Chosen over the registry approach specifically to avoid changing the
+   `extract_references()` / `_wire_references()` contract that 5.5a just shipped.
+
+**Confirmed during design, not previously stated in this repo:** no
+`entity_extractor.py` change is needed for this work. The prior session's
+`legal-regulations-retrieval-gap` memory suggested the fix might live there; reading
+the actual 5.5a-era code (`smos/ingest/segmenter.py::_wire_references`,
+`smos/ingest/adapters/markdown.py`) showed the adapter's own `extract_references()`
+already bypasses the generic backtick-only extractor entirely for document-ingested
+segments — the same pattern closes the legal-text gap without touching the generic
+path. That cross-session memory should be treated as superseded on this specific
+point once the plan is written.
+
+---
 
 **One real gap found and fixed during this session, not by the plan's original design:**
 the schema-ingestion path delivers a heading and its body as *separate* `ContentBlock`s
@@ -256,9 +310,11 @@ require absolute paths rooted at the worktree directory for every Read/Edit/Writ
 
 ## Next up — two independent tracks available
 
-**Track A' — Phase 5.5+: multi-domain traceability & fan-out (Pillar F).** Natural
-continuation of 5.4 — domain classification, typed edges, evidence-gathering
-primitives. See the sub-phase breakdown below.
+**Track A' — Phase 5.5+: multi-domain traceability & fan-out (Pillar F).** Slice 1
+(legal adapter) is **designed, ready to plan** — see "Phase 5.5b slice 1 — design
+complete" above and the sub-phase breakdown below. The rest of Pillar F (domain
+classification, typed edges, evidence-gathering primitives) is 5.5c, still queued
+behind slice 1.
 
 **Track B — Phase 4: HNSW Migration (est. 1 session).** Independent of Phase 5;
 pure search performance. Plan pointer: `docs/superpowers/plans/2026-06-30-smos-roadmap.md`,
@@ -299,8 +355,9 @@ shipped):
 | **5.3** | Ingestion contract (Pydantic schema, quarantine validation) + `ingest_tools.py` integration, resumable-checkpoint large-payload path | 5.1, 5.2 | **DONE** (`a18fa4b`) |
 | **5.4** | Two-stage retrieval: exact/verbatim strategy, ±1 neighbor expansion, `reconstruct()` | 5.1 | **DONE** (`f5934f9`) |
 | **5.5a** | Reference extraction & domain tagging: `MarkdownAdapter.extract_references()`, `_wire_references()` graph wiring (both ingestion paths), `domain_tags` persistence | 5.1, 5.3, 5.4 | **DONE** (`56686c1`), merged to `main` (`ad9122f`) |
-| **5.5b** | Multi-domain traceability & fan-out (Pillar F): domain classification, typed edges, evidence-gathering primitives, coverage/gap signal | 5.5a, needs a non-markdown adapter | queued |
-| **5.6** | Graph-propagation ranking fold (PageRank+RRF) | 5.5b (needs a populated graph) | queued |
+| **5.5b** | Legal adapter (slice 1 of Pillar F): `LegalAdapter` structural grammar + `extract_references()`, proving cross-reference graph-rescue on legal prose | 5.5a | **DESIGNED**, not planned/built — spec: `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md` |
+| **5.5c** | Multi-domain traceability & fan-out (Pillar F, remainder): domain classification, typed edges, evidence-gathering primitives, coverage/gap signal | 5.5b | queued |
+| **5.6** | Graph-propagation ranking fold (PageRank+RRF) | 5.5c (needs a populated graph) | queued |
 | **5.7** | Clarification-loop cluster signal (Pillar E) | 5.4 | queued |
 | **5.8** | Multilingual embeddings (optional extra, cross-cutting) | can land anytime before Phase 4 | queued |
 
@@ -318,16 +375,21 @@ domain until that domain gets its own adapter. The retrieval engine itself
 (`context_builder.py`) is already domain-neutral and stays as-is — 5.5a's graph-rescue
 mechanism required zero changes to it.
 
-**Next actions for a fresh session on Track A' (5.5b multi-domain traceability):**
+**Next actions for a fresh session on Track A' (5.5b, slice 1 — legal adapter):**
+**Design is done** — `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md`
+has the full scope (adapter architecture, structural-grammar regex, reference-extraction
+mechanics, testing/acceptance criteria, explicit non-goals). Start at step 2 below, not
+step 1 — the scoping questions step 1 used to point at (which adapter, how much of
+Pillar F, term-matching mechanism) are already resolved in that spec.
 1. Read `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md` for the
    pattern 5.4 used (task structure, TDD steps, the final-review fix wave) — 5.5b's
    plan should follow the same discipline.
-2. Write a detailed, **tree-verified** implementation plan for 5.5b — read current
-   signatures from the actual files, not from this handoff or the spec (see the
-   Phase 1 plan-drift lesson in `bm25-phase1-lessons`). 5.5b needs a concrete
-   non-markdown adapter (e.g. a legal or requirements adapter) before domain
-   classification or the fan-out primitives can be validated against anything real —
-   don't build them speculatively against markdown alone.
+2. Invoke `superpowers:writing-plans` against the 5.5b slice-1 spec to produce a
+   tree-verified implementation plan — read current signatures from the actual files
+   (`smos/ingest/adapters/base.py`, `markdown.py`, `registry.py`,
+   `smos/ingest/segmenter.py`'s `_wire_references`/`_REFERENCE_LOOKBACK_CHARS`,
+   `tests/bench_legal_regulations.py`), not from this handoff or the spec's prose
+   (see the Phase 1 plan-drift lesson in `bm25-phase1-lessons`).
 3. Slice into self-contained Haiku-dispatchable tasks per the CLAUDE.md workflow.
    Harden every implementer dispatch prompt with an explicit
    `git branch --show-current` self-check up front and a requirement to use absolute
