@@ -62,3 +62,43 @@ def test_get_adapter_finds_explicitly_registered_legal_adapter():
     adapter = get_adapter("legal")
     assert adapter is not None
     assert adapter.name == "legal"
+
+
+def test_extract_references_returns_empty_without_matches():
+    adapter = LegalAdapter()
+    assert adapter.extract_references("plain lowercase text with nothing capitalized.") == []
+
+
+def test_extract_references_citation_cross_reference():
+    adapter = LegalAdapter()
+    text = "Section 3.1 permits disclosure. See also Section 5.2 for exceptions."
+    triples = adapter.extract_references(text)
+    assert ("Section 5.2", "Section 3.1", "references") in triples
+
+
+def test_extract_references_defining_pattern_emits_self_topic():
+    adapter = LegalAdapter()
+    text = "Covered Institution means any entity that holds more than ten billion dollars in assets under management."
+    triples = adapter.extract_references(text)
+    assert ("Covered Institution", "Covered Institution", "references") in triples
+
+
+def test_extract_references_defining_pattern_handles_quoted_term():
+    adapter = LegalAdapter()
+    text = '"Qualified Custodian" means a bank or trust company that meets the segregation-of-assets standard.'
+    triples = adapter.extract_references(text)
+    assert any(target == "Qualified Custodian" for _source, target, _edge in triples)
+
+
+def test_extract_references_title_case_phrase_without_definition():
+    adapter = LegalAdapter()
+    text = "Annual stress-test results for a Covered Institution must be submitted no later than March 31."
+    triples = adapter.extract_references(text)
+    assert any(target == "Covered Institution" for _source, target, _edge in triples)
+
+
+def test_extract_references_only_uses_references_edge_type():
+    adapter = LegalAdapter()
+    text = "Section 1 permits disclosure. Section 2 restricts it. Covered Institution means a large entity."
+    triples = adapter.extract_references(text)
+    assert all(edge_type == "references" for _s, _t, edge_type in triples)
