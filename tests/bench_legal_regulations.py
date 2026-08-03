@@ -48,6 +48,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from smos.compression.context_builder import build_compressed_context
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
+from smos.ingest.adapters.legal import LegalAdapter
+from smos.ingest.transformers.markdown_transformer import markdown_to_payload
+from smos.tools.ingest_tools import do_ingest_document_schema
 
 # ---------------------------------------------------------------------------
 # 1. Citation / defined-term recall
@@ -259,12 +262,63 @@ def _cross_ref_comparison(tmp_root: Path, backtick: bool) -> tuple[float, float]
     return off_recall, on_recall
 
 
+def _run_adapter_scenario(scenario: dict, tmp_root: Path, graph_enabled: bool) -> bool:
+    suffix = f"adapter_{scenario['name']}_{graph_enabled}"
+    store = VectorStore(persist_path=tmp_root / f"adapter_{abs(hash(suffix))}")
+    if not graph_enabled:
+        store.graph.traverse = lambda *a, **k: []
+
+    target_text = _fmt(scenario["target"], scenario["term"], backtick=False)
+    anchor_text = _fmt(scenario["anchor"], scenario["term"], backtick=False)
+
+    target_payload = markdown_to_payload(target_text, system="legal-bench", native_id=f"target-{suffix}")
+    target_result = do_ingest_document_schema(target_payload, store, adapter=LegalAdapter())
+    target_id = target_result["segment_ids"][0]
+
+    anchor_payload = markdown_to_payload(anchor_text, system="legal-bench", native_id=f"anchor-{suffix}")
+    do_ingest_document_schema(anchor_payload, store, adapter=LegalAdapter())
+
+    for noise in _NOISE_DOCS:
+        store.store(MemoryObject(type="doc", content=noise))
+
+    result = build_compressed_context(scenario["query"], k=1, store=store)
+    return target_id in result.sources
+
+
+def _adapter_comparison(tmp_root: Path) -> tuple[float, float]:
+    n = len(_CROSS_REF_SCENARIOS)
+    print("=" * 72)
+    print(f"3. CROSS-REFERENCE RECALL VIA LEGAL ADAPTER (schema-driven ingest, "
+          f"plain prose, {n} scenarios, k=1)")
+    print("=" * 72)
+    print(f"{'Scenario':<42} {'Graph off':<12} {'Graph on'}")
+    print("-" * 72)
+
+    off_hits = 0
+    on_hits = 0
+    for scenario in _CROSS_REF_SCENARIOS:
+        off_ok = _run_adapter_scenario(scenario, tmp_root, graph_enabled=False)
+        on_ok = _run_adapter_scenario(scenario, tmp_root, graph_enabled=True)
+        off_hits += off_ok
+        on_hits += on_ok
+        print(f"{scenario['name']:<42} {'FOUND' if off_ok else 'missed':<12} {'FOUND' if on_ok else 'missed'}")
+
+    off_recall = off_hits / n
+    on_recall = on_hits / n
+    print("-" * 72)
+    print(f"Graph off: {off_recall:.2f} ({off_hits}/{n})")
+    print(f"Graph on:  {on_recall:.2f} ({on_hits}/{n})")
+    print()
+    return off_recall, on_recall
+
+
 def main() -> None:
     tmp_root = Path(tempfile.mkdtemp(prefix="smos_bench_legal_"))
     try:
         cite_pre, cite_now = _citation_comparison(tmp_root)
         plain_off, plain_on = _cross_ref_comparison(tmp_root, backtick=False)
         marked_off, marked_on = _cross_ref_comparison(tmp_root, backtick=True)
+        adapter_off, adapter_on = _adapter_comparison(tmp_root)
 
         print("=" * 72)
         print("SUMMARY")
@@ -272,6 +326,7 @@ def main() -> None:
         print(f"Citation/defined-term recall:              {cite_pre:.0%} -> {cite_now:.0%}")
         print(f"Cross-reference recall, plain prose:       {plain_off:.0%} -> {plain_on:.0%} (graph off -> on)")
         print(f"Cross-reference recall, backtick-marked:   {marked_off:.0%} -> {marked_on:.0%} (graph off -> on)")
+        print(f"Cross-reference recall, legal adapter:      {adapter_off:.0%} -> {adapter_on:.0%} (graph off -> on)")
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
