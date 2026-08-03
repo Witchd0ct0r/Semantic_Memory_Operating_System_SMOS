@@ -7,26 +7,47 @@ history is the log.
 
 ---
 
-## Where things stand (2026-07-28, session 2)
+## Where things stand (2026-08-03, session 4)
 
-**This repo now live-dogfoods SMOS on itself — MCP server registered, code + docs
-ingested, project policy flipped to active use.** Full detail in "Live SMOS
-dogfooding setup — COMPLETE (2026-07-28)" below. The doc-sync re-run this session
-confirmed it: 0 ingested, all docs (including `CLAUDE.md` and
-`docs/runbooks/environment.md`) already matched the manifest from the prior
-session's ingest — that "not yet done" item is now confirmed done, not just
-attempted.
-
-**Phase 5.5b, slice 1 (legal adapter) — DESIGNED, not yet planned or built.**
-Brainstormed this session (`superpowers:brainstorming`, sections approved one at a
-time) and committed: `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md`.
-Governor resolved the open scoping question from the prior session's next-actions
-note (which non-markdown adapter, and how much of Pillar F to attempt) — see "Phase
-5.5b slice 1 — design complete" below for the decisions. **Next up:** a fresh
-session runs `writing-plans` against that spec to produce a tree-verified
-implementation plan, then executes it (subagent-driven-development per the
-project's usual workflow) — deliberately deferred to a new session, not started
+**Phase 5.5b, slice 1 (legal adapter) — COMPLETE and MERGED to `main`.** Full
+detail (commits, test delta, bench numbers, one investigated-and-confirmed-benign
+deviation from the plan's predicted numbers) in "Phase 5.5b — Legal adapter (slice
+1): COMPLETE and MERGED" below. **Next up:** 5.5c (multi-domain traceability &
+fan-out — now unblocked, a concrete non-markdown adapter exists to validate
+against) or Phase 4 (HNSW migration, Track B) — Governor's call, not yet decided
 this session.
+
+**smos MCP server never connected this session** — unlike session 3's transient
+blip (below, kept for reference), this time the server simply never became
+available (`ToolSearch` found none of its tools mid-session). Built-in
+Read/Grep/Glob were used throughout instead, including for this session's
+tree-verification and code review work. Not a policy violation (nothing to opt
+into if the server isn't up), but worth a `/mcp` check at the start of the next
+session before assuming SMOS is live.
+
+**smos MCP server: reconnect issue investigated, no bug found — resolved by a plain
+`/mcp` retry (session 3).** Session opened with `/mcp` reporting "Failed to
+reconnect to smos: ... timed out after 30000ms". Investigated: `claude mcp list`
+showed it already `✔ Connected`, direct `import smos.server` (which triggers
+`VectorStore` init — FAISS index + embedding model load) took ~7.6s, well under
+the 30s timeout, no lock files or zombie processes contending for
+`.smos/faiss.index`/`.smos/metadata.db`. Treated as a one-off transient blip (not
+a code bug) per Governor's call; a plain `/mcp` retry reconnected cleanly
+(`"Reconnected to smos."`) and the rest of that session used SMOS tools normally.
+**If this recurs, don't re-diagnose from scratch** — the above already ruled out
+slow startup, locks, and stale processes; look elsewhere (Claude Code's own MCP
+client/timeout config) next time.
+
+**Correction to this project's own SMOS policy application, worth knowing before
+the next session reads any file:** this session was corrected mid-work for reading
+several files with the built-in `Read` tool instead of
+`tool_semantic_query`/`tool_read_file_compress`. This repo's `CLAUDE.md` "SMOS
+active" policy is the *default* file-reading behavior for this project
+specifically (opted in 2026-07-28, see "Live SMOS dogfooding setup" below) — it
+does not wait for an explicit "use smos" cue the way the global
+`~/.claude/CLAUDE.md` opt-in-per-session default does for other projects. Recorded
+as a standing cross-session memory (`feedback-smos-active-by-default`) so this
+isn't relitigated next session.
 
 **Toolchain end-to-end benchmark: COMPLETE** (2026-07-27). SMOS tools vs. raw file
 reading over a 20-page Kubernetes-docs corpus — full results and methodology in
@@ -66,72 +87,105 @@ concept:{name}`).
 
 ---
 
-## Phase 5.5b slice 1 — design complete (2026-07-28, session 2)
+## Phase 5.5b — Legal adapter (slice 1): COMPLETE and MERGED to `main` (2026-08-03, session 4)
 
-Spec: `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md`. Answers
-the prior session's open question ("5.5b needs a concrete non-markdown adapter
-before domain classification or the fan-out primitives can be validated against
-anything real") with three Governor decisions, made via `AskUserQuestion` during
-brainstorming:
+Spec: `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md`. Plan:
+`docs/superpowers/plans/2026-07-28-phase5-5b-legal-adapter.md`. Built via
+subagent-driven-development in a worktree (branch
+`worktree-phase5-5b-legal-adapter`, based on `main`@`1af69bd`, now merged and
+cleaned up), 4 tasks, every task reviewed inline by the orchestrator (per session
+preference — no task-reviewer subagents dispatched) plus a final whole-branch
+review, also inline, both clean. **333/333 tests passing on `main` post-merge,
+verified.** Test suite 318 → 333.
+
+Commits (now on `main`): `f84a392` (`LegalAdapter` skeleton — provision-marker
+structural grammar splitting on `Section N`/`Article N`/`Rule N`/`§ N`, same
+boundary-to-next-boundary shape `MarkdownAdapter.structural_boundaries()` uses for
+headings), `1f932f0` (`LegalAdapter.extract_references()` — citation
+cross-references between provision markers, one-directional by design, plus
+heuristic defined-term matching: a `_DEFINING_PATTERN_RE` "X means"/"X shall mean"
+sentence emits a self-topic triple, and a broader `_TITLE_CASE_PHRASE_RE` 2-4-word
+scan lets a segment merely *using* a term resolve to the same `concept:{name}` node
+a defining segment created), `fb32a55` (end-to-end pytest proof,
+`tests/test_legal_adapter.py`: a 2-provision legal document's definition segment
+graph-rescues its separate usage segment through `context_builder.py`'s existing
+unmodified 2-hop `edge_types=["references"]` expansion), `a57bf09` (new "3.
+CROSS-REFERENCE RECALL VIA LEGAL ADAPTER" dimension in
+`tests/bench_legal_regulations.py`: plain-prose cross-reference recall via the
+schema-driven `LegalAdapter` path moves **33% → 100%** graph-off → graph-on),
+`e490cd9` (commits the plan file itself — written last session but never
+committed until this session's finish step).
+
+**No changes to `smos/memory/entity_extractor.py`, `smos/compression/context_builder.py`,
+or `smos/ingest/segmenter.py`** — the fix lives entirely in the new adapter file,
+same pattern 5.5a used for `MarkdownAdapter`. Closes the concrete gap flagged since
+5.5a: cross-reference graph-rescue now works on legal/regulatory prose the same way
+it already works on markdown, without requiring a backtick-marking convention.
+
+**Design decisions** (three Governor calls made via `AskUserQuestion` during
+brainstorming, session 2):
 
 1. **Adapter choice: legal/regulations**, not requirements — matches the
    `"consequences of X under Hungarian law"` driving use case in the parent design
    spec (§1). Governor's intent is to broaden to other non-markdown adapters (e.g.
    requirements) later; this is the first, not the only, one.
-2. **Scope: bounded to adapter + reference extraction only** — `LegalAdapter`
-   (structural grammar + `extract_references()`), proving cross-reference
-   graph-rescue on legal prose closes the 0%-recall gap `tests/bench_legal_regulations.py`
-   already measures (see `legal-regulations-retrieval-gap` cross-session memory).
-   Domain classification, typed traceability edges, the fan-out primitives
-   (`resolve`/`traverse`/`classify_domains`/`coverage_check`), and the coverage/gap
-   signal are all deferred to a later sub-phase (tentatively 5.5c) — mirrors how
-   5.1–5.5a each shipped one bounded slice, rather than building four new
-   subsystems against one unproven adapter at once.
+2. **Scope: bounded to adapter + reference extraction only** — proving
+   cross-reference graph-rescue on legal prose closes the 0%-recall gap
+   `tests/bench_legal_regulations.py` measured (see `legal-regulations-retrieval-gap`
+   cross-session memory — now substantially superseded by this section's actual
+   results). Domain classification, typed traceability edges, the fan-out
+   primitives (`resolve`/`traverse`/`classify_domains`/`coverage_check`), and the
+   coverage/gap signal are all deferred to 5.5c.
 3. **Term-matching mechanism: heuristic phrase matching**, not a two-pass
    corpus-wide term registry — mirrors `MarkdownAdapter`'s existing self-topic-triple
-   trick (a segment defining a term and a segment using it both resolve to the same
-   `concept:{name}` graph node purely from matching text, no whole-document pass
-   needed). Chosen over the registry approach specifically to avoid changing the
-   `extract_references()` / `_wire_references()` contract that 5.5a just shipped.
+   trick, chosen specifically to avoid changing the `extract_references()` /
+   `_wire_references()` contract 5.5a shipped.
 
-**Confirmed during design, not previously stated in this repo:** no
-`entity_extractor.py` change is needed for this work. The prior session's
-`legal-regulations-retrieval-gap` memory suggested the fix might live there; reading
-the actual 5.5a-era code (`smos/ingest/segmenter.py::_wire_references`,
-`smos/ingest/adapters/markdown.py`) showed the adapter's own `extract_references()`
-already bypasses the generic backtick-only extractor entirely for document-ingested
-segments — the same pattern closes the legal-text gap without touching the generic
-path. That cross-session memory should be treated as superseded on this specific
-point once the plan is written.
+**Confirmed during design:** no `entity_extractor.py` change was needed — the
+adapter's own `extract_references()` bypasses the generic backtick-only extractor
+entirely for document-ingested segments, same as `MarkdownAdapter`.
 
----
-
-**One real gap found and fixed during this session, not by the plan's original design:**
-the schema-ingestion path delivers a heading and its body as *separate* `ContentBlock`s
-(by the ingestion contract's own design, Pillar G), so a naive per-leaf-only extraction
-call would never see the heading for a body leaf. Fixed with a fixed 300-char lookback
+**One real gap found and fixed during the design session** (not by the plan's
+original design): the schema-ingestion path delivers a heading and its body as
+*separate* `ContentBlock`s (Pillar G), so a naive per-leaf-only extraction call
+would never see the heading for a body leaf. Fixed with a fixed 300-char lookback
 window into `full_text` before each leaf (`_REFERENCE_LOOKBACK_CHARS` in
-`segmenter.py`) plus taking the *last* heading match in whatever text is given (not the
-first) — verified empirically against the real pipeline before the plan was written,
-and again by each task's passing tests.
+`segmenter.py`, unchanged by this slice — the lookback mechanism itself was 5.5a's
+work, reused here) plus taking the *last* heading match in whatever text is given
+(not the first) — verified empirically against the real pipeline before the plan
+was written, and again by each task's passing tests.
 
-**Note on this session's process:** Task 5's implementer pushed an unrequested second
-commit editing this very file, with several factually wrong task-to-commit
-attributions (mislabeling Task 2 as "markdown_transformer.py wiring" when it touched
-`segmenter.py`; Task 3 as "domain_tags field" work when that was Task 4; Task 4 as
-building a "graph-domain index" that was never built) plus a premature "ready to
-merge" claim before the final review had run. Discarded via `git reset --hard` back to
-the requested test-only commit; this write-up was authored by the orchestrator instead,
-per the plan's own "Post-plan: HANDOFF update" step being reserved for the orchestrator,
-not a task implementer.
+**One deviation from the plan's predicted verification numbers, investigated and
+confirmed benign:** the plan's Task 4 expected the new bench dimension's "Graph
+off" recall to be **0.00 (0/3)**; the actual measured value is **0.33 (1/3)**.
+Root cause (confirmed via `git stash` comparison against the pre-existing,
+untouched dimension-2 code path, which shows the identical 0.33 baseline, and
+independently re-verified by the orchestrator by reading `_CROSS_REF_SCENARIOS`
+directly): the "Material Nonpublic Information / trading halt" scenario's query
+("definition of confidential trading data") and target text ("**Trading** is
+halted for any employee in possession of Material Nonpublic Information...")
+share the token "trading", and the bench corpus for this dimension is only 8
+documents — enough for BM25/vector lexical overlap alone to surface the target
+even with the graph disabled. Pre-existing property of this one scenario/corpus
+pairing (present identically before this slice existed), not a regression and not
+implicating `LegalAdapter` — the substantive claim (graph-on closes the gap to
+100% recall) holds exactly as designed. Worth hardening this one scenario's
+noise/query pair in a future pass so all three cleanly show 0% graph-off; not a
+blocker, not scheduled.
 
-**Deferred to 5.5b+ (Governor's 2026-07-27 scoping decision, made before this plan was
-written):** domain **classification** (adapter rules + LLM fallback), the fan-out
-evidence-gathering primitives (`resolve`/`classify_domains`/per-domain `recall`/
-`coverage_check`), the coverage/gap signal, and new SE-specific traceability edge types
-(`refines`/`satisfies`/`verified_by`/etc.) — deliberately held until there's a concrete
-non-markdown adapter to validate them against, rather than bootstrapping speculative
-machinery from markdown alone.
+**Note on process (session 2, design/planning):** an earlier draft of this
+write-up was clobbered by a task implementer pushing an unrequested second commit
+editing this file with several factually wrong task-to-commit attributions, plus a
+premature "ready to merge" claim before the final review had run — discarded via
+`git reset --hard`; this file is authored by the orchestrator only, per the plan's
+own "Post-plan: HANDOFF update" step, never a task implementer.
+
+**Deferred to 5.5c:** domain **classification** (adapter rules + LLM fallback), the
+fan-out evidence-gathering primitives (`resolve`/`classify_domains`/per-domain
+`recall`/`coverage_check`), the coverage/gap signal, and new SE-specific
+traceability edge types (`refines`/`satisfies`/`verified_by`/etc.) — deliberately
+held until there's a concrete non-markdown adapter to validate them against (now
+there is), rather than bootstrapping speculative machinery from markdown alone.
 
 ---
 
@@ -201,10 +255,12 @@ markdown-only path) — 97/97 `.py`/etc. files ingested, 0 errors, ~33 minutes
 benchmarks — expect this to run long). Spot-checked with a real `semantic_query()`
 call against the freshly-ingested `vector_store.py` content.
 
-**Not yet done:** re-running `smos-doc-sync` to pick up docs edited *during* this
-session (`CLAUDE.md`, `docs/runbooks/environment.md`) plus this handoff write itself
-— Governor asked to do that immediately after this handoff lands, as this session's
-very last step, so the handoff's own final content gets captured too.
+**Resolved (session 3):** the doc-sync re-run to pick up docs edited *during*
+session 2 (`CLAUDE.md`, `docs/runbooks/environment.md`) plus that session's handoff
+write — confirmed done: 0 re-ingested, everything already matched the manifest
+from the prior run. Session 4 (this session, SMOS unavailable — see "Where things
+stand" above) did not re-run doc-sync; the next session with a connected SMOS
+server should sync this handoff's own edits.
 
 ---
 
@@ -310,11 +366,12 @@ require absolute paths rooted at the worktree directory for every Read/Edit/Writ
 
 ## Next up — two independent tracks available
 
-**Track A' — Phase 5.5+: multi-domain traceability & fan-out (Pillar F).** Slice 1
-(legal adapter) is **designed, ready to plan** — see "Phase 5.5b slice 1 — design
-complete" above and the sub-phase breakdown below. The rest of Pillar F (domain
-classification, typed edges, evidence-gathering primitives) is 5.5c, still queued
-behind slice 1.
+**Track A' — Phase 5.5c: multi-domain traceability & fan-out (Pillar F,
+remainder).** Slice 1 (legal adapter, 5.5b) is **DONE and merged** — see "Phase
+5.5b — Legal adapter (slice 1): COMPLETE and MERGED" above. 5.5c (domain
+classification, typed edges, evidence-gathering primitives, coverage/gap signal)
+is now unblocked — a concrete non-markdown adapter exists to validate it against —
+but needs its own design/plan session before executing; not started.
 
 **Track B — Phase 4: HNSW Migration (est. 1 session).** Independent of Phase 5;
 pure search performance. Plan pointer: `docs/superpowers/plans/2026-06-30-smos-roadmap.md`,
@@ -355,7 +412,7 @@ shipped):
 | **5.3** | Ingestion contract (Pydantic schema, quarantine validation) + `ingest_tools.py` integration, resumable-checkpoint large-payload path | 5.1, 5.2 | **DONE** (`a18fa4b`) |
 | **5.4** | Two-stage retrieval: exact/verbatim strategy, ±1 neighbor expansion, `reconstruct()` | 5.1 | **DONE** (`f5934f9`) |
 | **5.5a** | Reference extraction & domain tagging: `MarkdownAdapter.extract_references()`, `_wire_references()` graph wiring (both ingestion paths), `domain_tags` persistence | 5.1, 5.3, 5.4 | **DONE** (`56686c1`), merged to `main` (`ad9122f`) |
-| **5.5b** | Legal adapter (slice 1 of Pillar F): `LegalAdapter` structural grammar + `extract_references()`, proving cross-reference graph-rescue on legal prose | 5.5a | **DESIGNED**, not planned/built — spec: `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md` |
+| **5.5b** | Legal adapter (slice 1 of Pillar F): `LegalAdapter` structural grammar + `extract_references()`, proving cross-reference graph-rescue on legal prose | 5.5a | **DONE** (`a57bf09`), merged to `main` |
 | **5.5c** | Multi-domain traceability & fan-out (Pillar F, remainder): domain classification, typed edges, evidence-gathering primitives, coverage/gap signal | 5.5b | queued |
 | **5.6** | Graph-propagation ranking fold (PageRank+RRF) | 5.5c (needs a populated graph) | queued |
 | **5.7** | Clarification-loop cluster signal (Pillar E) | 5.4 | queued |
@@ -375,29 +432,33 @@ domain until that domain gets its own adapter. The retrieval engine itself
 (`context_builder.py`) is already domain-neutral and stays as-is — 5.5a's graph-rescue
 mechanism required zero changes to it.
 
-**Next actions for a fresh session on Track A' (5.5b, slice 1 — legal adapter):**
-**Design is done** — `docs/superpowers/specs/2026-07-28-phase5-5b-legal-adapter-design.md`
-has the full scope (adapter architecture, structural-grammar regex, reference-extraction
-mechanics, testing/acceptance criteria, explicit non-goals). Start at step 2 below, not
-step 1 — the scoping questions step 1 used to point at (which adapter, how much of
-Pillar F, term-matching mechanism) are already resolved in that spec.
-1. Read `docs/superpowers/plans/2026-07-25-phase5-4-two-stage-retrieval.md` for the
-   pattern 5.4 used (task structure, TDD steps, the final-review fix wave) — 5.5b's
-   plan should follow the same discipline.
-2. Invoke `superpowers:writing-plans` against the 5.5b slice-1 spec to produce a
-   tree-verified implementation plan — read current signatures from the actual files
-   (`smos/ingest/adapters/base.py`, `markdown.py`, `registry.py`,
-   `smos/ingest/segmenter.py`'s `_wire_references`/`_REFERENCE_LOOKBACK_CHARS`,
-   `tests/bench_legal_regulations.py`), not from this handoff or the spec's prose
-   (see the Phase 1 plan-drift lesson in `bm25-phase1-lessons`).
-3. Slice into self-contained Haiku-dispatchable tasks per the CLAUDE.md workflow.
-   Harden every implementer dispatch prompt with an explicit
+**Next actions for a fresh session on Track A' (5.5c, remainder of Pillar F):**
+5.5b (legal adapter) is **done** — 5.5c needs its own brainstorming/design pass
+before a plan can be written; don't assume the deferred scope from 5.5b's design
+spec (§6) is still current without re-checking it against whatever 5.5b actually
+shipped.
+1. Start with `superpowers:brainstorming` against the parent design spec's Pillar F
+   section and the "Deferred to 5.5c" list in the 5.5b write-up above (domain
+   classification, typed traceability edges, fan-out primitives, coverage/gap
+   signal) — this sub-phase has no design doc yet, unlike 5.5b going into its
+   session.
+2. Whichever worktree gets created, check `git log --oneline -3` inside it before
+   trusting it (this repo's `origin` is dozens of commits behind local `main`; a
+   fresh worktree's default base-ref can silently start from a stale baseline —
+   recurred 3x now including this session, see `bm25-phase1-lessons` /
+   `phase5-domain-general-ingestion` cross-session memory — fix each time is a
+   `git reset --hard` to local `main`'s actual tip before doing anything else).
+3. Harden every implementer dispatch prompt with an explicit
    `git branch --show-current` self-check up front and a requirement to use absolute
-   worktree-rooted paths for Read/Edit/Write (see "Execution notes" above for why),
-   and diff-review every commit a task produces — not just the ones the brief asked
-   for. 5.5a's Task 5 implementer pushed an unrequested HANDOFF.md edit with several
-   wrong task-to-commit attributions; keep diffing the full commit list, not just the
-   expected file.
+   worktree-rooted paths for Read/Edit/Write, and diff-review every commit a task
+   produces — not just the ones the brief asked for. Several prior sessions'
+   implementers pushed unrequested HANDOFF.md edits with wrong attributions; keep
+   diffing the full commit list, not just the expected file, every task,
+   indefinitely.
+4. **This project's SMOS policy is active by default** (see "Where things stand"
+   above) — use `tool_semantic_query`/`tool_read_file_compress` from the first file
+   read of the session if the MCP server is actually connected (check `/mcp` or
+   `ToolSearch` first — it failed to connect at all in session 4, see above).
 
 ## Standing technical debt (address opportunistically, not yet scheduled)
 
