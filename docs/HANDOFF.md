@@ -45,13 +45,14 @@ against), Phase 4 (HNSW migration, Track B), or hardening `LegalAdapter`'s citat
 namespacing per this session's benchmark finding above — Governor's call, not yet
 decided.
 
-**smos MCP server never connected this session** — unlike session 3's transient
-blip (below, kept for reference), this time the server simply never became
-available (`ToolSearch` found none of its tools mid-session). Built-in
-Read/Grep/Glob were used throughout instead, including for this session's
-tree-verification and code review work. Not a policy violation (nothing to opt
-into if the server isn't up), but worth a `/mcp` check at the start of the next
-session before assuming SMOS is live.
+**smos MCP server did not connect in session 4 or session 5** — two sessions running
+now (session 5 confirmed via `ToolSearch` mid-session, no `mcp__smos__*` tools
+surfaced). Unlike session 3's transient blip (below, kept for reference), this isn't
+a one-off — worth actually checking `claude mcp list` / `/mcp` status at the start of
+the next session rather than assuming it's still just bad luck. Built-in Read/Grep/
+Glob/Bash were used throughout both sessions instead. Not a policy violation
+(nothing to opt into if the server isn't up), but if it fails a third session in a
+row, treat it as a real regression to investigate, not another transient blip.
 
 **smos MCP server: reconnect issue investigated, no bug found — resolved by a plain
 `/mcp` retry (session 3).** Session opened with `/mcp` reporting "Failed to
@@ -392,7 +393,7 @@ require absolute paths rooted at the worktree directory for every Read/Edit/Writ
 - **Phase 1 — BM25 Hybrid Retrieval** (merged `b890a19`, 2026-07-02): RRF fusion of
   FAISS + BM25Okapi in `context_builder.py`; exact-term recall gate 0.33→1.00.
 
-## Next up — two independent tracks available
+## Next up — three independent tracks available
 
 **Track A' — Phase 5.5c: multi-domain traceability & fan-out (Pillar F,
 remainder).** Slice 1 (legal adapter, 5.5b) is **DONE and merged** — see "Phase
@@ -400,6 +401,17 @@ remainder).** Slice 1 (legal adapter, 5.5b) is **DONE and merged** — see "Phas
 classification, typed edges, evidence-gathering primitives, coverage/gap signal)
 is now unblocked — a concrete non-markdown adapter exists to validate it against —
 but needs its own design/plan session before executing; not started.
+
+**Track C — `LegalAdapter` citation namespacing hardening (est. small, ~1 session).**
+Flagged by the EU-law benchmark (session 5, see "Where things stand" above):
+`LegalAdapter`'s citation extraction has no concept of which regulation/document an
+"Article N" citation belongs to, so two different documents' same-numbered articles
+collide into one shared `concept:article N` graph node — verified to cause at least
+one real wrong retrieval answer on a two-regulation corpus. Fix direction: namespace
+citation concept ids by `doc_id` or an extracted regulation identifier. Worth doing
+before trusting cross-reference graph-rescue on any real multi-regulation corpus,
+and before 5.5c builds further traceability machinery on top of the same mechanism.
+Not started; no design session held yet.
 
 **Track B — Phase 4: HNSW Migration (est. 1 session).** Independent of Phase 5;
 pure search performance. Plan pointer: `docs/superpowers/plans/2026-06-30-smos-roadmap.md`,
@@ -413,8 +425,11 @@ tech debt at the same time.
 
 **Sequencing note:** the multilingual-embeddings open decision (spec §9) was resolved
 as an **optional, lazy-loaded extra** (not a hard dependency swap) — so it no longer
-forces Phase 5 work to land before Phase 4. Track A' and Track B can proceed in
-either order; pick based on which is more valuable next.
+forces Phase 5 work to land before Phase 4. Tracks A', B, and C can proceed in any
+order; pick based on which is more valuable next. Track C is the smallest and most
+narrowly scoped of the three, and arguably worth doing before Track A' (5.5c) since
+5.5c would otherwise build new traceability machinery on top of the same
+un-namespaced citation mechanism.
 
 ## Also queued — Phase 5, sub-phases 5.3 onward
 
