@@ -9,24 +9,32 @@ history is the log.
 
 ## Where things stand (2026-08-05, session 5)
 
-**EU-law toolchain benchmark — COMPLETE.** Full results in
+**EU-law toolchain benchmark — COMPLETE (revised).** Full results in
 `docs/eu-law-benchmark-results.md`. Design: `docs/superpowers/specs/2026-08-05-eu-law-benchmark-design.md`.
 Plan: `docs/superpowers/plans/2026-08-05-eu-law-benchmark.md`. Real EUR-Lex corpus
 (GDPR Chapter I + Regulation (EU) 2018/1807, English text), ingested via `LegalAdapter`
-through the schema-driven path, 10 cross-document synthesis questions, baseline
-(raw `Read`) vs. isolated SMOS-tool run. **Headline: the opposite of the 2026-07-27
-Kubernetes-docs benchmark result** — the raw-`Read` baseline won on both token cost
-(SMOS used 8.6x more tokens, not fewer — likely because this corpus is small enough,
-~13KB, that reading it whole in 2 tool calls beats 20 turns of iterative retrieval) and
-answer quality (baseline correct on 9/10 questions vs. SMOS's 8/10, including one clear
-SMOS factual error). `LegalAdapter`'s citation graph was confirmed to visibly influence
-retrieval (not inert on real text) but in the one traceable instance, it hurt: a
-cross-regulation "Article 3" concept-node collision (both GDPR and Regulation 2018/1807
-have their own Article 3, with entirely different content) is implicated in the SMOS
-run's one clear wrong answer. Recommendation flagged for future work: `LegalAdapter`'s
-citation mechanism has no per-regulation namespacing — worth hardening before trusting
-cross-reference graph-rescue on any real multi-regulation corpus. No production code
-changed by this benchmark (measurement only, per its design's scope).
+through the schema-driven path, 10 cross-document synthesis questions across **three**
+runs: baseline (raw `Read`, 35,715 tokens), SMOS via a real MCP-tool conversation
+(headless `claude -p`, 306,644 tokens — 8.6x the baseline), and SMOS via direct Python
+calls added after the first pass (same `Agent`-tool mechanism as the 2026-07-27
+Kubernetes benchmark's SMOS run, 41,447 tokens — only 1.16x the baseline). **Correction
+to the first write-up:** the original "SMOS lost 8.6x on tokens" headline conflated
+mechanism with retrieval quality — the Kubernetes benchmark's own SMOS run never used
+the real MCP tool surface (no server was installed on that machine at the time; it used
+the same direct-Python-call workaround added here), so the two benchmarks' original
+numbers weren't comparable. Once mechanism is held constant, SMOS's token cost on this
+small corpus is close to parity with raw reading (+16%), not 8.6x worse — the 8.6x
+figure is real but specific to a long single-threaded MCP conversation's compounding
+cache-read cost, not a general property of SMOS's tools. Quality-wise: MCP run 8/10,
+direct-Python run 9/10 correct — including a genuinely interesting result on Q9, where
+the *same* underlying store/graph produced a wrong answer via MCP and a correct one via
+direct calls, suggesting the verified `LegalAdapter` graph defect below (a cross-regulation
+"Article 3" concept-node collision) is a necessary but not sufficient cause — conversational
+context accumulation across the MCP run's 20 turns looks like a contributing factor too.
+Recommendation flagged for future work: `LegalAdapter`'s citation mechanism has no
+per-regulation namespacing — worth hardening before trusting cross-reference graph-rescue
+on any real multi-regulation corpus. No production code changed by this benchmark
+(measurement only, per its design's scope).
 
 **Phase 5.5b, slice 1 (legal adapter) — COMPLETE and MERGED to `main`.** Full
 detail (commits, test delta, bench numbers, one investigated-and-confirmed-benign
