@@ -93,7 +93,17 @@ subprocess binds to that directory instead.
 
 ### 4.1 Corpus source and reuse terms
 
-**Source:** EUR-Lex, Hungarian-language text (`https://eur-lex.europa.eu/legal-content/HU/TXT/HTML/...`).
+**Source:** EUR-Lex, **English**-language text (`https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/...`).
+Amended 2026-08-05 during plan-writing from an original Hungarian-language choice: `LegalAdapter`'s
+regex (`smos/ingest/adapters/legal.py`) is hard-coded to English legal-drafting conventions —
+`_PROVISION_RE` requires the literal word `Article` (Hungarian EUR-Lex text uses `"3. cikk"`, which
+never matches), and `_DEFINING_PATTERN_RE`/`_TITLE_CASE_PHRASE_RE` require `means`/`shall mean` and
+ASCII `[A-Z][a-z]+` (Hungarian's accented characters don't match `[a-z]`). Ingesting Hungarian text
+would make `LegalAdapter` silently a no-op — zero structural boundaries found, falling through to
+generic segmentation — defeating goal 2 (§1) without any visible error. English is one of EUR-Lex's
+24 official-language versions; the same CC BY 4.0 reuse terms below apply identically to it, so this
+is a language substitution only, not a reuse-rights change. The rest of this design (which
+regulations, why 2018/1807, question design, threat-to-validity mitigation) is otherwise unchanged.
 
 - **GDPR (Regulation (EU) 2016/679), CELEX 32016R0679** — a hand-picked subset of
   ~25-30 articles: the chapters Regulation 2018/1807 actually cross-references
@@ -122,7 +132,7 @@ approach to njt.hu without a fresh reuse-terms check.
 A script under `sandbox/eu-law-benchmark/scripts/pull_corpus.py` (or `.sh` — decided at
 implementation time, whichever fits this repo's existing script conventions better):
 
-1. Fetches each selected article's HU-language EUR-Lex page individually, sleeping
+1. Fetches each selected article's EN-language EUR-Lex page individually, sleeping
    ≥10s between requests (`Crawl-delay: 10`). ~40 articles total → under 10 minutes.
 2. Strips HTML to plain text, preserving `Article N` markers as literal boundary
    lines — so `LegalAdapter.structural_boundaries()` matches them directly with no
