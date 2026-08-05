@@ -7,15 +7,35 @@ history is the log.
 
 ---
 
-## Where things stand (2026-08-03, session 4)
+## Where things stand (2026-08-05, session 5)
+
+**EU-law toolchain benchmark — COMPLETE.** Full results in
+`docs/eu-law-benchmark-results.md`. Design: `docs/superpowers/specs/2026-08-05-eu-law-benchmark-design.md`.
+Plan: `docs/superpowers/plans/2026-08-05-eu-law-benchmark.md`. Real EUR-Lex corpus
+(GDPR Chapter I + Regulation (EU) 2018/1807, English text), ingested via `LegalAdapter`
+through the schema-driven path, 10 cross-document synthesis questions, baseline
+(raw `Read`) vs. isolated SMOS-tool run. **Headline: the opposite of the 2026-07-27
+Kubernetes-docs benchmark result** — the raw-`Read` baseline won on both token cost
+(SMOS used 8.6x more tokens, not fewer — likely because this corpus is small enough,
+~13KB, that reading it whole in 2 tool calls beats 20 turns of iterative retrieval) and
+answer quality (baseline correct on 9/10 questions vs. SMOS's 8/10, including one clear
+SMOS factual error). `LegalAdapter`'s citation graph was confirmed to visibly influence
+retrieval (not inert on real text) but in the one traceable instance, it hurt: a
+cross-regulation "Article 3" concept-node collision (both GDPR and Regulation 2018/1807
+have their own Article 3, with entirely different content) is implicated in the SMOS
+run's one clear wrong answer. Recommendation flagged for future work: `LegalAdapter`'s
+citation mechanism has no per-regulation namespacing — worth hardening before trusting
+cross-reference graph-rescue on any real multi-regulation corpus. No production code
+changed by this benchmark (measurement only, per its design's scope).
 
 **Phase 5.5b, slice 1 (legal adapter) — COMPLETE and MERGED to `main`.** Full
 detail (commits, test delta, bench numbers, one investigated-and-confirmed-benign
 deviation from the plan's predicted numbers) in "Phase 5.5b — Legal adapter (slice
 1): COMPLETE and MERGED" below. **Next up:** 5.5c (multi-domain traceability &
 fan-out — now unblocked, a concrete non-markdown adapter exists to validate
-against) or Phase 4 (HNSW migration, Track B) — Governor's call, not yet decided
-this session.
+against), Phase 4 (HNSW migration, Track B), or hardening `LegalAdapter`'s citation
+namespacing per this session's benchmark finding above — Governor's call, not yet
+decided.
 
 **smos MCP server never connected this session** — unlike session 3's transient
 blip (below, kept for reference), this time the server simply never became
