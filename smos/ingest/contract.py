@@ -81,9 +81,18 @@ def validate_payload(payload: IngestionPayload) -> list[str]:
         errors.append("external_handle.native_id: must not be empty")
 
     valid_edge_types = all_edge_types()
+    own_system = payload.external_handle.system
+    own_native_id = payload.external_handle.native_id
     for i, link in enumerate(payload.source_links):
         if link.edge_type not in valid_edge_types:
             errors.append(f"source_links[{i}]: unknown edge_type '{link.edge_type}'")
+        target_system = link.metadata.get("target_system") or own_system
+        if target_system == own_system and link.target_native_id == own_native_id:
+            errors.append(f"source_links[{i}]: link targets its own item")
+
+    for i, tag in enumerate(payload.domain_tags):
+        if "," in tag:
+            errors.append(f"domain_tags[{i}]: must not contain ','")
 
     total_chars = sum(len(b.text) for b in payload.blocks)
     if total_chars > _MAX_PAYLOAD_CHARS:

@@ -35,6 +35,7 @@ from smos.ingest.contract import (
     quarantine_payload,
     validate_payload,
 )
+from smos.ingest.link_wiring import wire_source_links
 from smos.ingest.segmenter import _flatten_leaves, _wire_containment, _wire_references, build_span_tree
 
 # ─── Filesystem constants ────────────────────────────────────────────────────
@@ -679,10 +680,19 @@ def do_ingest_document_schema(
         if orphans:
             store.delete_batch(orphans)
 
-    store.graph.add_node(
+    store.graph.upsert_node(
         doc_id, "document", payload.doc_name or doc_id,
-        metadata={"domain_tags": payload.domain_tags},
+        metadata={
+            "domain_tags": payload.domain_tags,
+            "doc_type": payload.doc_type,
+            "system": payload.external_handle.system,
+            "native_id": payload.external_handle.native_id,
+            "metadata": payload.metadata,
+        },
     )
+    segment_tags = list(payload.domain_tags)
+    if payload.doc_type:
+        segment_tags.append(f"doctype:{payload.doc_type}")
 
     start_index = checkpoint["next_leaf_index"] if checkpoint else 0
     segment_ids: list[str] = list(checkpoint["segment_ids"]) if checkpoint else []
@@ -702,7 +712,7 @@ def do_ingest_document_schema(
                 ordinal=chunk_index_start + i,
                 char_start=leaf.start,
                 char_end=leaf.end,
-                tags=list(payload.domain_tags),
+                tags=list(segment_tags),
             )
             for i, leaf in enumerate(chunk)
         ]
@@ -721,6 +731,7 @@ def do_ingest_document_schema(
 
     section_count = _wire_containment(store.graph, doc_id, root)
     reference_count = _wire_references(store.graph, block_adapter, full_text, leaves, doc_id=doc_id)
+    link_count = wire_source_links(store.graph, payload, doc_id)
     store.save_checkpoint(
         doc_id=doc_id,
         content_hash=text_hash,
@@ -737,5 +748,6 @@ def do_ingest_document_schema(
         "segment_ids": segment_ids,
         "section_count": section_count,
         "reference_count": reference_count,
+        "link_count": link_count,
         "resumed": resumed,
     }
