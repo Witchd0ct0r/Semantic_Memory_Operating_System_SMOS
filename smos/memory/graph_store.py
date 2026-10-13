@@ -155,6 +155,81 @@ class GraphStore:
             "created_at": row[4],
         }
 
+    def upsert_node(
+        self, node_id: str, type: str, name: str, metadata: Optional[dict] = None
+    ) -> None:
+        """Insert the node, or overwrite an existing row's type/name/metadata.
+        `add_node` stays INSERT OR IGNORE for existing callers; this is the
+        explicit refresh path (document re-sync, placeholder upgrade)."""
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO graph_nodes (id, type, name, metadata) VALUES (?,?,?,?) "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "type = excluded.type, name = excluded.name, metadata = excluded.metadata",
+                (node_id, type, name, json.dumps(metadata or {})),
+            )
+            self._db.commit()
+
+    def get_edges(
+        self,
+        node_id: str,
+        direction: str = "both",
+        edge_types: Optional[list[str]] = None,
+    ) -> list[dict]:
+        """Directed edge listing for one node. `direction` is relative to
+        `node_id`: "out" = node is the source, "in" = node is the target."""
+        if direction not in ("out", "in", "both"):
+            raise ValueError(f"direction must be 'out', 'in' or 'both', got {direction!r}")
+        clauses: list[str] = []
+        params: list = []
+        if direction == "out":
+            clauses.append("source_id = ?")
+            params.append(node_id)
+        elif direction == "in":
+            clauses.append("target_id = ?")
+            params.append(node_id)
+        else:
+            clauses.append("(source_id = ? OR target_id = ?)")
+            params.extend([node_id, node_id])
+        if edge_types:
+            placeholders = ",".join("?" for _ in edge_types)
+            clauses.append(f"edge_type IN ({placeholders})")
+            params.extend(edge_types)
+        sql = (
+            "SELECT source_id, target_id, edge_type, weight, metadata FROM graph_edges "
+            "WHERE " + " AND ".join(clauses) + " ORDER BY edge_type, source_id, target_id"
+        )
+        with self._lock:
+            rows = self._db.execute(sql, params).fetchall()
+        return [
+            {
+                "source_id": r[0],
+                "target_id": r[1],
+                "edge_type": r[2],
+                "weight": r[3],
+                "metadata": json.loads(r[4]) if r[4] else {},
+            }
+            for r in rows
+        ]
+
+    def remove_owned_edges(self, source_id: str, origin: str) -> int:
+        """Delete edges leaving `source_id` whose metadata `origin` equals
+        `origin` (e.g. the `source_link` edges one document's payload owns).
+        Edges of other origins (`contains`, ...) and incoming edges are kept."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, metadata FROM graph_edges WHERE source_id = ?", (source_id,)
+            ).fetchall()
+            doomed = [
+                row[0]
+                for row in rows
+                if (json.loads(row[1]) if row[1] else {}).get("origin") == origin
+            ]
+            for edge_id in doomed:
+                self._db.execute("DELETE FROM graph_edges WHERE id = ?", (edge_id,))
+            self._db.commit()
+        return len(doomed)
+
     def remove_node(self, node_id: str) -> None:
         with self._lock:
             self._db.execute(
