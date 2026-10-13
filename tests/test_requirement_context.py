@@ -267,7 +267,11 @@ def test_from_strings_parses_tags_and_links(store):
         declared_links_json='[{"target_native_id": "S1", "edge_type": "depends_on"}]',
     )
     assert result["query"]["domain_tags"] == ["level:SYS.2", "domain:safety"]
-    assert len(result["linked"]) == 1
+    from smos.ingest.contract import derive_doc_id
+
+    declared = _by_id(result["linked"])[derive_doc_id(SYSTEM, "S1")]
+    assert declared["reason"] == "declared depends_on"
+    assert declared["hops"] == 1
 
 
 def test_from_strings_rejects_bad_json(store):
