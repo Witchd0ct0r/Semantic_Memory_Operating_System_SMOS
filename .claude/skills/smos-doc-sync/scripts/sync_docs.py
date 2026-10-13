@@ -26,6 +26,7 @@ DOC_SOURCES: list[tuple[str, str, list[str]]] = [
     ("docs/HANDOFF.md", "handoff", ["smos-project", "handoff"]),
     ("README.md", "readme", ["smos-project", "readme"]),
     ("ARCHITECTURE.md", "architecture", ["smos-project", "architecture"]),
+    ("docs/API.md", "api-reference", ["smos-project", "api"]),
     ("CLAUDE.md", "instructions", ["smos-project", "instructions"]),
     ("docs/runbooks/*.md", "runbook", ["smos-project", "runbook"]),
     ("docs/superpowers/specs/**/*.md", "spec", ["smos-project", "spec"]),

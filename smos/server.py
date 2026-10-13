@@ -107,7 +107,7 @@ def tool_semantic_query(query: str, k: int = 5, tags: str = "") -> dict:
         k: Number of results to return (default 5 — rarely need more than 10).
         tags: Optional comma-separated domain tags to restrict the search scope.
               Example: "auth,security" or "database,performance".
-              When omitted, auto-detects domain from query keywords.
+              When omitted, the search is unscoped.
     """
     try:
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
@@ -488,7 +488,7 @@ def tool_recursive_semantic_ingest(
                           Example: "test_*.py,*_generated.*"
         max_files: Hard cap on files to process in one call (default 5000).
         summarize: True = use local LLM to compress each file (slower, better quality).
-                   False = store first 2000 chars verbatim (fast, good for large repos).
+                   False = store the first 500 chars verbatim (fast, good for large repos).
         store_raw_metadata: Tag each memory with file size and extension (default True).
     """
     inc = [p.strip() for p in include_patterns.split(",") if p.strip()] or None

@@ -88,6 +88,73 @@ MCP client → FastMCP
 Return: {summary, id, source, error}
 ```
 
+### 1.4 Structured Document Path — `tool_ingest_document` (Phase 5)
+
+> Added after Phase 5.5 and the requirements work (2026-10-13). Source of truth for the
+> payload fields is [docs/API.md §9](./docs/API.md#9-structured-document-ingestion-tool_ingest_document).
+
+Documents that must be stored **exactly** and **linked** bypass the lossy summary path:
+
+```
+MCP client → tool_ingest_document(payload_json)
+  ├─ IngestionPayload.model_validate_json     (type/schema error → {"status":"error"}, not quarantined)
+  └─ do_ingest_document_schema(payload, store, adapter=None)   [tools/ingest_tools.py]
+       ├─ validate_payload()  — errors → quarantine_payload() → {"status":"quarantined", ...}
+       ├─ doc_id = sha1("system:native_id")[:16]          (idempotent upsert key)
+       ├─ blocks_to_full_text() → full_text + block spans;  content_hash
+       ├─ checkpoint: complete or changed content → delete_document_segments() (re-sync);
+       │              in-progress with same hash → resume
+       ├─ build_span_tree(): structural (the payload's own block spans) → semantic → size-fit
+       ├─ graph.upsert_node(doc_id, "document", name, metadata{domain_tags, doc_type, system,
+       │                                                      native_id, metadata})
+       ├─ store_batch(segments) in chunks of 64, tags = domain_tags + "doctype:<doc_type>",
+       │    save_checkpoint() after every chunk
+       ├─ _wire_containment(): document --contains--> section --contains--> segment
+       ├─ _wire_references(): adapter.extract_references() → segment --edge--> concept:{name}
+       │    (targets the adapter marks document-local → concept:{doc_id}:{name})
+       ├─ wire_source_links(): document --edge_type--> document   [ingest/link_wiring.py]
+       │    owned edges (origin="source_link") replaced; unknown targets → placeholder document node
+       └─ save_checkpoint(status="complete")
+
+Return: {status:"success", doc_id, segment_count, segment_ids, section_count,
+         reference_count, link_count, resumed}
+```
+
+Notes:
+
+- Over MCP no domain adapter is passed (a no-op adapter is used), so `reference_count` is 0 and
+  relationships come from `source_links`. In-text citation/term extraction (`MarkdownAdapter`,
+  `LegalAdapter`) is available through the Python entry point.
+- `GraphStore.upsert_node` (not `add_node`, which is `INSERT OR IGNORE`) refreshes the document
+  node on re-sync and upgrades placeholders; a re-sync therefore also updates `doc_name`.
+- Containment (`contains`) is reserved for document structure. Item-to-item hierarchy uses
+  `parent_of`, and `reconstruct()` / re-sync only walk `contains`.
+- `LegalAdapter` provision citations are scoped per document
+  (`concept:{doc_id}:{name}`), so two regulations' "Article 3" no longer collide; defined terms
+  stay global so they can join across documents.
+
+### 1.5 Requirement Context Path — `tool_requirement_context`
+
+```
+MCP client → tool_requirement_context(text|doc_id|system+native_id, level, domain_tags,
+                                      normative_tags, declared_links_json, token_budget, k)
+  └─ requirement_context_from_strings() → requirement_context(store, ...)   [memory/requirement_context.py]
+       ├─ resolve: stored item (document node, reconstruct() text, tags) and/or draft text
+       ├─ declared links → hop-1 seeds (`declared <edge>`), unknown targets → unresolved_links
+       ├─ linked:  BFS over depends_on / parent_of / member_of, both directions, ≤ 2 hops,
+       │           placeholders omitted (reported), cycles cut by a visited set
+       ├─ candidates: store.query(text) ⊕ bm25.query(text) → RRF, pool = max(k·100, 1000)
+       ├─ peers:   one best segment per document; same level:/domain tag; not normative,
+       │           not already linked; near_duplicate at cosine ≥ 0.90
+       ├─ normative: explicit `cites` targets first, then doctype:legal|standard segments,
+       │           optional normative_tags scope
+       ├─ coverage: has_upstream, has_downstream, near_duplicates, normative_by_source,
+       │            unresolved_links
+       └─ per-section budget = token_budget // 3; first item clipped rather than dropped
+
+Return: {query, linked, peers, normative, coverage, truncated}   — no LLM call anywhere
+```
+
 ---
 
 ## 2. Lock Contention Map
@@ -187,6 +254,18 @@ These were identified during self-analysis and are tracked for future releases.
    per call, but single `store()`/`delete()` calls still pay the full rebuild.
    Accepted as a documented Phase-1 limitation; needs an incremental-index redesign
    before Phase 4 (HNSW) if corpora grow large.
+
+### Added with Phase 5 / requirements work
+
+11. **NEW (Phase 5 / requirements) — bounded candidate pool for `peers`/`normative`**
+    Both sections are filtered by tag out of one shared hybrid candidate pool
+    (`max(k·100, 1000)`). A corpus with far more requirement segments than the pool can
+    push every relevant legal/standard segment out, and `coverage.normative_by_source` then
+    reports a gap that does not exist. A tag-indexed lookup (rank only normative segments)
+    would remove the bound.
+
+12. **NEW — near-duplicate threshold is a default** (cosine ≥ 0.90), validated only on
+    synthetic fixtures. Calibrate against real requirement data before trusting it.
 
 ### Low priority
 

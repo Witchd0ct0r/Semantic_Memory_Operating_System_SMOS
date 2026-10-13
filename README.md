@@ -22,7 +22,9 @@
   <a href="#install">Install</a> •
   <a href="#benchmarks">Benchmarks</a> •
   <a href="#example-use-cases">Examples</a> •
+  <a href="#structured-documents--requirement-context">Documents</a> •
   <a href="#tools">Tools</a> •
+  <a href="docs/API.md">API reference</a> •
   <a href="#configuration">Config</a> •
   <a href="#update">Update</a> •
   <a href="#uninstall">Uninstall</a>
@@ -40,7 +42,16 @@ Every file Claude reads stays in the context window until the session ends. On a
 
 ## How it works
 
-SMOS is an MCP server that gives Claude a persistent memory layer: FAISS vector search + SQLite, powered by a local LLM (qwen2.5 via Ollama) for compression.
+SMOS is an MCP server that gives Claude a persistent memory layer, running entirely on your machine:
+
+| Layer | What it does |
+|---|---|
+| **Vector search** | FAISS index over sentence-transformer embeddings (`all-MiniLM-L6-v2`), SQLite as the authoritative store |
+| **Hybrid retrieval** | BM25 fused with vector search via Reciprocal Rank Fusion — exact identifiers and error codes are found, not just paraphrases (exact-term recall 0.33 → 1.00 in the retrieval gate) |
+| **Memory graph** | Entities and references extracted from stored content; queries expand over `references` edges (cross-reference recall 0% → 100% on the graph benchmark) |
+| **Agent primitives** | `remember` / `learn` / `forget` / `link` / `compress` / `reflect` / `recall` strategies (hybrid, temporal, chain, repo, exact) |
+| **Structured documents** | A versioned ingestion contract keeps documents byte-exact, segmented and linked — see [Structured documents](#structured-documents--requirement-context) |
+| **Local LLM** | Compression through Ollama (qwen2.5); extractive fallback when it is unavailable |
 
 Instead of reading a file with the built-in Read tool and leaving it in context forever, Claude calls `tool_read_file_compress`. The file is summarised by a local LLM, stored in the vector index, and **the raw source never enters the context window**. At synthesis time, Claude queries the semantic index rather than re-reading anything.
 
@@ -558,6 +569,75 @@ tool_semantic_query("authentication flow", tags="snapshot")
 
 ---
 
+## Structured documents & requirement context
+
+Summaries are the right tool for code and prose you only need the gist of. Requirements, legal
+text and standards are different: the exact wording matters, and so do the links between items.
+SMOS stores those through a **versioned ingestion contract**.
+
+SMOS is a standalone store with an API. A small **parser in front of the source system**
+(Codebeamer, Jira, EUR-Lex, a PDF pipeline…) turns an item into a JSON payload; SMOS contains no
+source-system code.
+
+```json
+{
+  "external_handle": {"system": "cb-prod", "native_id": "SYS2-1042"},
+  "doc_name": "Collision braking",
+  "doc_type": "requirement",
+  "domain_tags": ["level:SYS.2", "domain:safety"],
+  "blocks": [{"block_type": "paragraph",
+              "text": "The brake controller shall apply full deceleration within 150 ms of a collision signal.\n"}],
+  "source_links": [
+    {"target_native_id": "SYS1-10",     "edge_type": "depends_on"},
+    {"target_native_id": "STD-26262-6", "edge_type": "cites", "metadata": {"clause": "9.4.2"}}
+  ]
+}
+```
+
+```
+tool_ingest_document(payload_json=<the JSON above>)
+→ {"status": "success", "doc_id": "…", "segment_count": 1, "link_count": 2, …}
+```
+
+What you get:
+
+- **Exact text.** Segments are stored verbatim; `tool_reconstruct` returns the original byte for
+  byte, and `tool_recall(strategy="exact")` returns matching segments with their neighbours.
+- **Real links.** `source_links` become directed graph edges. Items can arrive in any order — a
+  link to a not-yet-ingested item becomes a placeholder that the real ingest upgrades.
+- **Idempotent upsert.** Re-sending an item replaces its text and its own links; other items'
+  links to it survive.
+- **Quarantine, not rejection.** A non-conforming payload is parked with its validation errors.
+
+### `tool_requirement_context` — evidence for judging a requirement
+
+Give it a stored item or a draft and it returns exact text with reasons, in four sections:
+
+| Section | Contents |
+|---|---|
+| `linked` | upstream / downstream / parent / child / epic items, up to 2 hops, with the edge path |
+| `peers` | similar requirements at the same level and domain; near-duplicates flagged |
+| `normative` | legal and standard clauses — explicitly cited ones first, then semantic matches |
+| `coverage` | plain facts: has upstream, has downstream, near-duplicate count, matches per legal/standard source, unresolved links |
+
+```
+tool_requirement_context(
+  text="The brake controller shall apply full deceleration within 180 ms of a collision signal.",
+  system="cb-prod", level="SYS.2", domain_tags="domain:safety",
+  declared_links_json='[{"target_native_id":"SYS1-10","edge_type":"depends_on"}]')
+```
+
+SMOS supplies evidence; it never returns a verdict and calls no LLM on this path — the model
+reading the result decides whether the requirement is good. Full argument and response
+reference: **[docs/API.md](docs/API.md#10-requirement-context-tool_requirement_context)**.
+
+> **Status:** the requirements path is new and validated on fixtures, not yet on a production
+> corpus. The near-duplicate threshold (cosine ≥ 0.90) is an uncalibrated default, and
+> `peers`/`normative` draw from a bounded candidate pool (see
+> [ARCHITECTURE.md §5](ARCHITECTURE.md)).
+
+---
+
 ## How Claude uses it
 
 Once installed, Claude follows this policy automatically (injected via `~/.claude/CLAUDE.md`):
@@ -591,6 +671,36 @@ Once installed, Claude follows this policy automatically (injected via `~/.claud
 | `tool_recursive_semantic_ingest` | Scan and ingest an entire directory tree. Configurable include/exclude patterns, binary-file detection, duplicate skipping, fast or LLM-compressed mode. |
 | `tool_bulk_read` | Read a list of files in parallel (16 concurrent readers). Returns ordered content. Faster than N sequential reads. |
 | `tool_semantic_snapshot_repo` | Full repository profile: language breakdown, dependency parsing, regex import graph, LLM architecture summary, all files ingested in one call. |
+
+### Retrieval and graph tools
+
+| Tool | Description |
+|------|------------|
+| `tool_recall` | Retrieval with an explicit strategy: `hybrid`, `temporal` (time window), `chain` (`evolves_into`/`related_to` hops), `repo` (component-scoped), `exact` (verbatim segments + ±1 neighbours, no compression). |
+| `tool_reconstruct` | Rebuild the byte-exact text of an ingested document or section from its segments. |
+| `tool_graph_query` | Traverse the memory graph from an entity name or node id. |
+| `tool_link` | Create an explicit edge between two nodes (`references`, `depends_on`, `related_to`, `implements`, `contains`, `evolves_into`, `generated_from`, plus registered adapter types). |
+
+### Agent primitives
+
+| Tool | Description |
+|------|------------|
+| `tool_remember` | Store an episodic memory. |
+| `tool_learn` | Store a high-confidence semantic memory. |
+| `tool_forget` | Delete a memory and its graph edges. |
+| `tool_compress` | Merge several memories into one; sources are kept and linked via `generated_from`. |
+| `tool_reflect` | Reason over what is known about a question and store the reflection. |
+| `tool_snapshot` | Snapshot the current project root. |
+
+### Structured documents and requirements
+
+| Tool | Description |
+|------|------------|
+| `tool_ingest_document` | Ingest a structured document payload (exact text, typed links, tags). Non-conforming payloads are quarantined with their errors. Idempotent upsert by `(system, native_id)`. |
+| `tool_requirement_context` | Evidence for judging a requirement — linked items, peers, legal/standard clauses and coverage facts, exact text, no LLM. |
+
+22 tools in total. Arguments, return shapes and examples for every tool:
+**[docs/API.md](docs/API.md)**.
 
 ---
 
@@ -715,7 +825,7 @@ smos uninstall --dry-run
 git clone https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS
 cd Semantic_Memory_Operating_System_SMOS
 pip install -e ".[dev]"
-pytest tests/          # 86 tests
+pytest tests/          # full suite (381 tests; ~7 minutes on CPU)
 python -m smos         # run the server directly
 
 # Ingestion benchmarks (100 / 1000 / 5000 files)
@@ -724,6 +834,12 @@ python benchmarks/repository_ingestion_benchmark.py
 # Quick smoke test (100 files only)
 python benchmarks/repository_ingestion_benchmark.py --quick
 ```
+
+Further reading:
+
+- [docs/API.md](docs/API.md) — complete tool, payload and Python API reference
+- [ARCHITECTURE.md](ARCHITECTURE.md) — data flow, locking, failure modes, scaling limits
+- [docs/HANDOFF.md](docs/HANDOFF.md) — current state of the project and next steps
 
 ---
 
