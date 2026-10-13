@@ -158,3 +158,98 @@ def test_no_input_is_an_error(store):
 
 def test_unknown_stored_item_is_an_error(store):
     assert "error" in requirement_context(store, system=SYSTEM, native_id="NOPE")
+
+
+DUP_A = "The brake controller shall limit pedal force to 400 newtons under normal operation."
+DUP_B = "The brake controller shall limit pedal force to 450 newtons under normal operation."
+OTHER = "The infotainment display shall show the current song title within one second."
+STANDARD_TEXT = (
+    "9.4.2 The braking system shall be designed so that a single fault does not "
+    "lead to loss of deceleration capability."
+)
+LEGAL_TEXT = (
+    "Article 7. Manufacturers shall ensure that braking systems of motor vehicles "
+    "meet the prescribed stopping distances."
+)
+
+
+def test_peers_flag_near_duplicates_and_respect_level_and_self_exclusion(store):
+    _ingest(store, "R1", DUP_A, tags=["level:SYS.2"])
+    _ingest(store, "R2", DUP_B, tags=["level:SYS.2"])
+    _ingest(store, "R3", OTHER, tags=["level:SYS.3"])
+    from smos.ingest.contract import derive_doc_id
+
+    result = requirement_context(store, system=SYSTEM, native_id="R1", level="SYS.2")
+    peers = _by_id(result["peers"])
+
+    assert derive_doc_id(SYSTEM, "R1") not in peers
+    assert derive_doc_id(SYSTEM, "R3") not in peers
+    r2 = peers[derive_doc_id(SYSTEM, "R2")]
+    assert r2["near_duplicate"] is True
+    assert r2["text"] == DUP_B
+    assert result["coverage"]["near_duplicates"] == 1
+
+
+def test_peers_exclude_items_already_in_linked(store):
+    _ingest(store, "U", "The brake controller shall limit pedal force under normal operation.")
+    _ingest(store, "D", DUP_A, links=[("U", "depends_on", {})])
+    from smos.ingest.contract import derive_doc_id
+
+    result = requirement_context(store, system=SYSTEM, native_id="D")
+    assert derive_doc_id(SYSTEM, "U") in _by_id(result["linked"])
+    assert derive_doc_id(SYSTEM, "U") not in _by_id(result["peers"])
+
+
+def test_peers_exclude_normative_documents(store):
+    _ingest(store, "R1", DUP_A)
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    from smos.ingest.contract import derive_doc_id
+
+    result = requirement_context(store, system=SYSTEM, native_id="R1")
+    assert derive_doc_id(SYSTEM, "STD-1") not in _by_id(result["peers"])
+
+
+def test_normative_returns_legal_and_standard_with_counts(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    _ingest(store, "LAW-1", LEGAL_TEXT, doc_type="legal", tags=["eu-law"])
+    result = requirement_context(
+        store, text="The braking system shall keep decelerating after a single fault."
+    )
+    sources = {i["doc_id"] for i in result["normative"]}
+    assert len(sources) == 2
+    assert result["coverage"]["normative_by_source"] == {"legal": 1, "standard": 1}
+
+
+def test_normative_tags_scope_the_section(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    _ingest(store, "LAW-1", LEGAL_TEXT, doc_type="legal", tags=["eu-law"])
+    result = requirement_context(
+        store,
+        text="The braking system shall keep decelerating after a single fault.",
+        normative_tags=["iso26262"],
+    )
+    assert result["coverage"]["normative_by_source"] == {"legal": 0, "standard": 1}
+
+
+def test_explicit_cites_come_first_with_clause(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    _ingest(store, "LAW-1", LEGAL_TEXT, doc_type="legal", tags=["eu-law"])
+    _ingest(
+        store, "R9", "The unit shall log every actuator fault.",
+        links=[("LAW-1", "cites", {"clause": "Article 7"})],
+    )
+    from smos.ingest.contract import derive_doc_id
+
+    result = requirement_context(store, system=SYSTEM, native_id="R9")
+    first = result["normative"][0]
+    assert first["doc_id"] == derive_doc_id(SYSTEM, "LAW-1")
+    assert first["reason"] == "explicit citation"
+    assert first["clause"] == "Article 7"
+
+
+def test_empty_store_draft_returns_empty_sections_without_error(store):
+    result = requirement_context(store, text="The unit shall do something useful.")
+    assert result["linked"] == [] and result["peers"] == [] and result["normative"] == []
+    assert result["coverage"]["has_upstream"] is False
+    assert result["coverage"]["has_downstream"] is False
+    assert result["coverage"]["normative_by_source"] == {"legal": 0, "standard": 0}

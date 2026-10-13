@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Optional
 
+from smos.compression.context_builder import _rrf_merge
 from smos.ingest.contract import derive_doc_id
 from smos.memory.exact_retrieval import reconstruct
 from smos.memory.vector_store import VectorStore
@@ -10,6 +11,7 @@ from smos.memory.vector_store import VectorStore
 LINK_EDGE_TYPES = ["depends_on", "parent_of", "member_of"]
 NORMATIVE_DOCTYPES = ("legal", "standard")
 _MAX_HOPS = 2
+_NEAR_DUPLICATE_THRESHOLD = 0.90
 _DEFAULT_TOKEN_BUDGET = 4000
 _DEFAULT_K = 5
 _SECTIONS = ("linked", "peers", "normative")
@@ -101,6 +103,157 @@ def _walk_links(
             )
             queue.append(other)
     return found
+
+
+def _tag_set(record: dict) -> set[str]:
+    raw = record.get("metadata", {}).get("tags", "") or ""
+    return {t.strip() for t in raw.split(",") if t.strip()}
+
+
+def _hybrid_candidates(text: str, k: int, store: VectorStore) -> list[dict]:
+    """Vector + BM25 RRF-merged segment candidates, best first. Records from
+    the vector side carry a cosine `score`; BM25-only hits carry `score: None`."""
+    candidate_k = max(k * 8, 40)
+    vector_results = store.query(text, k=candidate_k)
+    bm25_results = [
+        (uid, score) for uid, score in store.bm25.query(text, k=candidate_k) if score > 0.0
+    ]
+    if not vector_results and not bm25_results:
+        return []
+    merged = _rrf_merge(vector_results, bm25_results, top_k=candidate_k)
+    by_id = {r["id"]: r for r in vector_results}
+    candidates: list[dict] = []
+    for uid, _ in merged:
+        record = by_id.get(uid)
+        if record is None:
+            fetched = store.get_by_uuid(uid)
+            if fetched is None:
+                continue
+            record = {**fetched, "score": None}
+        candidates.append(record)
+    return candidates
+
+
+def _peer_items(
+    store: VectorStore,
+    candidates: list[dict],
+    exclude_docs: set[str],
+    level: str,
+    domain_tags: list[str],
+) -> list[dict]:
+    """One best segment per requirement-like document, same level / any
+    shared domain tag, never a normative document or an excluded one."""
+    level_tag = f"level:{level}" if level else ""
+    wanted = set(domain_tags)
+    normative_tags = {f"doctype:{d}" for d in NORMATIVE_DOCTYPES}
+    seen: set[str] = set()
+    items: list[dict] = []
+    for record in candidates:
+        meta = record.get("metadata", {})
+        if meta.get("type") != "segment":
+            continue
+        document_id = meta.get("doc_id")
+        if not document_id or document_id in exclude_docs or document_id in seen:
+            continue
+        tags = _tag_set(record)
+        if tags & normative_tags:
+            continue
+        if level_tag and level_tag not in tags:
+            continue
+        if wanted and not (wanted & tags):
+            continue
+        node = store.graph.get_node(document_id)
+        if node is None or _placeholder(node):
+            continue
+        seen.add(document_id)
+        score = record.get("score")
+        near_duplicate = score is not None and score >= _NEAR_DUPLICATE_THRESHOLD
+        items.append({
+            "id": document_id,
+            "doc_id": document_id,
+            "segment_id": record["id"],
+            "doc_name": node["name"],
+            "text": record["content"],
+            "score": score,
+            "reason": "near duplicate" if near_duplicate else "similar requirement",
+            "near_duplicate": near_duplicate,
+            "hops": None,
+            "path": [],
+        })
+    return items
+
+
+def _normative_items(
+    store: VectorStore,
+    candidates: list[dict],
+    cites: list[dict],
+    normative_tags: list[str],
+) -> list[dict]:
+    """Explicitly cited documents first (best-matching segments, falling back
+    to the document's first segment), then semantic matches from segments
+    tagged doctype:legal / doctype:standard, optionally scoped by tags."""
+    items: list[dict] = []
+    seen_segments: set[str] = set()
+    cited_docs: set[str] = set()
+
+    for cite in cites:
+        target_id = cite["target_id"]
+        node = store.graph.get_node(target_id)
+        if node is None or _placeholder(node) or target_id in cited_docs:
+            continue
+        cited_docs.add(target_id)
+        own = [
+            r for r in candidates
+            if r.get("metadata", {}).get("doc_id") == target_id
+        ][:2]
+        if not own:
+            first = store.get_segment_by_ordinal(target_id, 0)
+            own = [{**first, "score": None}] if first else []
+        for record in own:
+            seen_segments.add(record["id"])
+            items.append({
+                "id": target_id,
+                "doc_id": target_id,
+                "segment_id": record["id"],
+                "doc_name": node["name"],
+                "text": record["content"],
+                "score": record.get("score"),
+                "reason": "explicit citation",
+                "clause": cite.get("clause"),
+                "hops": None,
+                "path": [],
+            })
+
+    normative_markers = {f"doctype:{d}" for d in NORMATIVE_DOCTYPES}
+    wanted = set(normative_tags)
+    for record in candidates:
+        meta = record.get("metadata", {})
+        if meta.get("type") != "segment" or record["id"] in seen_segments:
+            continue
+        tags = _tag_set(record)
+        kinds = [t.split(":", 1)[1] for t in tags & normative_markers]
+        if not kinds:
+            continue
+        if wanted and not (wanted & tags):
+            continue
+        document_id = meta.get("doc_id")
+        node = store.graph.get_node(document_id) if document_id else None
+        if node is None or _placeholder(node):
+            continue
+        items.append({
+            "id": document_id,
+            "doc_id": document_id,
+            "segment_id": record["id"],
+            "doc_name": node["name"],
+            "text": record["content"],
+            "score": record.get("score"),
+            "reason": f"{kinds[0]} match",
+            "clause": None,
+            "source_kind": kinds[0],
+            "hops": None,
+            "path": [],
+        })
+    return items
 
 
 def requirement_context(
@@ -218,8 +371,29 @@ def requirement_context(
     k = max(k_per_section, 1)
     linked, linked_truncated = _fit(linked_items[:k], section_budget)
 
-    peers: list[dict] = []
-    normative: list[dict] = []
+    candidates = _hybrid_candidates(text, k, store)
+    exclude_docs = {i["doc_id"] for i in linked_items}
+    if stored_id:
+        exclude_docs.add(stored_id)
+    # `level:` tags select the level; only the remaining tags count as domain overlap
+    peer_domain_tags = [t for t in tags if not t.startswith("level:")]
+    peer_items = _peer_items(store, candidates, exclude_docs, level, peer_domain_tags)
+    peers, peers_truncated = _fit(peer_items[:k], section_budget)
+
+    normative_all = _normative_items(
+        store, candidates, stored_cites + declared_cites, list(normative_tags or [])
+    )
+    normative, normative_truncated = _fit(normative_all[:k], section_budget)
+
+    by_source = {d: 0 for d in NORMATIVE_DOCTYPES}
+    for item in normative_all:
+        kind = item.get("source_kind")
+        if kind is None:
+            node = graph.get_node(item["doc_id"])
+            kind = (node["metadata"].get("doc_type") if node else None) or ""
+        if kind in by_source:
+            by_source[kind] += 1
+
     return {
         "query": {
             "doc_id": stored_id or None,
@@ -233,9 +407,13 @@ def requirement_context(
         "coverage": {
             "has_upstream": has_upstream,
             "has_downstream": has_downstream,
-            "near_duplicates": 0,
-            "normative_by_source": {d: 0 for d in NORMATIVE_DOCTYPES},
+            "near_duplicates": sum(1 for p in peer_items if p["near_duplicate"]),
+            "normative_by_source": by_source,
             "unresolved_links": unresolved,
         },
-        "truncated": {"linked": linked_truncated, "peers": False, "normative": False},
+        "truncated": {
+            "linked": linked_truncated,
+            "peers": peers_truncated,
+            "normative": normative_truncated,
+        },
     }
