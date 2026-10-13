@@ -116,3 +116,10 @@ class LegalAdapter:
 
     def llm_boundary_prompt(self) -> Optional[str]:
         return None
+
+    def is_document_local(self, target_name: str) -> bool:
+        """True for a provision citation ("Article 3", "Section 5.2", "§ 7"):
+        its meaning depends on which document wrote it, so the segmenter
+        scopes its concept node to that document. Defined terms are not
+        local — they are meant to join across documents."""
+        return _PROVISION_RE.fullmatch(target_name.strip()) is not None

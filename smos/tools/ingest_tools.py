@@ -720,7 +720,7 @@ def do_ingest_document_schema(
         )
 
     section_count = _wire_containment(store.graph, doc_id, root)
-    reference_count = _wire_references(store.graph, block_adapter, full_text, leaves)
+    reference_count = _wire_references(store.graph, block_adapter, full_text, leaves, doc_id=doc_id)
     store.save_checkpoint(
         doc_id=doc_id,
         content_hash=text_hash,

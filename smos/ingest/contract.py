@@ -162,3 +162,7 @@ class ContractBlockAdapter:
 
     def llm_boundary_prompt(self) -> Optional[str]:
         return self._base.llm_boundary_prompt()
+
+    def is_document_local(self, target_name: str) -> bool:
+        base_hook = getattr(self._base, "is_document_local", None)
+        return bool(base_hook(target_name)) if base_hook is not None else False

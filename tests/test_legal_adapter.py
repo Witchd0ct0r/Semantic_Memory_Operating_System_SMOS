@@ -139,3 +139,66 @@ def test_legal_cross_reference_graph_rescue_end_to_end(store: VectorStore) -> No
         "asset threshold definition ten billion dollars", k=1, store=store
     )
     assert target_id in context.sources
+
+
+# --- Track C: document-scoped citation concept ids -------------------------
+
+_CITING_TEXT = (
+    "Article 1. Scope.\n"
+    "Operators must comply with Article 3 at all times.\n\n"
+    "Article 3. Duties.\n"
+    "Operators shall keep records of every Data Subject request.\n"
+)
+
+
+def _concept_ids(store: VectorStore, segment_ids: list[str]) -> set[str]:
+    found: set[str] = set()
+    for sid in segment_ids:
+        for node in store.graph.traverse(sid, max_hops=1, edge_types=["references"]):
+            if node["id"].startswith("concept:"):
+                found.add(node["id"])
+    return found
+
+
+def test_is_document_local_true_for_provision_citations():
+    adapter = LegalAdapter()
+    assert adapter.is_document_local("Article 3") is True
+    assert adapter.is_document_local("Section 5.2") is True
+    assert adapter.is_document_local("§ 7") is True
+
+
+def test_is_document_local_false_for_defined_terms():
+    adapter = LegalAdapter()
+    assert adapter.is_document_local("Covered Institution") is False
+
+
+def test_same_article_citation_in_two_documents_gets_distinct_concept_nodes(store: VectorStore) -> None:
+    payload_a = markdown_to_payload(_CITING_TEXT, system="eurlex", native_id="reg-a")
+    payload_b = markdown_to_payload(_CITING_TEXT, system="eurlex", native_id="reg-b")
+    result_a = do_ingest_document_schema(payload_a, store, adapter=LegalAdapter())
+    result_b = do_ingest_document_schema(payload_b, store, adapter=LegalAdapter())
+    assert result_a["status"] == "success" and result_b["status"] == "success"
+    assert result_a["doc_id"] != result_b["doc_id"]
+
+    concepts_a = _concept_ids(store, result_a["segment_ids"])
+    concepts_b = _concept_ids(store, result_b["segment_ids"])
+
+    provision_a = {c for c in concepts_a if "article" in c}
+    provision_b = {c for c in concepts_b if "article" in c}
+    assert provision_a, "expected at least one provision-citation concept node"
+    assert provision_a.isdisjoint(provision_b)
+    assert all(c.startswith(f"concept:{result_a['doc_id']}:") for c in provision_a)
+    assert all(c.startswith(f"concept:{result_b['doc_id']}:") for c in provision_b)
+    assert store.graph.get_node("concept:article 3") is None
+
+
+def test_defined_term_concept_stays_shared_across_documents(store: VectorStore) -> None:
+    payload_a = markdown_to_payload(_CITING_TEXT, system="eurlex", native_id="reg-a")
+    payload_b = markdown_to_payload(_CITING_TEXT, system="eurlex", native_id="reg-b")
+    result_a = do_ingest_document_schema(payload_a, store, adapter=LegalAdapter())
+    result_b = do_ingest_document_schema(payload_b, store, adapter=LegalAdapter())
+
+    term_a = {c for c in _concept_ids(store, result_a["segment_ids"]) if "data subject" in c}
+    term_b = {c for c in _concept_ids(store, result_b["segment_ids"]) if "data subject" in c}
+    assert term_a and term_a == term_b
+    assert term_a == {"concept:data subject"}

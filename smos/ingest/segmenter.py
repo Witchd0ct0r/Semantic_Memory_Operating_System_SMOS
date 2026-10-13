@@ -207,7 +207,11 @@ _REFERENCE_LOOKBACK_CHARS = 300
 
 
 def _wire_references(
-    graph: GraphStore, adapter: DomainAdapter, full_text: str, leaves: list[Span]
+    graph: GraphStore,
+    adapter: DomainAdapter,
+    full_text: str,
+    leaves: list[Span],
+    doc_id: Optional[str] = None,
 ) -> int:
     """Ask the adapter for cross-references near each leaf and wire them as
     `segment --edge_type--> concept:{target_name}` edges — the same shape
@@ -226,8 +230,16 @@ def _wire_references(
     regardless of which leaf boundary split it from its body.
 
     `source_name` is part of the DomainAdapter contract but unused here;
-    edge_type must be one the adapter actually declares (`adapter.edge_types`)."""
+    edge_type must be one the adapter actually declares (`adapter.edge_types`).
+
+    Targets the adapter reports as document-local (optional
+    `is_document_local(target_name)` hook, e.g. a legal "Article 3" citation —
+    meaningful only inside the document that wrote it) are namespaced as
+    `concept:{doc_id}:{name}` so two documents' same-numbered provisions don't
+    collapse into one node. Everything else (defined terms, link targets) stays
+    global `concept:{name}`, since sharing those across documents is the point."""
     valid_edge_types = adapter.edge_types
+    is_local = getattr(adapter, "is_document_local", None)
     count = 0
     for leaf in leaves:
         if leaf.memory_id is None:
@@ -236,7 +248,11 @@ def _wire_references(
         for _source_name, target_name, edge_type in adapter.extract_references(window):
             if edge_type not in valid_edge_types:
                 continue
-            concept_id = f"concept:{target_name.strip().lower()}"
+            key = target_name.strip().lower()
+            if doc_id is not None and is_local is not None and is_local(target_name.strip()):
+                concept_id = f"concept:{doc_id}:{key}"
+            else:
+                concept_id = f"concept:{key}"
             graph.add_node(concept_id, "concept", target_name.strip())
             graph.add_edge(leaf.memory_id, concept_id, edge_type)
             count += 1
@@ -284,7 +300,7 @@ def ingest_document_text(
         leaf.memory_id = segment_id
 
     section_count = _wire_containment(store.graph, doc_id, root)
-    reference_count = _wire_references(store.graph, adapter, text, leaves)
+    reference_count = _wire_references(store.graph, adapter, text, leaves, doc_id=doc_id)
 
     return {
         "doc_id": doc_id,
