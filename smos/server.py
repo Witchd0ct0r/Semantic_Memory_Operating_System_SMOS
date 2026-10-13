@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP
 from smos.memory.lifecycle import LifecycleManager
 from smos.memory.recall_engine import recall
 from smos.memory.exact_retrieval import reconstruct
+from smos.memory.requirement_context import requirement_context_from_strings
 from smos.memory.vector_store import VectorStore
 from smos.tools.agent_primitives import (
     compress,
@@ -321,6 +322,67 @@ def tool_reconstruct(node_id: str) -> dict:
             "node_id": node_id, "text": "", "segment_count": 0,
             "complete": False, "error": f"{type(exc).__name__}: {str(exc)[:200]}",
         }
+
+
+@app.tool()
+def tool_requirement_context(
+    text: str = "",
+    doc_id: str = "",
+    system: str = "",
+    native_id: str = "",
+    level: str = "",
+    domain_tags: str = "",
+    normative_tags: str = "",
+    declared_links_json: str = "",
+    token_budget: int = 4000,
+    k_per_section: int = 5,
+) -> dict:
+    """Gather evidence for judging a requirement: linked items, similar items,
+    relevant legal/standard clauses, and coverage facts. Exact stored text, no
+    LLM compression, no verdict.
+
+    Give a draft `text`, a stored item (`doc_id`, or `system` + `native_id`), or
+    both (the given text then overrides the stored text for similarity).
+
+    Returns {"query", "linked", "peers", "normative", "coverage", "truncated"}:
+      linked     items connected by depends_on/parent_of/member_of (<= 2 hops),
+                 each with reason ("upstream (depends_on)", ...) and path
+      peers      similar items at the same level/domain; near_duplicate flagged
+      normative  legal/standard segments; explicitly cited ones come first
+      coverage   has_upstream, has_downstream, near_duplicates,
+                 normative_by_source, unresolved_links
+
+    Args:
+        text: Draft requirement text (optional if the item is stored).
+        doc_id: Stored item's document id (alternative to system + native_id).
+        system: Source system of the item; also the default namespace for
+                declared link targets.
+        native_id: Item id in the source system.
+        level: Process level, e.g. "SYS.2" (matches tag "level:SYS.2").
+        domain_tags: Comma-separated tags; peers must share at least one.
+        normative_tags: Comma-separated tags scoping the normative section
+                        (e.g. "iso26262"); empty = all legal/standard documents.
+        declared_links_json: JSON list of links a draft intends to have, e.g.
+                        [{"target_native_id": "1234", "edge_type": "depends_on"}].
+        token_budget: Approximate token cap across all sections (default 4000).
+        k_per_section: Max items per section (default 5).
+    """
+    try:
+        return requirement_context_from_strings(
+            _store,
+            text=text,
+            doc_id=doc_id,
+            system=system,
+            native_id=native_id,
+            level=level,
+            domain_tags=domain_tags,
+            normative_tags=normative_tags,
+            declared_links_json=declared_links_json,
+            token_budget=token_budget,
+            k_per_section=k_per_section,
+        )
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
 
 
 @app.tool()

@@ -253,3 +253,36 @@ def test_empty_store_draft_returns_empty_sections_without_error(store):
     assert result["coverage"]["has_upstream"] is False
     assert result["coverage"]["has_downstream"] is False
     assert result["coverage"]["normative_by_source"] == {"legal": 0, "standard": 0}
+
+
+def test_from_strings_parses_tags_and_links(store):
+    from smos.memory.requirement_context import requirement_context_from_strings
+
+    _chain(store)
+    result = requirement_context_from_strings(
+        store,
+        text="The controller shall brake hard on impact.",
+        system=SYSTEM,
+        domain_tags="level:SYS.2, domain:safety",
+        declared_links_json='[{"target_native_id": "S1", "edge_type": "depends_on"}]',
+    )
+    assert result["query"]["domain_tags"] == ["level:SYS.2", "domain:safety"]
+    assert len(result["linked"]) == 1
+
+
+def test_from_strings_rejects_bad_json(store):
+    from smos.memory.requirement_context import requirement_context_from_strings
+
+    result = requirement_context_from_strings(
+        store, text="The unit shall run.", declared_links_json="{not json"
+    )
+    assert "error" in result
+
+
+def test_from_strings_rejects_non_list_links(store):
+    from smos.memory.requirement_context import requirement_context_from_strings
+
+    result = requirement_context_from_strings(
+        store, text="The unit shall run.", declared_links_json='{"a": 1}'
+    )
+    assert "error" in result

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import deque
 from typing import Optional
 
@@ -417,3 +418,47 @@ def requirement_context(
             "normative": normative_truncated,
         },
     }
+
+
+def _split_csv(value: str) -> list[str]:
+    return [part.strip() for part in value.split(",") if part.strip()]
+
+
+def requirement_context_from_strings(
+    store: VectorStore,
+    *,
+    text: str = "",
+    doc_id: str = "",
+    system: str = "",
+    native_id: str = "",
+    level: str = "",
+    domain_tags: str = "",
+    normative_tags: str = "",
+    declared_links_json: str = "",
+    token_budget: int = _DEFAULT_TOKEN_BUDGET,
+    k_per_section: int = _DEFAULT_K,
+) -> dict:
+    """String-typed front door for the MCP layer: tags are comma-separated,
+    declared links a JSON list of {target_native_id, edge_type[, target_system, clause]}."""
+    links: Optional[list[dict]] = None
+    if declared_links_json.strip():
+        try:
+            parsed = json.loads(declared_links_json)
+        except json.JSONDecodeError as exc:
+            return {"error": f"declared_links_json is not valid JSON: {exc}"}
+        if not isinstance(parsed, list) or not all(isinstance(x, dict) for x in parsed):
+            return {"error": "declared_links_json must be a JSON list of objects"}
+        links = parsed
+    return requirement_context(
+        store,
+        text=text,
+        doc_id=doc_id,
+        system=system,
+        native_id=native_id,
+        level=level,
+        domain_tags=_split_csv(domain_tags),
+        normative_tags=_split_csv(normative_tags),
+        declared_links=links,
+        token_budget=token_budget,
+        k_per_section=k_per_section,
+    )
