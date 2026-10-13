@@ -290,3 +290,17 @@ def test_from_strings_rejects_non_list_links(store):
         store, text="The unit shall run.", declared_links_json='{"a": 1}'
     )
     assert "error" in result
+
+
+def test_normative_is_found_even_when_many_requirements_outrank_it(store):
+    for i in range(45):
+        _ingest(
+            store, f"BULK-{i}",
+            f"The brake controller shall limit pedal force to {300 + i} newtons under normal operation.",
+        )
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+
+    result = requirement_context(store, text=DUP_A)
+
+    assert result["coverage"]["normative_by_source"]["standard"] == 1
+    assert [i["reason"] for i in result["normative"]] == ["standard match"]

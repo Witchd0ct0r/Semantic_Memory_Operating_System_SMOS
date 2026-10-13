@@ -13,6 +13,8 @@ LINK_EDGE_TYPES = ["depends_on", "parent_of", "member_of"]
 NORMATIVE_DOCTYPES = ("legal", "standard")
 _MAX_HOPS = 2
 _NEAR_DUPLICATE_THRESHOLD = 0.90
+_CANDIDATE_POOL_PER_K = 100
+_MIN_CANDIDATE_POOL = 1000
 _DEFAULT_TOKEN_BUDGET = 4000
 _DEFAULT_K = 5
 _SECTIONS = ("linked", "peers", "normative")
@@ -114,7 +116,10 @@ def _tag_set(record: dict) -> set[str]:
 def _hybrid_candidates(text: str, k: int, store: VectorStore) -> list[dict]:
     """Vector + BM25 RRF-merged segment candidates, best first. Records from
     the vector side carry a cosine `score`; BM25-only hits carry `score: None`."""
-    candidate_k = max(k * 8, 40)
+    # The pool is deliberately large: `peers` and `normative` are filtered out
+    # of it by tag, so a small pool lets a big requirements corpus push every
+    # legal/standard segment out and report a false "no normative match" gap.
+    candidate_k = max(k * _CANDIDATE_POOL_PER_K, _MIN_CANDIDATE_POOL)
     vector_results = store.query(text, k=candidate_k)
     bm25_results = [
         (uid, score) for uid, score in store.bm25.query(text, k=candidate_k) if score > 0.0
