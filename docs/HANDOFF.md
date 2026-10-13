@@ -9,9 +9,9 @@ history is the log.
 
 ## Where things stand (2026-10-13, session 6)
 
-**Track C + requirements ingestion & context pack (R1/R2) — IMPLEMENTED on branch
-`track-c-citation-namespacing` (NOT merged to `main` yet — Governor's call).** 381/381
-tests passing on the branch (337 → 381), legal bench unchanged (33% → 100%).
+**Track C + requirements ingestion & context pack (R1/R2) — IMPLEMENTED and MERGED to
+`main`** (fast-forward from `track-c-citation-namespacing`, tip `5359cec`; not pushed).
+381/381 tests passing (337 → 381), legal bench unchanged (33% → 100%).
 
 - **Track C** (`a3c8575`): `LegalAdapter` provision citations ("Article 3") were one
   global `concept:article 3` node across regulations. Adapters may now expose an
