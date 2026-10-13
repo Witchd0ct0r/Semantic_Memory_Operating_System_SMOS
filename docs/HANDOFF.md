@@ -7,7 +7,50 @@ history is the log.
 
 ---
 
-## Where things stand (2026-08-05, session 5)
+## Where things stand (2026-10-13, session 6)
+
+**Track C + requirements ingestion & context pack (R1/R2) — IMPLEMENTED on branch
+`track-c-citation-namespacing` (NOT merged to `main` yet — Governor's call).** 381/381
+tests passing on the branch (337 → 381), legal bench unchanged (33% → 100%).
+
+- **Track C** (`a3c8575`): `LegalAdapter` provision citations ("Article 3") were one
+  global `concept:article 3` node across regulations. Adapters may now expose an
+  optional `is_document_local(target_name)` hook; `_wire_references(..., doc_id=)`
+  namespaces those targets as `concept:{doc_id}:{name}`. Defined terms stay global.
+  Cross-document citations ("Article 5 of Regulation X") are still unresolved — needs
+  a regulation-identifier parser. Q9 of the EU-law benchmark was NOT re-run (corpus
+  files are not in the repo; `pull_corpus.py` fetches live EUR-Lex).
+- **Design:** spec `docs/superpowers/specs/2026-10-13-requirements-ingestion-and-context-pack-design.md`,
+  plan `docs/superpowers/plans/2026-10-13-requirements-ingestion-and-context-pack.md`.
+  Principle: SMOS is a standalone store; a third-party parser (e.g. Codebeamer →
+  JSON) emits the existing `IngestionPayload`. No Codebeamer code lives in SMOS.
+- **R1 (graph wiring):** `IngestionPayload.source_links` (previously validated then
+  dropped) now become `document --edge_type--> document` edges, direction as sent
+  (`smos/ingest/link_wiring.py`); missing targets get placeholder `document` nodes
+  upgraded by the real ingest; re-sync replaces only the edges the item owns.
+  `doc_type` is persisted (document node metadata + `doctype:<x>` segment tag), the
+  document node is refreshed via new `GraphStore.upsert_node` (also fixes the old
+  `doc_name`-drift debt), and `validate_payload` quarantines self-links and tags
+  containing `,`. New `RequirementsAdapter` declares `parent_of` / `member_of` /
+  `cites` (registered at `import smos.ingest.adapters`); `depends_on` is core.
+- **R2 (`tool_requirement_context`, `smos/memory/requirement_context.py`):** input is
+  a stored item (`doc_id` or `system`+`native_id`) and/or draft `text`; output is
+  `linked` (<= 2 hops over depends_on/parent_of/member_of, with reason + path),
+  `peers` (hybrid, same level/domain, `near_duplicate` flag at cosine >= 0.90 —
+  tunable default, not tuned), `normative` (legal/standard segments, explicit `cites`
+  first, optional `normative_tags` scope), `coverage` facts, per-section token
+  budget. Exact text, no LLM, no verdict.
+- **Open / deferred:** `StandardsAdapter` (clause parsing inside SMOS) — wait until
+  real standards are ingested; the candidate pool is bounded (`max(k*100, 1000)`) so
+  a very large requirements corpus can still starve `normative` (needs a tag-indexed
+  lookup); near-duplicate threshold needs validation on real data; `ARCHITECTURE.md`
+  not yet updated for R1/R2; `smos-doc-sync` not run this session.
+- **smos MCP server connected this session** (tools were listed and
+  `tool_semantic_query` answered) — the session 4/5 connection failures did not
+  recur. `tool_semantic_query` returned a low-confidence "uncertain" answer for a
+  contract-schema question; built-in Grep/Read gave the correct answer.
+
+## Previous session (2026-08-05, session 5)
 
 **EU-law toolchain benchmark — COMPLETE (revised).** Full results in
 `docs/eu-law-benchmark-results.md`. Design: `docs/superpowers/specs/2026-08-05-eu-law-benchmark-design.md`.
@@ -402,7 +445,7 @@ classification, typed edges, evidence-gathering primitives, coverage/gap signal)
 is now unblocked — a concrete non-markdown adapter exists to validate it against —
 but needs its own design/plan session before executing; not started.
 
-**Track C — `LegalAdapter` citation namespacing hardening (est. small, ~1 session).**
+**Track C — `LegalAdapter` citation namespacing hardening — DONE in session 6 (see top of this file).**
 Flagged by the EU-law benchmark (session 5, see "Where things stand" above):
 `LegalAdapter`'s citation extraction has no concept of which regulation/document an
 "Article N" citation belongs to, so two different documents' same-numbered articles
