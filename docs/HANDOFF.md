@@ -43,8 +43,12 @@ history is the log.
 - **Open / deferred:** `StandardsAdapter` (clause parsing inside SMOS) — wait until
   real standards are ingested; the candidate pool is bounded (`max(k*100, 1000)`) so
   a very large requirements corpus can still starve `normative` (needs a tag-indexed
-  lookup); near-duplicate threshold needs validation on real data; `ARCHITECTURE.md`
-  not yet updated for R1/R2; `smos-doc-sync` not run this session.
+  lookup); near-duplicate threshold needs validation on real data.
+- **Docs refreshed (end of session 6):** `README.md` rewritten for the current feature set,
+  `ARCHITECTURE.md` gained §1.4 (document ingestion) / §1.5 (requirement context) and two
+  known issues, and `docs/API.md` is the new complete tool / payload / Python API reference
+  (added to the doc-sync list). `smos-doc-sync` ran clean (nothing quarantined). The local
+  branch `track-c-citation-namespacing` was deleted after the merge.
 - **smos MCP server connected this session** (tools were listed and
   `tool_semantic_query` answered) — the session 4/5 connection failures did not
   recur. `tool_semantic_query` returned a low-confidence "uncertain" answer for a
