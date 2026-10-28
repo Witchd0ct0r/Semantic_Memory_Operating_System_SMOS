@@ -76,7 +76,31 @@ def _add_scope(conn: sqlite3.Connection) -> None:
     conn.execute("ALTER TABLE invitations ADD COLUMN scope TEXT NOT NULL DEFAULT 'rw'")
 
 
-ADMIN_MIGRATIONS: list[Migration] = [(1, "baseline", _baseline), (2, "token_scope", _add_scope)]
+def _add_samples(conn: sqlite3.Connection) -> None:
+    """Version 3: one row per minute of hardware and store measurements for the dashboard."""
+    conn.execute("""
+        CREATE TABLE samples (
+            ts             TEXT PRIMARY KEY,
+            cpu_percent    REAL,
+            cpu_cores      REAL,
+            mem_used       INTEGER,
+            mem_limit      INTEGER,
+            disk_used      INTEGER,
+            disk_total     INTEGER,
+            store_db_bytes INTEGER,
+            index_bytes    INTEGER,
+            admin_db_bytes INTEGER,
+            documents      INTEGER,
+            segments       INTEGER
+        )
+    """)
+
+
+ADMIN_MIGRATIONS: list[Migration] = [
+    (1, "baseline", _baseline),
+    (2, "token_scope", _add_scope),
+    (3, "samples", _add_samples),
+]
 
 
 def open_admin_db(data_dir: Path) -> sqlite3.Connection:

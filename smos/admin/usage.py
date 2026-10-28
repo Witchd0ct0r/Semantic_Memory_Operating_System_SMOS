@@ -81,3 +81,14 @@ def prune(conn: sqlite3.Connection, retention_days: int, batch_size: int = 5000)
         total += deleted
         if deleted < batch_size:
             return total
+
+
+def prune_samples_batch(conn: sqlite3.Connection, retention_days: int, limit: int) -> int:
+    """Delete at most `limit` dashboard samples older than the retention window."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    cursor = conn.execute(
+        "DELETE FROM samples WHERE ts IN (SELECT ts FROM samples WHERE ts < ? LIMIT ?)",
+        (cutoff, limit),
+    )
+    conn.commit()
+    return cursor.rowcount

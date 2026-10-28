@@ -428,6 +428,28 @@ class VectorStore:
             rows = self._db.execute(sql, params).fetchall()
         return [{"id": r[0], "content": r[1]} for r in rows]
 
+    def stats(self) -> dict:
+        """Cheap counts for the dashboard: documents (placeholders excluded), segments, all memories."""
+        with self._lock:
+            documents = self._db.execute(
+                "SELECT COUNT(*) FROM graph_nodes WHERE type = 'document' "
+                "AND COALESCE(json_extract(metadata, '$.placeholder'), 0) = 0"
+            ).fetchone()[0]
+            segments = self._db.execute(
+                "SELECT COUNT(*) FROM memories WHERE type = 'segment'"
+            ).fetchone()[0]
+            memories = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        return {"documents": documents, "segments": segments, "memories": memories}
+
+    def file_sizes(self) -> dict:
+        """On-disk bytes of the metadata database (with its WAL) and the search index."""
+
+        def size(path: Path) -> int:
+            return path.stat().st_size if path.exists() else 0
+
+        wal = self._db_file.with_name(self._db_file.name + "-wal")
+        return {"store_db": size(self._db_file) + size(wal), "index": size(self._index_file)}
+
     def count(self) -> int:
         with self._lock:
             return self._index.ntotal
