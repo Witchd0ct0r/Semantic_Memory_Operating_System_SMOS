@@ -22,6 +22,11 @@ agent needs the *right* passages (with their links and citations) rather than a 
 - **Token authentication.** Tokens are issued through one-time invitation links; the
   admin dashboard shows each token's usage.
 
+## Run it in Docker (Debian server)
+
+See [docs/INSTALL.md](docs/INSTALL.md): `cp .env.example .env`, edit it, `docker compose build`,
+`docker compose up -d`. The embedding model is bundled, so no Hugging Face access is needed.
+
 ## Quick start (development)
 
 ```bash

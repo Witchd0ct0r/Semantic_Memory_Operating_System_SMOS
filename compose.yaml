@@ -1,0 +1,20 @@
+services:
+  smos:
+    build:
+      context: .
+      args:
+        # Leave empty to take PyTorch from PyPI (large image). Set to a CPU-only index
+        # URL in .env if one becomes reachable.
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-}
+    image: smos:0.2.0
+    ports:
+      - "8765:8765"
+    env_file:
+      - .env
+    volumes:
+      - smos-data:/data
+    restart: unless-stopped
+    stop_grace_period: 60s
+
+volumes:
+  smos-data:

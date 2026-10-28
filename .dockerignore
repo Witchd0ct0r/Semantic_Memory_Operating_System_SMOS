@@ -1,0 +1,17 @@
+.git
+.gitattributes
+.gitignore
+.env
+.env.*
+.superpowers
+.claude
+.pytest_cache
+__pycache__
+*.pyc
+tests
+docs
+data
+.smos
+*.egg-info
+build
+dist

@@ -54,3 +54,4 @@ htmlcov/
 Thumbs.db
 
 .superpowers/
+.env

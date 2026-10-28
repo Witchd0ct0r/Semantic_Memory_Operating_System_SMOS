@@ -18,7 +18,7 @@ The standalone effort is five projects, one design at a time, in this order:
 | # | Project | Status |
 |---|---|---|
 | 1 | **Core**: no built-in AI, caller-supplied summaries, HTTP API + OpenAPI, bearer-token auth with invitation links, per-token usage, versioned migrations, minimal admin pages | **implemented and verified** (`docs/standalone-core-verification.md`) |
-| 2 | Docker packaging: image, data volume, healthcheck, install guide | next |
+| 2 | Docker packaging: image, data volume, healthcheck, install guide | **implemented and tested** (`docs/docker-verification.md`); the Governor still has to build/run it on the Debian machine with `docs/INSTALL.md` |
 | 3 | Full dashboard: metrics history (items, DB size, API load, hardware over time, top calls), line charts, layout A (single overview page) chosen in brainstorming | queued |
 | 4 | Self-update from remote `main` on request: version check, backup, migrate, rollback; update button + checker on the dashboard | queued |
 | 5 | Documentation: install guide, user guide, parser-author guide, agent-oriented API guide (grows with each step) | queued |
@@ -69,9 +69,10 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
 - Second Codex review (`82c1a5c..77165cc`): 3 Important, all fixed (ref-counted per-document locks, batched
   background usage pruning, router-level route-classification guard). 430 tests pass. Details:
   `docs/standalone-core-verification.md` §7.
-- Next session: Project 2 (Docker). Needs a design pass first: base image, embedding model baked in
-  for offline use, volume layout, healthcheck, `SMOS_PUBLIC_URL`/`SMOS_TRUST_PROXY`/HTTPS, and where
-  the Swagger assets come from offline.
+- **Project 2 done:** `Dockerfile`, `compose.yaml`, `.env.example`, bundled model in `models/`, `docs/INSTALL.md`.
+  Company network blocks Hugging Face and the PyTorch CPU index, so the image uses PyPI's GPU PyTorch (large) and
+  the model is loaded from `SMOS_EMBEDDING_MODEL_DIR`. Open item: Swagger UI assets still come from a CDN.
+- Next: Project 3 (full dashboard and metrics) design pass, after the Governor confirms the Debian install works.
 - **No stored data exists** to migrate; migration 1 is a plain baseline.
 - Development is on `main`; the future updater follows the remote `main`. `origin` is still
   far behind local `main` (nothing has been pushed).
