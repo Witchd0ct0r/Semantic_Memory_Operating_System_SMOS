@@ -84,6 +84,18 @@ def test_import_without_or_with_garbage_file_returns_false(tmp_path) -> None:
     conn.close()
 
 
+def test_describe_imports_a_result_written_after_startup(api) -> None:
+    """The supervisor records the result only after the new app is healthy, i.e. after its start-time import."""
+    from smos.update.service import describe
+
+    _client, _h, app = api
+    assert audit.recent(app.state.admin_db) == []
+    launcher.write_json_atomic(UpdatePaths(app.state.data_dir).last_result, _result())
+    describe(app)
+    describe(app)  # idempotent
+    assert [r["outcome"] for r in audit.recent(app.state.admin_db)] == ["applied"]
+
+
 def test_create_app_imports_the_last_result_on_start(tmp_path) -> None:
     data = tmp_path / "data"
     launcher.write_json_atomic(UpdatePaths(data).last_result, _result())

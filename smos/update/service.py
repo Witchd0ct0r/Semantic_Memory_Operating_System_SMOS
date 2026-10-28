@@ -9,6 +9,7 @@ from typing import Mapping, Optional
 
 import smos
 from smos.launcher import UpdatePaths, load_build_info, read_json
+from smos.update import audit
 from smos.update.apply import Updater
 from smos.update.config import UpdateConfig
 from smos.update.github import GitHubClient
@@ -64,6 +65,12 @@ def describe(app) -> dict:
     service: Optional[UpdateService] = getattr(app.state, "update", None)
     paths = UpdatePaths(app.state.data_dir)
     last = read_json(paths.last_result)
+    if last is not None:  # the supervisor writes it after the app started, so import it whenever it is seen
+        try:
+            with app.state.admin_lock:
+                audit.import_last_result(app.state.admin_db, paths)
+        except Exception:
+            log.exception("could not import the last update result")
     out = {
         "enabled": False, "reason": None, "state": "disabled", "running": smos.__version__,
         "release_version": None, "tag": None, "notes": "", "url": "", "sha": None, "rebuild_files": [],
