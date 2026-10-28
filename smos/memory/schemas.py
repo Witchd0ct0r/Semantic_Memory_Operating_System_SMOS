@@ -29,6 +29,22 @@ class CompressedContext(BaseModel):
     mode: Literal["abstractive", "extractive", "uncertain"] = "abstractive"
 
 
+class RetrievedItem(BaseModel):
+    id: str
+    content: str
+    summary: Optional[str] = None
+    summary_source: Optional[str] = None
+    score: Optional[float] = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class RetrievedContext(BaseModel):
+    results: list[RetrievedItem]
+    sources: list[str]
+    confidence: float = Field(ge=0.0, le=1.0)
+    mode: Literal["extractive", "uncertain"] = "extractive"
+
+
 class FileReadResult(BaseModel):
     summary: Optional[str]
     id: Optional[str]

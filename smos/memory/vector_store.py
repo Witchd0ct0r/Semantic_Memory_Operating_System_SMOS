@@ -116,6 +116,14 @@ class VectorStore:
         except sqlite3.OperationalError:
             pass
         conn.execute("""
+            CREATE TABLE IF NOT EXISTS summaries (
+                node_id    TEXT PRIMARY KEY,
+                summary    TEXT NOT NULL,
+                source     TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS verbatim (
                 key       TEXT PRIMARY KEY,
                 content   TEXT NOT NULL,
@@ -337,6 +345,7 @@ class VectorStore:
             row_id = int(row[0])
             self._index.remove_ids(np.array([row_id], dtype=np.int64))
             self._db.execute("DELETE FROM memories WHERE uuid = ?", (uuid,))
+            self._db.execute("DELETE FROM summaries WHERE node_id = ?", (uuid,))
             self._db.commit()
             self.bm25.remove(uuid)
             self.graph.remove_node(uuid)
@@ -356,6 +365,7 @@ class VectorStore:
                     continue
                 row_ids.append(int(row[0]))
                 self._db.execute("DELETE FROM memories WHERE uuid = ?", (uuid,))
+                self._db.execute("DELETE FROM summaries WHERE node_id = ?", (uuid,))
             self.bm25.remove_batch(uuids)
             for uuid_to_unlink in uuids:
                 self.graph.remove_node(uuid_to_unlink)
@@ -445,6 +455,29 @@ class VectorStore:
                 "char_end": char_end,
             },
         }
+
+    def set_summary(self, node_id: str, summary: str, source: str = "") -> None:
+        """Attach caller-supplied summary text to any node id (memory uuid,
+        document or section). SMOS never generates summaries itself."""
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO summaries (node_id, summary, source, updated_at) VALUES (?,?,?,?) "
+                "ON CONFLICT(node_id) DO UPDATE SET summary=excluded.summary, "
+                "source=excluded.source, updated_at=excluded.updated_at",
+                (node_id, summary, source, datetime.utcnow().isoformat()),
+            )
+            self._db.commit()
+
+    def get_summaries(self, node_ids: list[str]) -> dict[str, dict]:
+        if not node_ids:
+            return {}
+        placeholders = ",".join("?" for _ in node_ids)
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT node_id, summary, source FROM summaries WHERE node_id IN ({placeholders})",
+                list(node_ids),
+            ).fetchall()
+        return {nid: {"summary": s, "source": src} for nid, s, src in rows}
 
     def get_by_timestamp_range(self, since: str = "", until: str = "") -> list[dict]:
         sql = "SELECT uuid, content FROM memories WHERE 1=1"
