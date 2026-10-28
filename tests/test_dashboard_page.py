@@ -166,3 +166,13 @@ def test_old_samples_are_pruned_at_startup(tmp_path, monkeypatch) -> None:
     second = create_app(tmp_path / "d", admin_user="admin", admin_password=PASSWORD, start_sampler=False)
     assert second.state.admin_db.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 0
     second.state.close()
+
+
+def test_timestamps_are_short(api) -> None:
+    client, headers, _app = api
+    client.post("/api/v1/query", json={"query": "radiated emissions requirement"}, headers=headers)
+    client.post("/api/v1/query", json={"query": "no token here at all"})
+    _login(client)
+    html = client.get("/admin/dashboard").text
+    assert "+00:00" not in html
+    assert re.search(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", html)

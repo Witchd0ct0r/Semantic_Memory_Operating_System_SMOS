@@ -5,6 +5,7 @@ import os
 import secrets
 import time
 from collections import defaultdict, deque
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
@@ -17,6 +18,19 @@ from smos.admin.dashboard_view import build_dashboard
 from smos.admin.tokens import SCOPES
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+
+def shorttime(value) -> str:
+    """'2026-10-28T13:46:53.268237+00:00' -> '2026-10-28 13:46:53' (UTC), for readable tables."""
+    if not value:
+        return ""
+    try:
+        return datetime.fromisoformat(str(value)).strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return str(value)
+
+
+templates.env.filters["shorttime"] = shorttime
 
 _FAIL_LIMIT = 5
 _FAIL_WINDOW_S = 60.0

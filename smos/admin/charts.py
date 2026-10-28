@@ -125,7 +125,10 @@ def line_chart(
             f"{escape(_fmt_value(value, y_unit))}</text>"
         )
 
-    for fraction, anchor in ((0.0, "start"), (0.5, "middle"), (1.0, "end")):
+    # a span of under two minutes would print identical, overlapping labels: show one in the middle
+    labels = (((0.5, "middle"),) if (x_max - x_min) < 120
+              else ((0.0, "start"), (0.5, "middle"), (1.0, "end")))
+    for fraction, anchor in labels:
         t = x_min + span * fraction
         parts.append(
             f'<text class="axis-label" x="{px(t):.1f}" y="{_MARGIN_TOP + plot_h + 16}" text-anchor="{anchor}">'
@@ -146,7 +149,12 @@ def line_chart(
 
     for s in drawable:
         coords = " ".join(f"{px(t):.1f},{py(v):.1f}" for t, v in downsample(s.points))
-        parts.append(f'<polyline class="line {escape(s.css_class, quote=True)}" fill="none" points="{coords}"/>')
+        css = escape(s.css_class, quote=True)
+        if len(s.points) == 1:  # a lone point has no line to draw
+            t, v = s.points[0]
+            parts.append(f'<circle class="dot {css}" cx="{px(t):.1f}" cy="{py(v):.1f}" r="3.5"/>')
+        else:
+            parts.append(f'<polyline class="line {css}" fill="none" points="{coords}"/>')
 
     legend_y = height - 8
     x = _MARGIN_LEFT

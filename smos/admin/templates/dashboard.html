@@ -67,7 +67,7 @@
     <tr>
       <td><a href="/admin/usage?token={{ t.token_id }}">{{ t.name }}</a></td>
       <td>{% if t.scope == "rw" %}read and write{% else %}read-only{% endif %}</td>
-      <td>{{ t.calls }}</td><td>{{ t.errors }}</td><td>{{ t.last_seen or "never" }}</td>
+      <td>{{ t.calls }}</td><td>{{ t.errors }}</td><td>{{ (t.last_seen|shorttime) or "never" }}</td>
     </tr>
     {% else %}<tr><td colspan="5" class="muted">No tokens yet.</td></tr>{% endfor %}
   </table>
@@ -78,7 +78,7 @@
   <table>
     <tr><th>Time</th><th>Event</th><th>Call</th><th>Status</th><th>Token</th></tr>
     {% for e in events %}
-    <tr><td>{{ e.ts }}</td><td>{{ e.kind }}</td><td>{{ e.method }} {{ e.path }}</td><td>{{ e.status }}</td><td>{{ e.token or "none" }}</td></tr>
+    <tr><td>{{ e.ts|shorttime }}</td><td>{{ e.kind }}</td><td>{{ e.method }} {{ e.path }}</td><td>{{ e.status }}</td><td>{{ e.token or "none" }}</td></tr>
     {% else %}<tr><td colspan="5" class="muted">Nothing yet.</td></tr>{% endfor %}
   </table>
 </section>

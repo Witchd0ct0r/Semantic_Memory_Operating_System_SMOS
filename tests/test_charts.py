@@ -91,3 +91,13 @@ def test_x_labels_use_hours_for_short_spans_and_dates_for_long_ones() -> None:
 ])
 def test_format_bytes(n, expected) -> None:
     assert format_bytes(n) == expected
+
+
+def test_single_point_series_draws_a_dot() -> None:
+    svg = line_chart([Series("x", _points([5]), "s0")], title="One")
+    assert "<circle" in svg and 'class="dot s0"' in svg
+
+
+def test_a_very_short_span_has_one_x_label_not_overlapping_ones() -> None:
+    svg = line_chart([Series("x", _points([1, 2], step=1.0), "s0")], title="Short")
+    assert len(re.findall(r">\d\d:\d\d<", svg)) == 1
