@@ -2,7 +2,7 @@
 
 ## State
 
-Projects 1-4 of the five are implemented on `main` (not pushed; 24 commits ahead of `origin/main`, last push `2e8994c`).
+Projects 1-4 of the five are implemented on `main` (not pushed; 28 commits ahead of `origin/main`, last push `2e8994c`).
 Project 4: the dashboard checks **GitHub Releases** (tags `vX.Y.Z`, not commits) and an admin can update the running
 container in place; a stdlib-only supervisor (`smos/launcher.py`, now the `smos-server` entry point) snapshots the data,
 switches a code overlay in `/data/updates/`, health-checks it **including the reported version**, and rolls back code and
@@ -39,7 +39,7 @@ not be until the Governor says all updates are finished. Nothing is running: no 
 
 ## Open items / blockers
 
-- Push decision: 24 commits unpushed; wait for the Governor.
+- Push decision: 28 commits unpushed; wait for the Governor.
 - A fourth/fifth Codex round is the Governor's call; the Project 4 package is ready.
 - Governor-side checks pending on Debian from earlier: `docker compose down && up` persistence and a read-only token being
   refused on upload.
