@@ -61,6 +61,19 @@ def test_env_example_has_placeholders_only_and_env_is_ignored() -> None:
     assert re.search(r"^\.env$", _read(".gitignore"), re.M)
 
 
+def test_env_example_documents_update_settings() -> None:
+    example = _read(".env.example")
+    assert "# SMOS_UPDATE_REPO=" in example and "# SMOS_UPDATE_CHECK_MINUTES=" in example
+    assert "SMOS_UPDATE_API_BASE" not in example  # test hooks, deliberately undocumented for operators
+
+
+def test_there_is_no_pypi_publish_workflow() -> None:
+    """The Governor decided SMOS is not published to PyPI; a v* release tag must not trigger a publish."""
+    workflows = _ROOT / ".github" / "workflows"
+    for path in workflows.glob("*") if workflows.exists() else []:
+        assert "pypi" not in path.read_text(encoding="utf-8").lower(), path.name
+
+
 def test_dockerignore_keeps_secrets_and_junk_out_of_the_image() -> None:
     lines = {line.strip() for line in _read(".dockerignore").splitlines()}
     for wanted in (".git", ".env", "tests", ".superpowers", "__pycache__"):

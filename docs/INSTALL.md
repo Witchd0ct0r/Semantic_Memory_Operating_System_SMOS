@@ -2,8 +2,9 @@
 
 Written for the person who starts SMOS on a Linux machine. Every step is one short command.
 You need: Docker with the Compose plugin, a user in the `docker` group, access to GitHub,
-Docker Hub and PyPI **during the build only**. At run time SMOS needs no internet, and it never
-contacts Hugging Face (the embedding model is bundled).
+Docker Hub and PyPI **during the build only**. At run time SMOS needs no internet (the optional update
+check contacts GitHub, see *Updating from the dashboard*), and it never contacts Hugging Face (the
+embedding model is bundled).
 
 Size and time to expect: the image is about 6 GB unpacked on disk (3.4 GB compressed). The first
 build downloads about 3 GB; it took about 8 minutes on a fast connection. Keep at least 12 GB of
@@ -147,9 +148,41 @@ docker run --rm -v smos_smos-data:/data -v "$PWD":/backup debian:stable-slim sh 
 The volume is named `<folder>_smos-data`; if your folder is not called `smos`, run
 `docker volume ls` to see the exact name.
 
-## Upgrading
+## Updating from the dashboard
 
-Until the in-app updater exists, upgrade by rebuilding:
+The dashboard checks GitHub for a newer **release** (not every commit: only a release the maintainer
+publishes, tagged `vX.Y.Z`) every 6 hours, and when you press *Check now*. When one is found, the banner
+says so; open it, read the release notes and press *Update*. What happens:
+
+1. SMOS downloads that exact release, checks it (only the `smos/` code is accepted, of known file types and
+   limited size) and test-imports it.
+2. It starts refusing writes (HTTP 503; reads and the dashboard keep working) and restarts.
+3. A copy of the whole data folder is taken, the new code is switched on and has up to 2 minutes to answer
+   its health check **with the new version number**.
+4. If it does not, SMOS goes back to the previous code **and** the copy of the data, and the dashboard shows
+   why. Anything written between the copy and the failed start is lost, which is why writes are refused for
+   those minutes.
+
+Good to know:
+
+- Needs free disk: the data folder size plus 20 %, and room for the download (about 100 MB at most). If space
+  is short the update is refused before anything changes.
+- A release that changes the files baked into the image (`pyproject.toml`, `Dockerfile`, `compose.yaml`,
+  the bundled model, `smos/launcher.py`) is shown as **needs a rebuilt image** and is not applied; use
+  *Rebuilding* below.
+- Updating needs outbound HTTPS to `api.github.com` and `github.com` (and the hosts GitHub redirects
+  downloads to). The CA bundle from step 3 is used for this at run time as well; for a proxy set
+  `HTTPS_PROXY` (and `NO_PROXY`) in `.env`.
+- Every attempt and its outcome is recorded (who, from/to, result) in the admin database.
+- **Trust:** an update runs code downloaded from the configured GitHub repository. Whoever controls that
+  repository's owner account controls what your installation runs after the next update. SMOS does not
+  verify signatures. To switch updating off, set `SMOS_UPDATE_REPO=` (empty) in `.env`.
+- Updating is only available from the container image (it needs the build information baked in).
+
+## Rebuilding
+
+Use this when the dashboard says a release needs a rebuilt image, or whenever you prefer not to update
+from the dashboard:
 
 ```bash
 git pull

@@ -206,3 +206,20 @@ verification record (`docs/update-verification.md`), not the pytest suite.
 6. Defaults: feature on, repo = this project's public repo, check every 6 h; one snapshot kept, two overlays kept;
    snapshot needs 120 % of the data size free.
 7. Archive from `github.com/.../archive/<sha>.tar.gz`; release, tag and tree metadata from the API.
+
+## Plan-time refinements (2026-10-28, decided while writing the plan and implementing)
+
+- `smos/launcher.py` joins the rebuild list (an overlay cannot replace the supervisor), so a release that changes it
+  is reported as "needs rebuild".
+- Versions are strict `X.Y.Z` tuples and tags exactly `vX.Y.Z` (no PEP 440, no pre-release suffixes).
+- Single text files in the manifest are hashed with CRLF normalised to LF (git stores LF; Windows checkouts and
+  build contexts have CRLF); files inside `models/` are hashed as they are.
+- Unpacking allows only `.py .html .css .js .json .txt .md` under `smos/`; anything else refuses the update.
+- `SMOS_UPDATE_API_BASE` and `SMOS_UPDATE_ARCHIVE_BASE` exist as operator-only test hooks (https, or http to a loopback
+  host); they are not documented in `.env.example`.
+- Audit rows for a successful update or a rollback are written after the restart from `last-result.json` (a rollback
+  restores the old `admin.db`, which never saw the attempt); refused and failed attempts are written at once.
+- If even the rollback does not come up healthy, `pending.json` is deleted anyway (otherwise every container restart
+  would redo the failing update); snapshot, overlay and `last-result.json` stay for inspection and the supervisor exits
+  non-zero.
+- SMOS is not published to PyPI; the tag-triggered publish workflow was removed.
