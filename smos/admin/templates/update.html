@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}SMOS update{% endblock %}
+{% block content %}
+<section>
+  <h1>Update SMOS</h1>
+  <p>Running version <strong>{{ update.running }}</strong>.</p>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+  {% if applying or update.updater_state == "restarting" %}
+  <p id="progress" class="muted">The update is being applied. The server restarts; this page waits for it to come back.</p>
+  <noscript><p class="muted">Reload this page in a minute to see the result.</p></noscript>
+  <script>
+  (function () {
+    var startedVersion = {{ update.running|tojson }};
+    var startedResult = {{ (update.last_result.finished_at if update.last_result else "")|tojson }};
+    var box = document.getElementById("progress");
+    function poll() {
+      fetch("/admin/update/status", {credentials: "same-origin", cache: "no-store"})
+        .then(function (r) { if (!r.ok) { throw new Error("not ready"); } return r.json(); })
+        .then(function (s) {
+          var finished = s.last_result ? s.last_result.finished_at : "";
+          if (s.version !== startedVersion || (finished && finished !== startedResult)) {
+            window.location.href = "/admin/dashboard";
+            return;
+          }
+          box.textContent = "Applying the update...";
+          setTimeout(poll, 2000);
+        })
+        .catch(function () {
+          box.textContent = "The server is restarting. Waiting for it to come back...";
+          setTimeout(poll, 2000);
+        });
+    }
+    setTimeout(poll, 1500);
+  })();
+  </script>
+
+  {% elif update.state == "available" %}
+  <h2>Release {{ update.release_version }} is available</h2>
+  <table>
+    <tr><th>Release tag</th><td>{{ update.tag }}{% if update.url %} &middot; <a href="{{ update.url }}" rel="noopener noreferrer">view on GitHub</a>{% endif %}</td></tr>
+    <tr><th>Commit</th><td><code>{{ update.sha }}</code></td></tr>
+    <tr><th>From &rarr; to</th><td>{{ update.running }} &rarr; {{ update.release_version }}</td></tr>
+  </table>
+  <h2>Release notes</h2>
+  <pre style="white-space:pre-wrap;max-height:24em;overflow:auto">{{ update.notes or "(none)" }}</pre>
+  <p class="muted">Applying the update restarts the server. For about a minute writes are refused (HTTP 503) while the data is
+  backed up and the new version starts; reads keep working until the restart. If the new version does not start healthy,
+  SMOS goes back to the previous version and the previous data automatically.</p>
+  <form method="post" action="/admin/update/apply">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="version" value="{{ update.release_version }}">
+    <button type="submit">Update to {{ update.release_version }}</button>
+    <a href="/admin/dashboard">Cancel</a>
+  </form>
+
+  {% elif update.state == "needs_rebuild" %}
+  <h2>Release {{ update.release_version }} needs a rebuilt image</h2>
+  <p>It changes files that are part of the container image ({% for f in update.rebuild_files %}<code>{{ f }}</code>{% if not loop.last %}, {% endif %}{% endfor %}),
+  so it cannot be applied from here. Rebuild the image as described in the install guide.</p>
+  <p><a href="/admin/dashboard">Back to the dashboard</a></p>
+
+  {% elif update.state == "up_to_date" %}
+  <p>SMOS is up to date.</p>
+  <p><a href="/admin/dashboard">Back to the dashboard</a></p>
+
+  {% elif update.state == "check_failed" %}
+  <p class="error">The last update check failed: {{ update.error }}</p>
+  <p><a href="/admin/dashboard">Back to the dashboard</a></p>
+
+  {% elif update.enabled %}
+  <p class="muted">No update check has finished yet.</p>
+  <p><a href="/admin/dashboard">Back to the dashboard</a></p>
+
+  {% else %}
+  <p class="muted">{{ update.reason }}</p>
+  <p><a href="/admin/dashboard">Back to the dashboard</a></p>
+  {% endif %}
+</section>
+{% endblock %}

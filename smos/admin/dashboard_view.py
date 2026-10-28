@@ -6,6 +6,7 @@ from pathlib import Path
 from smos import __version__
 from smos.admin import dashboard_data as dd
 from smos.admin.charts import Series, format_bytes, line_chart
+from smos.update.service import describe as describe_update
 
 _BUCKET_LABELS = {60: "minute", 300: "5 minutes", 900: "15 minutes", 3600: "hour", 10800: "3 hours", 21600: "6 hours"}
 
@@ -85,6 +86,7 @@ def build_dashboard(app, range_key: str) -> dict:
         "range_key": range_key,
         "ranges": list(dd.RANGES),
         "version": __version__,
+        "update": describe_update(app),
         "tiles": tiles,
         "allocation": allocation,
         "charts": charts,

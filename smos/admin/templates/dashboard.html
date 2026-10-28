@@ -4,11 +4,29 @@
 {% block content %}
 <section class="banner">
   <strong>SMOS {{ version }}</strong>
-  <span class="muted">&middot; update checking arrives with the updater</span>
+  <span class="update-state" data-update-state="{{ update.state }}">
+  {% if update.state == "available" %}&middot; <a href="/admin/update">Release {{ update.release_version }} is available &mdash; review and update</a>
+  {% elif update.state == "needs_rebuild" %}&middot; <span class="error">Release {{ update.release_version }} needs a rebuilt image</span>
+    <span class="muted">({% for f in update.rebuild_files %}{{ f }}{% if not loop.last %}, {% endif %}{% endfor %}; see the install guide)</span>
+  {% elif update.state == "up_to_date" %}<span class="muted">&middot; SMOS is up to date</span>
+  {% elif update.state == "check_failed" %}<span class="error">&middot; Update check failed: {{ update.error }}</span>
+  {% elif update.enabled %}<span class="muted">&middot; Updates: not checked yet</span>
+  {% else %}<span class="muted">&middot; {{ update.reason }}</span>{% endif %}
+  </span>
+  {% if update.enabled %}
+  <form class="inline" method="post" action="/admin/update/check"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Check now</button></form>
+  {% endif %}
   <span class="spacer"></span>
   <nav class="ranges" aria-label="Time range">
     {% for r in ranges %}<a class="range{% if r == range_key %} active{% endif %}" href="/admin/dashboard?range={{ r }}">{{ r }}</a>{% endfor %}
   </nav>
+  {% if update.last_result %}
+  <div class="muted" style="flex-basis:100%" data-last-update>
+    Last update to {{ update.last_result.to_version }}:
+    {% if update.last_result.ok %}applied{% else %}<span class="error">rolled back</span> &mdash; {{ update.last_result.error }}{% endif %}
+    ({{ (update.last_result.finished_at|shorttime) }} UTC)
+  </div>
+  {% endif %}
 </section>
 
 <section>

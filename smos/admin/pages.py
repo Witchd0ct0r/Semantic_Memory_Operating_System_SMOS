@@ -9,13 +9,16 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from smos.admin import accounts, invitations, tokens, usage
 from smos.admin.dashboard_data import parse_range
 from smos.admin.dashboard_view import build_dashboard
 from smos.admin.tokens import SCOPES
+from smos.update.apply import ApplyRefused
+from smos.update.service import describe as describe_update
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -203,6 +206,48 @@ def register_admin(app: FastAPI) -> APIRouter:
     ):
         context = build_dashboard(request.app, parse_range(range_))
         return _page(request, "dashboard.html", admin=request.session.get("admin"), **context)
+
+    # ------------------------------------------------------------ updates
+    def _update_page(request: Request, status: int = 200, applying: bool = False, error: str | None = None):
+        return _page(request, "update.html", status=status, admin=request.session.get("admin"),
+                     update=describe_update(request.app), applying=applying, error=error)
+
+    @router.get("/admin/update", response_class=HTMLResponse)
+    def update_page(request: Request, applying: int = 0, _admin: str = Depends(admin_required)):
+        return _update_page(request, applying=bool(applying))
+
+    @router.get("/admin/update/status")
+    def update_status(request: Request, _admin: str = Depends(admin_required)):
+        info = describe_update(request.app)
+        return JSONResponse({"state": info["state"], "updater_state": info["updater_state"],
+                             "version": info["running"], "last_result": info["last_result"]},
+                            headers=_NO_STORE)
+
+    @router.post("/admin/update/check")
+    async def update_check(request: Request, _admin: str = Depends(admin_required)):
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        service = getattr(request.app.state, "update", None)
+        if service is not None and service.checker is not None:
+            await run_in_threadpool(service.checker.check, True)
+        return RedirectResponse("/admin/dashboard", status_code=303)
+
+    @router.post("/admin/update/apply")
+    async def update_apply(request: Request, admin: str = Depends(admin_required)):
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        service = getattr(request.app.state, "update", None)
+        if service is None or service.updater is None:
+            reason = service.disabled_reason if service is not None else None
+            return _update_page(request, status=409, error=reason or "Updates are not available.")
+        version = str(form.get("version", "")).strip()
+        if not version:
+            return _update_page(request, status=409, error="No release was named; review the update and confirm again.")
+        try:
+            await run_in_threadpool(service.updater.begin, admin, version)
+        except ApplyRefused as err:
+            return _update_page(request, status=409, error=str(err))
+        return RedirectResponse("/admin/update?applying=1", status_code=303)
 
     @router.get("/admin")
     async def admin_root(_admin: str = Depends(admin_required)):
