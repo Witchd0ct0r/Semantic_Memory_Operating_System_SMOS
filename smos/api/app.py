@@ -17,6 +17,7 @@ from smos.admin.db import open_admin_db
 from smos.admin.pages import register_admin
 from smos.api import routes
 from smos.api.deps import require_token, require_token_or_admin_session
+from smos.memory.embeddings import model_source
 from smos.memory.lifecycle import LifecycleManager
 from smos.memory.vector_store import VectorStore
 
@@ -60,6 +61,7 @@ def create_app(
     admin_password: Optional[str] = None,
 ) -> FastAPI:
     data_dir = Path(data_dir)
+    model_source()  # an unusable embedding model stops startup before any file is touched
     app = FastAPI(
         title="SMOS",
         version=_version(),

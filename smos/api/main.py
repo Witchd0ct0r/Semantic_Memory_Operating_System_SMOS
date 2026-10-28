@@ -7,9 +7,11 @@ import uvicorn
 
 from smos.api.app import create_app
 from smos.api.logging_config import build_log_config
+from smos.memory.embeddings import warm_up
 
 
 def build_app():
+    warm_up()
     return create_app(
         Path(os.environ.get("SMOS_DATA_DIR", "/data")),
         admin_user=os.environ.get("SMOS_ADMIN_USER"),
