@@ -51,3 +51,34 @@ claude mcp remove smos --scope user
 The old `smos-mcp` pip distribution may also still be listed (`pip show smos-mcp`); the
 editable install of this repo now registers as `smos` (`pip uninstall smos-mcp` removes
 the old name).
+
+## Docker on the Windows development PC
+
+Docker Desktop is installed but its engine is **off by default**. Start and stop it from the shell:
+
+```
+docker desktop start      # then wait: docker info --format '{{.ServerVersion}}' succeeds
+docker desktop stop       # always stop it when the work is done
+```
+
+- The first build of the image takes about 8 minutes (3 GB download); later builds reuse cached layers unless
+  `pyproject.toml` or the Dockerfile's early steps change. Docker Desktop reports the image as ~9.8 GB (layers
+  counted twice); on Linux it is about 6 GB.
+- In Git Bash, set `MSYS_NO_PATHCONV=1` before `docker run -v ... /container/path` and `-e SOME_PATH=/...`, otherwise
+  `/opt/...` is rewritten to `C:/Program Files/Git/opt/...`. Use `$(pwd -W)` for host paths in `-v`.
+- `docker exec` needs `-i` to receive a heredoc on stdin.
+- A temporary build context must live inside the repo (for example `.superpowers/ctx-x`, which is git-ignored);
+  `mktemp -d` paths (`/tmp/...`) are not visible to Docker Desktop.
+- Test containers I start use names like `smos-offline`, `smos-dash`; remove them and delete the throwaway `.env`
+  afterwards (`.env` is git-ignored but holds a test password).
+
+## Shell quirks that cost time
+
+- Very large `bash` commands that mix several heredocs fail with `unexpected EOF`; write files with the Write tool
+  and keep shell commands short.
+- A bare `pytest` through the `rtk` hook may print "No tests collected" and hides collection errors; use
+  `rtk proxy pytest ...` or `python -m pytest ...`.
+- Chaining `git commit` after `pytest ... | tail -1` commits even when tests failed (`tail` succeeds). Capture the
+  summary line and test it before committing.
+- The browser automation tool cannot open `file://` URLs; serve a saved page with `python -m http.server` on
+  127.0.0.1 and stop the server afterwards.

@@ -8,6 +8,10 @@ history log; git history is the log.
 
 ## Where things stand (2026-10-28, session 7)
 
+> **Latest handoff (read first):** `docs/handoffs/2026-10-28-1550-standalone-projects-1-3-done-project-4-next.md`.
+> Projects 1-3 are done and Codex-reviewed; the Debian installation runs the Project 1-2 code and is deliberately NOT
+> updated until all projects are finished. Next: Project 4 (self-update) design.
+
 **Direction change: SMOS is becoming a standalone, self-hosted product** the Governor will
 install in Docker inside their company for trial runs. A local agent and third-party parsers
 (including ones the Governor writes) talk to it over the internal network. The built-in
@@ -20,7 +24,7 @@ The standalone effort is five projects, one design at a time, in this order:
 | 1 | **Core**: no built-in AI, caller-supplied summaries, HTTP API + OpenAPI, bearer-token auth with invitation links, per-token usage, versioned migrations, minimal admin pages | **implemented and verified** (`docs/standalone-core-verification.md`) |
 | 2 | Docker packaging: image, data volume, healthcheck, install guide | **done and running on the Governor's Debian machine** (`docs/docker-verification.md`, `docs/INSTALL.md`) |
 | 3 | Full dashboard: metrics history (items, DB size, API load, hardware over time, top calls), line charts, layout A (single overview page) chosen in brainstorming | **implemented** (spec `2026-10-28-dashboard-design.md`, plan `2026-10-28-dashboard.md`); verification record `docs/dashboard-verification.md` |
-| 4 | Self-update from remote `main` on request: version check, backup, migrate, rollback; update button + checker on the dashboard | queued |
+| 4 | Self-update from remote `main` on request: version check, backup, migrate, rollback; update button + checker on the dashboard | **next** (design pass; direction agreed: in-container code update from the dashboard, rebuild only when a release needs it) |
 | 5 | Documentation: install guide, user guide, parser-author guide, agent-oriented API guide (grows with each step) | queued |
 
 Design: `docs/superpowers/specs/2026-10-28-standalone-core-design.md`.
