@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import threading
 import time
-from importlib import metadata
 from pathlib import Path
 from typing import Optional
 
@@ -24,10 +23,10 @@ from smos.memory.vector_store import VectorStore
 
 
 def _version() -> str:
-    try:
-        return metadata.version("smos")
-    except metadata.PackageNotFoundError:
-        return "0.0.0-dev"
+    """The version of the code actually loaded (an update overlay differs from the installed metadata)."""
+    import smos
+
+    return smos.__version__
 
 
 _PRUNE_EVERY_S = 86400.0

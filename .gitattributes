@@ -1,1 +1,5 @@
 models/** -text
+Dockerfile text eol=lf
+compose.yaml text eol=lf
+pyproject.toml text eol=lf
+smos/launcher.py text eol=lf
