@@ -3,6 +3,7 @@
 {% block content %}
 <section style="max-width:620px;margin:48px auto">
   <h1>Your token</h1>
+  <p>Access level: <strong>{% if scope == "rw" %}read and write{% else %}read-only{% endif %}</strong>.</p>
   <p><strong>Save it now. It will not be shown again</strong> and the link no longer works.</p>
   <code class="secret" id="tok">{{ token }}</code>
   <p><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('tok').textContent)">Copy token</button></p>

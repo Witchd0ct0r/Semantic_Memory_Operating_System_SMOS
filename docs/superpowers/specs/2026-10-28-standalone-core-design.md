@@ -69,6 +69,10 @@ local agent judges.
   sends the link; the user opens it and presses "Create token"; the token appears on
   that page once for the user to save; the admin's token list then shows the token as
   created by the user, with timestamp, client IP and user agent.
+- Tokens come in two kinds, chosen by the admin per invitation: **read-only** (query data only)
+  and **read/write** (can also ingest and change data, for parsers). A read-only token can never
+  modify the database, so ordinary users cannot corrupt it. Added 2026-10-28 after the first
+  release; admin DB migration 2 adds the scope, existing tokens/invitations stay read/write.
 - Tools that used the AI keep existing, taking the text from the caller.
 - Summaries from a third-party parser must be accepted by the API next to the
   ingested data.

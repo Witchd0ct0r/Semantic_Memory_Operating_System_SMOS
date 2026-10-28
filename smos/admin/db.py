@@ -69,7 +69,14 @@ def _baseline(conn: sqlite3.Connection) -> None:
     """)
 
 
-ADMIN_MIGRATIONS: list[Migration] = [(1, "baseline", _baseline)]
+def _add_scope(conn: sqlite3.Connection) -> None:
+    """Version 2: token scopes ('read' or 'rw'). Anything that already exists keeps the
+    full access it had before scopes existed, so an upgrade never locks a parser out."""
+    conn.execute("ALTER TABLE tokens ADD COLUMN scope TEXT NOT NULL DEFAULT 'rw'")
+    conn.execute("ALTER TABLE invitations ADD COLUMN scope TEXT NOT NULL DEFAULT 'rw'")
+
+
+ADMIN_MIGRATIONS: list[Migration] = [(1, "baseline", _baseline), (2, "token_scope", _add_scope)]
 
 
 def open_admin_db(data_dir: Path) -> sqlite3.Connection:

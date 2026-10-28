@@ -117,7 +117,8 @@ def create_app(
         return {"status": "ok", "version": _version()}
 
     protected = APIRouter(dependencies=[Depends(require_token)])
-    protected.include_router(routes.router)
+    protected.include_router(routes.read)
+    protected.include_router(routes.write)
 
     app.include_router(open_router)
     app.include_router(protected)

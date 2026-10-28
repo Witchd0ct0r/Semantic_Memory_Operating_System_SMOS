@@ -62,6 +62,10 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
   (access-log secret redaction, per-document ingest lock, section summaries on hits, section-summary cleanup
   on re-ingest, usage-log retention). Details in `docs/standalone-core-verification.md` §5. 399 tests pass.
   A reverse proxy in front of SMOS needs its own `/claim/*` log handling (Project 2 install guide).
+- **Token scopes (added after the Codex review):** tokens are `read` or `rw`, set per invitation
+  (form defaults to read). Write endpoints live on `routes.write` behind `require_write` (403 for read
+  tokens); `tests/test_api_scopes.py` pins the exact write-operation list, so a new endpoint fails the test
+  until classified. Admin DB migration 2 (`scope` column, existing rows `rw`). 423 tests pass.
 - Next session: Project 2 (Docker). Needs a design pass first: base image, embedding model baked in
   for offline use, volume layout, healthcheck, `SMOS_PUBLIC_URL`/`SMOS_TRUST_PROXY`/HTTPS, and where
   the Swagger assets come from offline.

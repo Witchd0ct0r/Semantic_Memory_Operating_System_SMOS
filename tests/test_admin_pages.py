@@ -185,3 +185,51 @@ def test_post_without_csrf_rejected(api) -> None:
 def test_startup_without_admin_env_fails_clearly(tmp_path) -> None:
     with pytest.raises(RuntimeError, match="SMOS_ADMIN_USER.*SMOS_ADMIN_PASSWORD"):
         create_app(tmp_path / "fresh")
+
+
+def _invite(client, label: str, scope: str | None = None):
+    page = client.get("/admin/tokens")
+    data = {"label": label, "csrf": _csrf(page.text)}
+    if scope is not None:
+        data["scope"] = scope
+    return client.post("/admin/invitations", data=data)
+
+
+def test_invitation_form_offers_scope_defaulting_to_read(api) -> None:
+    client, _h, _app = api
+    _login(client)
+    page = client.get("/admin/tokens").text
+    assert 'name="scope"' in page
+    assert re.search(r'value="read"[^>]*selected|selected[^>]*value="read"', page)
+
+
+def test_scope_flows_from_invitation_to_token_and_pages(api) -> None:
+    client, _h, app = api
+    _login(client)
+    for scope, words in (("read", "read-only"), ("rw", "read and write")):
+        created = _invite(client, f"user-{scope}", scope)
+        assert created.status_code == 200 and words in created.text
+        link = re.search(r"/claim/[A-Za-z0-9_\-]+", created.text).group(0)
+        user = TestClient(app)
+        assert words in user.get(link).text
+        claimed = user.post(link)
+        assert words in claimed.text
+        token = re.search(r"smos_[A-Za-z0-9_\-]+", claimed.text).group(0)
+        assert tokens.authenticate_with_scope(app.state.admin_db, token)[1] == scope
+        user.close()
+    access = client.get("/admin/tokens").text
+    assert "user-read" in access and "user-rw" in access
+
+
+def test_missing_scope_defaults_to_read(api) -> None:
+    client, _h, app = api
+    _login(client)
+    assert "read-only" in _invite(client, "no-scope-sent").text
+
+
+def test_unknown_scope_is_rejected(api) -> None:
+    client, _h, app = api
+    _login(client)
+    r = _invite(client, "evil", "superuser")
+    assert r.status_code == 400
+    assert invitations.list_invitations(app.state.admin_db) == []

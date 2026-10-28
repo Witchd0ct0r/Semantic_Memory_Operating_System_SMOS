@@ -3,7 +3,7 @@
 {% block content %}
 <section style="max-width:520px;margin:48px auto">
   <h1>Create your SMOS access token</h1>
-  <p>This link works once. When you press the button your token is shown on the next page, once. Copy it somewhere safe before leaving that page.</p>
+  <p>This token will be <strong>{% if scope == "rw" %}read and write{% else %}read-only{% endif %}</strong>. This link works once. When you press the button your token is shown on the next page, once. Copy it somewhere safe before leaving that page.</p>
   <form method="post"><button type="submit">Create token</button></form>
 </section>
 {% endblock %}

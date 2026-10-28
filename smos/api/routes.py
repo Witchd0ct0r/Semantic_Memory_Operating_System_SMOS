@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from smos.api.deps import require_write
 from smos.api.models import (
     DerivedMemoryIn,
     GraphQueryIn,
@@ -24,7 +25,12 @@ from smos.tools.agent_primitives import compress, forget, link, reflect
 from smos.tools.ingest_tools import do_ingest_document_schema
 from smos.tools.semantic_tools import _MIN_INPUT_CHARS, graph_query, semantic_query
 
-router = APIRouter(prefix="/api/v1")
+# Two routers make the privilege split explicit. `read` serves any valid token; `write` also
+# requires a read/write token. tests/test_api_scopes.py pins the exact list of write operations.
+read = APIRouter(prefix="/api/v1")
+write = APIRouter(prefix="/api/v1", dependencies=[Depends(require_write)])
+
+_RW_NOTE = " Requires a read/write token."
 
 
 def _store(request: Request):
@@ -35,7 +41,7 @@ def _too_short(text: str) -> bool:
     return not text or len(text.strip()) < _MIN_INPUT_CHARS
 
 
-@router.post(
+@write.post(
     "/memories",
     summary="Store a memory",
     description=(
@@ -56,7 +62,7 @@ def post_memory(body: MemoryIn, request: Request) -> dict:
     return {"id": memory_id}
 
 
-@router.delete(
+@write.delete(
     "/memories/{id}",
     summary="Delete a memory",
     description="Delete a memory, its graph edges and its stored summary. 404 when the id does not exist.",
@@ -67,7 +73,7 @@ def delete_memory(id: str, request: Request) -> dict:
     return {"deleted": id}
 
 
-@router.post(
+@write.post(
     "/memories/derived",
     summary="Store text you derived from existing memories",
     description=(
@@ -84,7 +90,7 @@ def post_derived(body: DerivedMemoryIn, request: Request) -> dict:
     return {"id": new_id}
 
 
-@router.post(
+@read.post(
     "/query",
     response_model=RetrievedContext,
     summary="Semantic search over stored memories",
@@ -100,7 +106,7 @@ def post_query(body: QueryIn, request: Request) -> dict:
     return semantic_query(body.query, body.k, _store(request), tags=body.tags or None)
 
 
-@router.post(
+@read.post(
     "/recall",
     summary="Retrieve with an explicit strategy",
     description=(
@@ -117,7 +123,7 @@ def post_recall(body: RecallIn, request: Request) -> dict:
     return result
 
 
-@router.post(
+@read.post(
     "/graph/query",
     summary="Traverse the memory graph",
     description=(
@@ -132,7 +138,7 @@ def post_graph_query(body: GraphQueryIn, request: Request) -> dict:
     return result
 
 
-@router.post(
+@write.post(
     "/links",
     summary="Create a graph edge between two nodes",
     description="Create an explicit typed edge between two existing node ids. 400 on an unknown edge type or id.",
@@ -144,7 +150,7 @@ def post_link(body: LinkIn, request: Request) -> dict:
     return result
 
 
-@router.get(
+@read.get(
     "/nodes/{node_id}/text",
     summary="Reconstruct the exact text of a document or section",
     description=(
@@ -160,7 +166,7 @@ def get_node_text(node_id: str, request: Request) -> dict:
     return result
 
 
-@router.put(
+@write.put(
     "/nodes/{node_id}/summary",
     summary="Attach or replace a summary on any node",
     description=(
@@ -176,7 +182,7 @@ def put_node_summary(node_id: str, body: SummaryIn, request: Request) -> dict:
     return {"ok": True}
 
 
-@router.post(
+@write.post(
     "/documents",
     summary="Ingest a structured document",
     description=(
@@ -191,7 +197,7 @@ def post_document(body: IngestionPayload, request: Request) -> dict:
     return do_ingest_document_schema(body, _store(request))
 
 
-@router.post(
+@read.post(
     "/requirement-context",
     summary="Gather evidence for judging a requirement",
     description=(
@@ -213,7 +219,7 @@ def post_requirement_context(body: RequirementContextIn, request: Request) -> di
     return result
 
 
-@router.post(
+@write.post(
     "/verbatim",
     summary="Store content losslessly under a key",
     description="Keep exact bytes (code, diffs, structured data) and get a retrieval key. Not searchable.",
@@ -222,7 +228,7 @@ def post_verbatim(body: VerbatimIn, request: Request) -> dict:
     return {"key": _store(request).store_verbatim(body.content, label=body.label)}
 
 
-@router.get(
+@read.get(
     "/verbatim/{key}",
     summary="Retrieve verbatim content by key",
     description="Return content stored with POST /verbatim. 404 when the key is unknown.",
@@ -232,3 +238,7 @@ def get_verbatim(key: str, request: Request) -> dict:
     if result is None:
         raise HTTPException(404, "key not found")
     return result
+
+
+for _route in write.routes:
+    _route.description = (_route.description or "") + _RW_NOTE

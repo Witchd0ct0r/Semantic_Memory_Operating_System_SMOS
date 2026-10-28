@@ -12,6 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from smos.admin import accounts, invitations, tokens, usage
+from smos.admin.tokens import SCOPES
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -118,10 +119,10 @@ def register_admin(app: FastAPI) -> None:
         return RedirectResponse("/admin/login", status_code=303)
 
     # ------------------------------------------------------- tokens + invitations
-    def _access_page(request: Request, **extra):
+    def _access_page(request: Request, status: int = 200, **extra):
         with request.app.state.admin_lock:
             return _page(
-                request, "access.html",
+                request, "access.html", status=status,
                 admin=request.session.get("admin"),
                 tokens=tokens.list_tokens(_db(request)),
                 invitations=invitations.list_invitations(_db(request)),
@@ -141,14 +142,17 @@ def register_admin(app: FastAPI) -> None:
         form = await request.form()
         _check_csrf(request, str(form.get("csrf", "")))
         label = str(form.get("label", "")).strip()
+        scope = str(form.get("scope", "read")).strip() or "read"
+        if scope not in SCOPES:
+            return _access_page(request, status=400, error="Choose read-only or read and write.")
         if not label:
             return _access_page(request, error="Enter a label for the user.")
         ttl = int(os.environ.get("SMOS_INVITE_TTL_HOURS", "72"))
         with request.app.state.admin_lock:
-            _id, secret = invitations.create_invitation(_db(request), label, admin, ttl_hours=ttl)
+            _id, secret = invitations.create_invitation(_db(request), label, admin, ttl_hours=ttl, scope=scope)
         link = f"{_public_base(request)}/claim/{secret}"
         return _page(request, "invitation_created.html", status=200, link=link, label=label, ttl=ttl,
-                     headers_note=None)
+                     scope=scope)
 
     @router.post("/admin/invitations/{invitation_id}/revoke")
     async def revoke_invitation(invitation_id: int, request: Request, _admin: str = Depends(admin_required)):
@@ -187,11 +191,11 @@ def register_admin(app: FastAPI) -> None:
         if throttle.blocked(key):
             return HTMLResponse("Too many attempts. Try again later.", status_code=429, headers=_NO_STORE)
         with request.app.state.admin_lock:
-            claimable = invitations.is_claimable(_db(request), secret)
-        if not claimable:
+            scope = invitations.claimable_scope(_db(request), secret)
+        if scope is None:
             throttle.fail(key)
             return _invalid_claim(request)
-        return templates.TemplateResponse(request, "claim.html", {}, headers=_NO_STORE)
+        return templates.TemplateResponse(request, "claim.html", {"scope": scope}, headers=_NO_STORE)
 
     @router.post("/claim/{secret}", response_class=HTMLResponse)
     async def claim_submit(secret: str, request: Request):
@@ -206,7 +210,11 @@ def register_admin(app: FastAPI) -> None:
         if result is None:
             throttle.fail(key)
             return _invalid_claim(request)
-        _token_id, plaintext = result
-        return templates.TemplateResponse(request, "token_created.html", {"token": plaintext}, headers=_NO_STORE)
+        token_id, plaintext = result
+        with request.app.state.admin_lock:
+            scope = tokens.token_scope(_db(request), token_id)
+        return templates.TemplateResponse(
+            request, "token_created.html", {"token": plaintext, "scope": scope}, headers=_NO_STORE
+        )
 
     app.include_router(router)

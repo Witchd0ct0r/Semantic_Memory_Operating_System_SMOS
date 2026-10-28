@@ -73,3 +73,20 @@ re-tested:
 
 Reviewer's "checks that looked sound": auth coverage, admin surface, migrations, no generated
 text, retrieval behavior parity, input checks.
+
+## 6. Token scopes (read-only vs read/write)
+
+Added after the Codex review. Live run on a fresh data directory (curl):
+
+| Call | read-only token | read/write token |
+|---|---|---|
+| `POST /api/v1/documents` | 403 `{"detail":"this token is read-only"}` | 200 |
+| `DELETE /api/v1/memories/{id}` | 403 | — |
+| `POST /api/v1/query` | 200 | — |
+| `GET /api/v1/openapi.json` | 200 | — |
+
+The admin list shows each token's access level, the claim page and token page state it, and the
+403s appear in the per-token usage view. Tests: `tests/test_api_scopes.py` (pins the write-operation
+list; read token refused on every write operation, not refused on reads; the database count is unchanged
+after attempted writes; 401 stays 401), `tests/test_admin_scopes.py` (inheritance, validation, migration 2
+keeps existing rows read/write), page tests in `tests/test_admin_pages.py`. Suite: 423 passed.

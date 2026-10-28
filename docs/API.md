@@ -17,14 +17,30 @@ Every `/api/v1` call except `GET /api/v1/health` needs `Authorization: Bearer <t
 Missing, malformed, unknown or revoked tokens get `401` with `WWW-Authenticate: Bearer`.
 A token in the query string is ignored.
 
+**Token types.** Each token is either **read-only** or **read and write** (`rw`), chosen by the
+admin when creating the invitation (the form defaults to read-only).
+
+- A read-only token can only retrieve data: `POST /query`, `/recall`, `/graph/query`,
+  `/requirement-context`, `GET /nodes/{id}/text`, `GET /verbatim/{key}`, and the OpenAPI/docs.
+- Everything that changes the database needs a read/write token: `POST /memories`,
+  `DELETE /memories/{id}`, `POST /memories/derived`, `POST /links`, `PUT /nodes/{id}/summary`,
+  `POST /documents`, `POST /verbatim`. A read-only token gets `403 {"detail": "this token is
+  read-only"}` (a missing or invalid token is still `401`).
+- Searches update an internal recall counter (a usage statistic behind the hot/warm/cold tiers).
+  That is the only state a read-only token can touch; it never changes stored content.
+- Give parsers read/write tokens and ordinary users and agents that only look things up
+  read-only tokens.
+
 **Getting a token** (the admin never sees or sends it):
 
 1. The user asks the admin for access.
-2. The admin logs in at `/admin/login`, opens **Access**, enters a label for the user and
-   creates an invitation. SMOS shows a one-time link `/claim/<secret>` once.
+2. The admin logs in at `/admin/login`, opens **Access**, enters a label for the user, picks
+   read-only or read and write, and creates an invitation. SMOS shows a one-time link `/claim/<secret>` once.
 3. The admin sends the link to the user.
-4. The user opens the link and presses **Create token**; the token appears once. They save it.
-5. The admin's token list shows the token as created by the user (time, client IP, user agent).
+4. The user opens the link (it states the access level) and presses **Create token**; the token
+   appears once. They save it.
+5. The admin's token list shows the token, its access level, and who claimed it (time, client IP,
+   user agent).
 
 Invitations are single-use, expire after 72 hours (`SMOS_INVITE_TTL_HOURS`) and can be
 revoked while pending. Invalid, used, expired and revoked links all show the same page.
