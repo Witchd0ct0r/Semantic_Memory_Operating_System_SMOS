@@ -27,7 +27,7 @@ def test_pyproject_entry_point_and_deps() -> None:
     project = data["project"]
     assert project["name"] == "smos"
     assert project["version"] == "0.2.0"
-    assert project["scripts"] == {"smos-server": "smos.api.main:run"}
+    assert project["scripts"] == {"smos-server": "smos.launcher:main"}
     deps = " ".join(project["dependencies"]).lower()
     for wanted in ["fastapi", "uvicorn", "jinja2", "python-multipart", "itsdangerous"]:
         assert wanted in deps, wanted

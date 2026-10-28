@@ -41,7 +41,7 @@ dev = [
 ]
 
 [project.scripts]
-smos-server = "smos.api.main:run"
+smos-server = "smos.launcher:main"
 
 [project.urls]
 Homepage = "https://github.com/Witchd0ct0r/Semantic_Memory_Operating_System_SMOS"
