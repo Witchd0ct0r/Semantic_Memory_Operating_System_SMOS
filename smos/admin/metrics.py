@@ -100,6 +100,8 @@ def read_hardware(
         times = psutil.cpu_times()
         usage_us = int((times.user + times.system) * 1_000_000)
 
+    usage_us = _non_negative(usage_us)  # a malformed (negative) counter is missing, never a baseline
+
     if used is None:
         used = int(host_mem.used)
     if limit is None or limit > host_mem.total:

@@ -240,11 +240,11 @@ def register_admin(app: FastAPI) -> APIRouter:
         if service is None or service.updater is None:
             reason = service.disabled_reason if service is not None else None
             return _update_page(request, status=409, error=reason or "Updates are not available.")
-        version = str(form.get("version", "")).strip()
-        if not version:
+        version, sha = str(form.get("version", "")).strip(), str(form.get("sha", "")).strip()
+        if not version or not sha:
             return _update_page(request, status=409, error="No release was named; review the update and confirm again.")
         try:
-            await run_in_threadpool(service.updater.begin, admin, version)
+            await run_in_threadpool(service.updater.begin, admin, version, sha)
         except ApplyRefused as err:
             return _update_page(request, status=409, error=str(err))
         return RedirectResponse("/admin/update?applying=1", status_code=303)

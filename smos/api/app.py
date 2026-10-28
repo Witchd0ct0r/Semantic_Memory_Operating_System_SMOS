@@ -137,6 +137,7 @@ def create_app(
     app.state.data_dir = data_dir
     app.state.maintenance = False  # set while an update restarts the server: writes get 503
     app.state.inflight = 0
+    app.state.closing = False  # set just before the stores are closed for an update restart
     app.state.unauth_budget = _MinuteBudget(int(os.environ.get("SMOS_UNAUTH_LOG_PER_MIN", "60")))
     app.state.unauth_suppressed = 0
     app.state.prune_every_rows = int(os.environ.get("SMOS_USAGE_PRUNE_EVERY_ROWS", "10000"))
@@ -198,6 +199,9 @@ def create_app(
         refuses admin and claim changes; /api/v1 writes are refused by require_write."""
         app.state.inflight += 1
         try:
+            if app.state.closing:  # the stores are about to close: refuse everything, reads too
+                return JSONResponse({"detail": "SMOS is restarting for an update, try again shortly"},
+                                    status_code=503, headers={"Retry-After": "30"})
             if (app.state.maintenance and request.method not in ("GET", "HEAD", "OPTIONS")
                     and request.url.path.startswith(("/admin", "/claim"))):
                 return JSONResponse({"detail": "SMOS is restarting for an update, try again shortly"},

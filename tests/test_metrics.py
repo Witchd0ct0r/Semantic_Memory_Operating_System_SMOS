@@ -261,3 +261,16 @@ def test_stats_see_data_committed_after_the_reader_connection_opened(tmp_path) -
     do_ingest_document_schema(_payload("A"), store)
     do_ingest_document_schema(_payload("B"), store)
     assert store.stats()["documents"] == 2
+
+
+def test_negative_cgroup_cpu_counter_does_not_poison_the_next_sample(tmp_path) -> None:
+    """Codex review 4, finding 5: a malformed counter is treated as missing, not stored as a baseline."""
+    root = _cgroup_v2(tmp_path / "cg", usage_usec=-1_000_000_000)
+    first = metrics.read_hardware(root, previous=None, now=100.0)
+    assert first["cpu_state"]["usage"] is None
+    _cgroup_v2(root, usage_usec=1_000_000)
+    second = metrics.read_hardware(root, previous=first["cpu_state"], now=160.0)
+    assert second["cpu_percent"] is None  # no valid baseline yet, instead of an absurd spike
+    _cgroup_v2(root, usage_usec=7_000_000)  # +6 CPU-seconds over 60 s on 2 cores = 5 %
+    third = metrics.read_hardware(root, previous=second["cpu_state"], now=220.0)
+    assert third["cpu_percent"] == pytest.approx(5.0, abs=0.01)

@@ -34,6 +34,7 @@ class UpdatePaths:
         self.current = self.root / "current.json"
         self.current_prev = self.root / "current.json.prev"
         self.pending = self.root / "pending.json"
+        self.rollback = self.root / "rollback.json"  # exists while a rollback is under way
         self.last_result = self.root / "last-result.json"
         self.snapshot = self.root / "snapshot"
 
@@ -234,6 +235,7 @@ class Supervisor:
                 if child is None:
                     continue  # the pending file was unusable and is gone; start normally
             else:
+                self.paths.rollback.unlink(missing_ok=True)
                 child = self._start(active_overlay(self.paths, self.build_id))
             code = self._wait(child)
             if self._stop or code != EXIT_RESTART:
@@ -257,12 +259,28 @@ class Supervisor:
         version = str(pending.get("version", ""))
         staging = self.paths.staging_dir(version) if version else None
         overlay = self.paths.overlay_dir(version) if version else None
+        token = f"{version}@{pending.get('requested_at', '')}"
+
+        # A rollback that was interrupted (power loss, OOM kill) must be finished before anything
+        # else: the data dir may be half restored, and the new code must never run on it.
+        marker = read_json(self.paths.rollback)
+        if marker is not None and marker.get("token") == token:
+            return self._rollback(pending, version, overlay, str(marker.get("error", "")),
+                                  list(marker.get("log_tail") or []), None)
+
         if not version or not ((staging and staging.is_dir()) or (overlay and overlay.is_dir())):
             self._record(pending, ok=False, error="the staged update files were missing at restart")
             self.paths.pending.unlink(missing_ok=True)
             return None, None
+        if pending.get("base_build_id") != self.build_id:
+            # prepared by an earlier build of the image: never apply it over the rebuilt one
+            if staging is not None:
+                shutil.rmtree(staging, ignore_errors=True)
+            self._record(pending, ok=False,
+                         error="the staged update was prepared for an earlier build of the image and was discarded")
+            self.paths.pending.unlink(missing_ok=True)
+            return None, None
 
-        token = f"{version}@{pending.get('requested_at', '')}"
         if not snapshot_matches(self.paths, token):  # a restart mid-update must not snapshot migrated data
             snapshot_data(self.data_dir, self.paths, token)
         if staging is not None and staging.is_dir():
@@ -287,32 +305,48 @@ class Supervisor:
             return child, None
         if self._stop:
             return child, 0
+        return self._rollback(pending, version, overlay, problem, child.tail(), child)
 
-        log_tail = child.tail()
-        child.terminate()
-        try:
-            child.wait(timeout=30)
-        except Exception:
-            child.kill()
+    def _rollback(self, pending: dict, version: str, overlay: Optional[Path], problem: str,
+                  log_tail: list, child: Optional[Child]) -> tuple[Optional[Child], Optional[int]]:
+        """Stop the new code, put the data and the code pointer back, start the old code. Restartable:
+        the marker written first makes a restart after a crash finish this instead of starting the new code."""
+        token = f"{version}@{pending.get('requested_at', '')}"
+        if not snapshot_matches(self.paths, token):
+            self._record(pending, ok=False, log_tail=log_tail,
+                         error=f"{problem}; rollback impossible: the data snapshot is missing or incomplete")
+            self.paths.pending.unlink(missing_ok=True)
+            self.paths.rollback.unlink(missing_ok=True)
+            return None, 1
+        write_json_atomic(self.paths.rollback, {"token": token, "error": problem, "log_tail": log_tail})
+        if child is not None:
+            child.terminate()
+            try:
+                child.wait(timeout=30)
+            except Exception:
+                child.kill()
         restore_data(self.data_dir, self.paths)
         previous = read_json(self.paths.current_prev)
         if previous is not None:
             write_json_atomic(self.paths.current, previous)
             self.paths.current_prev.unlink(missing_ok=True)
         else:
-            self.paths.current.unlink(missing_ok=True)
-        if previous is None or previous.get("version") != version:
+            pointer = read_json(self.paths.current)
+            if pointer is not None and pointer.get("version") == version:  # no previous overlay existed
+                self.paths.current.unlink(missing_ok=True)
+        if overlay is not None and (previous is None or previous.get("version") != version):
             shutil.rmtree(overlay, ignore_errors=True)
         restored = self._start(active_overlay(self.paths, self.build_id))
         recovery = self._wait_healthy(restored, None)
         if recovery is None:
             self._record(pending, ok=False, error=problem, log_tail=log_tail)
             self.paths.pending.unlink(missing_ok=True)
+            self.paths.rollback.unlink(missing_ok=True)
             return restored, None
         restored.terminate()
-        self._record(pending, ok=False, log_tail=log_tail,
-                     error=f"{problem}; rollback also failed: {recovery}")
+        self._record(pending, ok=False, log_tail=log_tail, error=f"{problem}; rollback also failed: {recovery}")
         self.paths.pending.unlink(missing_ok=True)  # else every container restart would redo the update
+        self.paths.rollback.unlink(missing_ok=True)
         return None, 1
 
     def _wait_healthy(self, child: Child, version: Optional[str]) -> Optional[str]:

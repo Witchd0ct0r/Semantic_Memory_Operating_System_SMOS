@@ -45,7 +45,8 @@ def attach(app, data_dir: Path, environ: Optional[Mapping[str, str]] = None,
     else:
         client = GitHubClient(config)
         checker = UpdateChecker(config, client, smos.__version__, info["manifest"])
-        updater = Updater(app, config, client, checker, UpdatePaths(data_dir), running_version=smos.__version__)
+        updater = Updater(app, config, client, checker, UpdatePaths(data_dir),
+                          running_version=smos.__version__, build_id=info.get("build_id"))
         service = UpdateService(config, checker, updater, None)
         previous_close = app.state.close
 

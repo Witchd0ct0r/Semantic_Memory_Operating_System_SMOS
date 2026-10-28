@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.server
+import shutil
 import json
 import sys
 import threading
@@ -89,7 +90,7 @@ def _stage(data: Path, version: str = "0.3.0") -> UpdatePaths:
     (staging / "smos" / "__init__.py").write_text(f'__version__ = "{version}"\n')
     launcher.write_json_atomic(paths.pending, {
         "version": version, "sha": "a" * 40, "requested_by": "admin",
-        "requested_at": "2026-10-28T10:00:00+00:00", "from_version": "0.2.0"})
+        "requested_at": "2026-10-28T10:00:00+00:00", "from_version": "0.2.0", "base_build_id": BUILD})
     return paths
 
 
@@ -281,3 +282,75 @@ def test_http_health_checks_status_and_version() -> None:
     finally:
         server.shutdown()
     assert not launcher.http_health(server.server_port)(None)  # nothing listening any more
+
+
+class SimulatedCrash(BaseException):
+    """Stands in for the process dying (power loss, OOM kill) at an exact point."""
+
+
+def test_crash_during_rollback_restore_resumes_the_rollback_on_restart(tmp_path, monkeypatch) -> None:
+    """Codex review 4, finding 1: an interrupted restore must never be followed by the new code."""
+    data = _data(tmp_path)
+    paths = _stage(data)
+    h = Harness(data, healthy_versions=(), children=[FakeChild()])
+    _migrating(h, data)
+    real_restore = launcher.restore_data
+
+    def dying_restore(data_dir, upaths):
+        for entry in list(Path(data_dir).iterdir()):  # wipes the data dir, then the process dies
+            if entry.name != "updates":
+                entry.unlink() if entry.is_file() else shutil.rmtree(entry)
+        raise SimulatedCrash
+
+    monkeypatch.setattr(launcher, "restore_data", dying_restore)
+    try:
+        h.supervisor().run()
+        raise AssertionError("the simulated crash did not happen")
+    except SimulatedCrash:
+        pass
+    assert paths.pending.exists()  # the update is still unfinished
+
+    monkeypatch.setattr(launcher, "restore_data", real_restore)
+    h2 = Harness(data, healthy_versions=(), children=[FakeChild(polls_until_exit=3)])
+    h2.supervisor().run()
+    assert h2.spawned == [None], "after an interrupted rollback only the OLD code may start"
+    assert (data / "metadata.db").read_text() == "original" and not (data / "new.db").exists()
+    result = launcher.read_json(paths.last_result)
+    assert result["ok"] is False and not paths.pending.exists()
+    assert not paths.current.exists()
+
+
+def test_pending_update_staged_for_an_older_image_build_is_discarded(tmp_path) -> None:
+    """Codex review 4, finding 2: a staged release must not be applied over a rebuilt image."""
+    data = _data(tmp_path)
+    paths = _stage(data)
+    pending = launcher.read_json(paths.pending)
+    pending["base_build_id"] = "an-older-image"
+    launcher.write_json_atomic(paths.pending, pending)
+    h = Harness(data, children=[FakeChild(polls_until_exit=2)])
+    h.supervisor().run()
+    assert h.spawned == [None]
+    assert not paths.pending.exists() and not paths.staging_dir("0.3.0").exists()
+    assert not paths.current.exists() and not paths.overlay_dir("0.3.0").exists()
+    result = launcher.read_json(paths.last_result)
+    assert result["ok"] is False and "image" in result["error"]
+    assert (data / "metadata.db").read_text() == "original"
+
+
+def test_interrupted_rollback_without_a_snapshot_fails_loudly_instead_of_starting_new_code(tmp_path) -> None:
+    data = _data(tmp_path)
+    paths = _stage(data)
+    launcher.write_json_atomic(paths.rollback, {"token": "0.3.0@2026-10-28T10:00:00+00:00", "error": "x", "log_tail": []})
+    h = Harness(data, children=[FakeChild()])
+    assert h.supervisor().run() == 1
+    assert h.spawned == []
+    assert "snapshot" in launcher.read_json(paths.last_result)["error"]
+    assert not paths.pending.exists() and not paths.rollback.exists()
+
+
+def test_stale_rollback_marker_is_removed_when_nothing_is_pending(tmp_path) -> None:
+    data = _data(tmp_path)
+    paths = UpdatePaths(data)
+    launcher.write_json_atomic(paths.rollback, {"token": "old", "error": "", "log_tail": []})
+    Harness(data, children=[FakeChild(1, 0)]).supervisor().run()
+    assert not paths.rollback.exists()

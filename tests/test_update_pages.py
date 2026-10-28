@@ -35,10 +35,10 @@ class FakeUpdater:
     def __init__(self) -> None:
         self.calls, self.refuse, self._state = [], None, "idle"
 
-    def begin(self, admin: str, version: str) -> None:
+    def begin(self, admin: str, version: str, sha: str) -> None:
         if self.refuse:
             raise ApplyRefused(self.refuse)
-        self.calls.append((admin, version))
+        self.calls.append((admin, version, sha))
 
     def state(self) -> str:
         return self._state
@@ -138,7 +138,7 @@ def test_confirmation_page_shows_version_tag_and_sha(admin) -> None:
     install(_status("available", release=_release(), sha=SHA))
     page = client.get("/admin/update").text
     assert "0.2.0" in page and "0.3.0" in page and "v0.3.0" in page and SHA in page
-    assert 'name="version" value="0.3.0"' in page and "/admin/update/apply" in page
+    assert 'name="version" value="0.3.0"' in page and f'name="sha" value="{SHA}"' in page and "/admin/update/apply" in page
 
 
 def test_no_apply_form_when_nothing_is_available(admin) -> None:
@@ -178,9 +178,9 @@ def test_check_now_calls_forced_check(admin) -> None:
 def test_apply_calls_begin_with_admin_and_version_then_redirects(admin) -> None:
     client, _app, install, csrf = admin
     _checker, updater = install(_status("available", release=_release(), sha=SHA))
-    r = client.post("/admin/update/apply", data={"csrf": csrf(), "version": "0.3.0"}, follow_redirects=False)
+    r = client.post("/admin/update/apply", data={"csrf": csrf(), "version": "0.3.0", "sha": SHA}, follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/admin/update?applying=1"
-    assert updater.calls == [("admin", "0.3.0")]
+    assert updater.calls == [("admin", "0.3.0", SHA)]
 
 
 def test_apply_refusal_renders_message_with_409(admin) -> None:
@@ -188,7 +188,7 @@ def test_apply_refusal_renders_message_with_409(admin) -> None:
     updater = FakeUpdater()
     updater.refuse = "A different release is now the latest (0.4.0); review it and confirm again."
     install(_status("available", release=_release(), sha=SHA), updater)
-    r = client.post("/admin/update/apply", data={"csrf": csrf(), "version": "0.3.0"})
+    r = client.post("/admin/update/apply", data={"csrf": csrf(), "version": "0.3.0", "sha": SHA})
     assert r.status_code == 409 and "A different release is now the latest" in r.text
 
 
@@ -202,7 +202,7 @@ def test_apply_without_a_version_field_is_refused(admin) -> None:
 def test_apply_when_updates_are_disabled_is_refused(admin) -> None:
     client, app, _install, csrf = admin
     app.state.update = UpdateService(UpdateConfig(repo=""), None, None, "Updates are switched off (test).")
-    r = client.post("/admin/update/apply", data={"csrf": csrf(), "version": "0.3.0"})
+    r = client.post("/admin/update/apply", data={"csrf": csrf(), "version": "0.3.0", "sha": SHA})
     assert r.status_code == 409 and "switched off" in r.text
 
 
@@ -222,3 +222,10 @@ def test_applying_page_polls_the_status_endpoint(admin) -> None:
     install(_status("available", release=_release(), sha=SHA))
     page = client.get("/admin/update?applying=1").text
     assert "/admin/update/status" in page and 'id="progress"' in page
+
+
+def test_apply_without_the_confirmed_commit_is_refused(admin) -> None:
+    client, _app, install, csrf = admin
+    _checker, updater = install(_status("available", release=_release(), sha=SHA))
+    assert client.post("/admin/update/apply", data={"csrf": csrf(), "version": "0.3.0"}).status_code == 409
+    assert updater.calls == []

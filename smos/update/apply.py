@@ -61,12 +61,13 @@ class Updater:
         drain_timeout: float = 30.0,
         clock: Callable[[], float] = time.monotonic,
         smoke: Callable[[Path], None] = smoke_check,
+        build_id: Optional[str] = None,
     ) -> None:
         self._app, self._config, self._client, self._checker = app, config, client, checker
         self._paths, self._running = paths, running_version
         self._exit_fn, self._close_fn = exit_fn, close_fn
         self._exit_delay, self._drain_timeout = exit_delay, drain_timeout
-        self._clock, self._smoke = clock, smoke
+        self._clock, self._smoke, self._build_id = clock, smoke, build_id
         self._busy = threading.Lock()
         self._state = "idle"
         self._cooldown_until = 0.0
@@ -76,7 +77,7 @@ class Updater:
         return self._state
 
     # ------------------------------------------------------------------ entry point
-    def begin(self, admin: str, expected_version: str) -> None:
+    def begin(self, admin: str, expected_version: str, expected_sha: str) -> None:
         if not self._config.enabled:
             raise ApplyRefused("Updates are switched off on this installation.")
         if not self._busy.acquire(blocking=False):
@@ -85,7 +86,7 @@ class Updater:
         status: Optional[UpdateStatus] = None
         try:
             self._state = "staging"
-            status = self._check_ready(expected_version)
+            status = self._check_ready(expected_version, expected_sha)
             self._stage(status)
             self._hand_over(admin, status)
             handed_over = True
@@ -103,7 +104,7 @@ class Updater:
                 self._busy.release()
 
     # ------------------------------------------------------------------ steps
-    def _check_ready(self, expected_version: str) -> UpdateStatus:
+    def _check_ready(self, expected_version: str, expected_sha: str) -> UpdateStatus:
         wait = self._cooldown_until - self._clock()
         if wait > 0:
             raise ApplyRefused(f"The last update attempt failed; wait {int(wait) + 1} s before trying again.")
@@ -120,6 +121,9 @@ class Updater:
         if latest != expected_version:
             raise ApplyRefused(f"A different release is now the latest ({latest}, you confirmed "
                                f"{expected_version}); review it and confirm again.")
+        if not expected_sha or status.sha != expected_sha:
+            raise ApplyRefused("The release now points at a different commit than the one you reviewed; "
+                               "review it and confirm again.")
         data_dir = self._paths.data_dir
         need = int(_data_bytes(data_dir) * _SNAPSHOT_MARGIN) + self._config.max_archive_bytes
         free = shutil.disk_usage(data_dir).free
@@ -150,16 +154,24 @@ class Updater:
             "requested_by": admin,
             "requested_at": datetime.now(timezone.utc).isoformat(),
             "from_version": self._running,
+            "base_build_id": self._build_id,  # the supervisor discards it if the image is rebuilt meanwhile
         })
         self._app.state.maintenance = True
         self._state = "restarting"
         threading.Thread(target=self._exit_when_drained, daemon=True, name="update-exit").start()
 
+    def _wait_idle(self, deadline: float) -> None:
+        while self._app.state.inflight > 0 and time.monotonic() < deadline:
+            time.sleep(0.02)
+
     def _exit_when_drained(self) -> None:
         time.sleep(self._exit_delay)
         deadline = time.monotonic() + self._drain_timeout
-        while self._app.state.inflight > 0 and time.monotonic() < deadline:
-            time.sleep(0.05)
+        self._wait_idle(deadline)
+        # Stop admitting anything (reads included), then wait for requests that got in just before the
+        # flag: after this nothing can touch a store while it is being closed.
+        self._app.state.closing = True
+        self._wait_idle(deadline)
         close = self._close_fn or getattr(self._app.state, "close", None)
         try:
             if close is not None:

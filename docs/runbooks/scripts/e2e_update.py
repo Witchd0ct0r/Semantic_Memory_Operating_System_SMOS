@@ -200,7 +200,7 @@ def main() -> int:
             upd = c.get("/admin/update").text
             check("2 confirmation page shows tag, commit and escaped notes",
                   "v9.0.0" in upd and SHAS["9.0.0"] in upd and "&lt;b&gt;not html&lt;/b&gt;" in upd)
-            r = c.post("/admin/update/apply", data={"csrf": csrf(c), "version": "9.0.0"}, follow_redirects=False)
+            r = c.post("/admin/update/apply", data={"csrf": csrf(c), "version": "9.0.0", "sha": SHAS["9.0.0"]}, follow_redirects=False)
             check("2 apply is accepted", r.status_code == 303, f"{r.status_code} {r.headers.get('location')}")
             saw_503 = False
             deadline = time.time() + 60
@@ -239,7 +239,7 @@ def main() -> int:
             c2.post("/admin/update/check", data={"csrf": csrf(c2)})
             check("3 broken release is offered (the break is only found when it is test-imported)",
                   "Release 9.0.2 is available" in c2.get("/admin/dashboard").text)
-            r = c2.post("/admin/update/apply", data={"csrf": csrf(c2), "version": "9.0.2"})
+            r = c2.post("/admin/update/apply", data={"csrf": csrf(c2), "version": "9.0.2", "sha": SHAS["9.0.2"]})
             check("3 refused at the import smoke check (409, nothing changed)",
                   r.status_code == 409 and "does not import" in r.text, f"{r.status_code}")
             check("3 server still on 9.0.0, no pending update, staging cleaned",
@@ -267,7 +267,7 @@ def main() -> int:
             time.sleep(61)
             c3.post("/admin/update/check", data={"csrf": csrf(c3)})
             check("5 release 9.0.1 offered", "Release 9.0.1 is available" in c3.get("/admin/dashboard").text)
-            r = c3.post("/admin/update/apply", data={"csrf": csrf(c3), "version": "9.0.1"}, follow_redirects=False)
+            r = c3.post("/admin/update/apply", data={"csrf": csrf(c3), "version": "9.0.1", "sha": SHAS["9.0.1"]}, follow_redirects=False)
             check("5 apply accepted", r.status_code == 303)
             deadline = time.time() + 300
             while time.time() < deadline:
@@ -301,7 +301,7 @@ def main() -> int:
             text = c4.get("/admin/dashboard").text
             check("6 banner says the release needs a rebuilt image and names the file",
                   "needs a rebuilt image" in text and "Dockerfile" in text)
-            r = c4.post("/admin/update/apply", data={"csrf": csrf(c4), "version": "9.0.3"})
+            r = c4.post("/admin/update/apply", data={"csrf": csrf(c4), "version": "9.0.3", "sha": SHAS["9.0.3"]})
             check("6 apply refused (409) and nothing downloaded",
                   r.status_code == 409 and "rebuilt image" in r.text
                   and not any("archive" in p for p in fake.requests[-3:]))

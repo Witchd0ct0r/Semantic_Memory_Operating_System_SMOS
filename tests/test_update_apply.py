@@ -59,7 +59,7 @@ def env(api):
 
         def make(**overrides):
             kwargs = dict(running_version="0.2.0", exit_fn=exit_fn, close_fn=lambda: closed.append(1),
-                          exit_delay=0.0, drain_timeout=2.0, smoke=lambda staged: None,
+                          exit_delay=0.0, drain_timeout=2.0, smoke=lambda staged: None, build_id="build-1",
                           clock=lambda: clock.now)
             kwargs.update(overrides)
             return Updater(app, kwargs.pop("config", cfg), github, checker, UpdatePaths(app.state.data_dir), **kwargs)
@@ -75,7 +75,7 @@ def _rows(app) -> list[dict]:
 
 def test_begin_stages_writes_pending_sets_maintenance_and_exits_75(env) -> None:
     updater = env.make()
-    updater.begin("alice", "0.3.0")
+    updater.begin("alice", "0.3.0", SHA)
     assert env.done.wait(5) and env.exits == [75] and env.closed == [1]
     pending = launcher.read_json(env.paths.pending)
     assert pending["version"] == "0.3.0" and pending["sha"] == SHA
@@ -87,21 +87,21 @@ def test_begin_stages_writes_pending_sets_maintenance_and_exits_75(env) -> None:
 
 def test_real_smoke_check_is_wired_in(env) -> None:
     updater = env.make(smoke=apply_module.smoke_check)  # staged package imports smos.api.app from the staging dir
-    updater.begin("alice", "0.3.0")
+    updater.begin("alice", "0.3.0", SHA)
     assert env.done.wait(10) and env.exits == [75]
 
 
 def test_refuses_when_disabled(env) -> None:
     updater = env.make(config=UpdateConfig(repo="", ca_bundle=None))
     with pytest.raises(ApplyRefused, match="switched off|disabled"):
-        updater.begin("alice", "0.3.0")
+        updater.begin("alice", "0.3.0", SHA)
     assert not env.paths.pending.exists() and env.app.state.maintenance is False
 
 
 def test_refuses_needs_rebuild_naming_files_and_records_it(env) -> None:
     _routes(env.fake, manifest={**IMAGE, "Dockerfile": "d2"})
     with pytest.raises(ApplyRefused, match="Dockerfile"):
-        env.make().begin("alice", "0.3.0")
+        env.make().begin("alice", "0.3.0", SHA)
     assert not env.paths.pending.exists() and env.app.state.maintenance is False
     assert not any("archive" in r for r in env.fake.requests)  # nothing was downloaded
     row = _rows(env.app)[0]
@@ -111,12 +111,12 @@ def test_refuses_needs_rebuild_naming_files_and_records_it(env) -> None:
 def test_refuses_when_nothing_newer_is_available(env) -> None:
     _routes(env.fake, version="0.2.0")
     with pytest.raises(ApplyRefused, match="no newer release"):
-        env.make().begin("alice", "0.2.0")
+        env.make().begin("alice", "0.2.0", SHA)
 
 
 def test_refuses_when_latest_changed_since_confirmation(env) -> None:
     with pytest.raises(ApplyRefused, match="different release"):
-        env.make().begin("alice", "0.2.9")
+        env.make().begin("alice", "0.2.9", SHA)
     assert not env.paths.pending.exists()
 
 
@@ -124,21 +124,21 @@ def test_refuses_when_github_is_unreachable(env) -> None:
     updater = env.make()
     env.fake.routes.clear()  # every call 404s: no release can be found
     with pytest.raises(ApplyRefused, match="no newer release"):
-        updater.begin("alice", "0.3.0")
+        updater.begin("alice", "0.3.0", SHA)
 
 
 def test_refuses_on_low_disk(env, monkeypatch) -> None:
     (env.app.state.data_dir / "filler.bin").write_bytes(b"x" * 10_000)
     monkeypatch.setattr(apply_module.shutil, "disk_usage", lambda path: Usage(10**9, 10**9 - 1000, 1000))
     with pytest.raises(ApplyRefused, match="free disk space"):
-        env.make().begin("alice", "0.3.0")
+        env.make().begin("alice", "0.3.0", SHA)
     assert not any("archive" in r for r in env.fake.requests)
 
 
 def test_refuses_when_staged_version_differs_from_tag(env) -> None:
     env.fake.routes[f"/{REPO}/archive/{SHA}.tar.gz"] = (200, {}, release_tarball(SHA, "0.3.1"))
     with pytest.raises(ApplyRefused, match="0.3.1"):
-        env.make().begin("alice", "0.3.0")
+        env.make().begin("alice", "0.3.0", SHA)
     assert not env.paths.staging_dir("0.3.0").exists() and not list(env.paths.root.glob("download-*"))
     assert env.app.state.maintenance is False and not env.paths.pending.exists()
 
@@ -148,7 +148,7 @@ def test_smoke_failure_cleans_up_clears_maintenance_and_records(env) -> None:
         raise UnpackError("the new code does not import: boom")
 
     with pytest.raises(ApplyRefused, match="does not import"):
-        env.make(smoke=broken).begin("alice", "0.3.0")
+        env.make(smoke=broken).begin("alice", "0.3.0", SHA)
     assert not env.paths.staging_dir("0.3.0").exists() and env.app.state.maintenance is False
     assert not env.paths.pending.exists() and env.exits == []
     assert _rows(env.app)[0]["outcome"] == "failed"
@@ -168,7 +168,7 @@ def test_second_concurrent_begin_is_refused(env) -> None:
 
     def first():
         try:
-            updater.begin("alice", "0.3.0")
+            updater.begin("alice", "0.3.0", SHA)
         except Exception as err:  # noqa: BLE001
             first_error.append(err)
 
@@ -177,7 +177,7 @@ def test_second_concurrent_begin_is_refused(env) -> None:
     assert entered.wait(10)
     assert updater.state() == "staging"
     with pytest.raises(ApplyRefused, match="already running"):
-        updater.begin("bob", "0.3.0")
+        updater.begin("bob", "0.3.0", SHA)
     gate.set()
     thread.join(10)
     assert first_error == [] and env.done.wait(5) and env.exits == [75]
@@ -185,9 +185,9 @@ def test_second_concurrent_begin_is_refused(env) -> None:
 
 def test_second_begin_after_success_is_also_refused(env) -> None:
     updater = env.make()
-    updater.begin("alice", "0.3.0")
+    updater.begin("alice", "0.3.0", SHA)
     with pytest.raises(ApplyRefused, match="already running|restarting"):
-        updater.begin("bob", "0.3.0")
+        updater.begin("bob", "0.3.0", SHA)
 
 
 def test_cooldown_after_failed_staging(env) -> None:
@@ -196,17 +196,17 @@ def test_cooldown_after_failed_staging(env) -> None:
 
     updater = env.make(smoke=broken)
     with pytest.raises(ApplyRefused):
-        updater.begin("alice", "0.3.0")
+        updater.begin("alice", "0.3.0", SHA)
     with pytest.raises(ApplyRefused, match="wait"):
-        updater.begin("alice", "0.3.0")
+        updater.begin("alice", "0.3.0", SHA)
     env.clock.now += 301
     with pytest.raises(ApplyRefused, match="boom"):  # allowed to try again, and fails the same way
-        updater.begin("alice", "0.3.0")
+        updater.begin("alice", "0.3.0", SHA)
 
 
 def test_exit_waits_for_inflight_requests(env) -> None:
     env.app.state.inflight = 1
-    env.make(drain_timeout=10.0).begin("alice", "0.3.0")
+    env.make(drain_timeout=10.0).begin("alice", "0.3.0", SHA)
     assert not env.done.wait(0.4)
     env.app.state.inflight = 0
     assert env.done.wait(3) and env.exits == [75]
@@ -214,7 +214,7 @@ def test_exit_waits_for_inflight_requests(env) -> None:
 
 def test_exit_gives_up_waiting_after_the_drain_timeout(env) -> None:
     env.app.state.inflight = 5  # never drains
-    env.make(drain_timeout=0.3).begin("alice", "0.3.0")
+    env.make(drain_timeout=0.3).begin("alice", "0.3.0", SHA)
     assert env.done.wait(5) and env.exits == [75]
 
 
@@ -256,3 +256,60 @@ def test_inflight_counter_returns_to_zero(api) -> None:
         client.get("/admin/login")
         client.get("/definitely-not-a-route")
     assert app.state.inflight == 0
+
+
+# ------------------------------------------------------------------ Codex review 4
+
+def test_pending_records_the_image_build_it_was_prepared_for(env) -> None:
+    env.make().begin("alice", "0.3.0", SHA)
+    assert launcher.read_json(env.paths.pending)["base_build_id"] == "build-1"
+    assert env.done.wait(5)
+
+
+def test_refuses_when_the_tag_moved_to_another_commit(env) -> None:
+    """Finding 3: the admin confirmed commit SHA, the tag now points elsewhere with the same __version__."""
+    other = "e" * 40
+    env.fake.routes[f"/repos/{REPO}/commits/v0.3.0"] = json_response({"sha": other})
+    env.fake.routes[f"/repos/{REPO}/git/trees/{other}"] = env.fake.routes[f"/repos/{REPO}/git/trees/{SHA}"]
+    env.fake.routes[f"/{REPO}/archive/{other}.tar.gz"] = (200, {}, release_tarball(other, "0.3.0"))
+    with pytest.raises(ApplyRefused, match="different commit"):
+        env.make().begin("alice", "0.3.0", SHA)
+    assert not any("archive" in r for r in env.fake.requests)
+    assert not env.paths.pending.exists() and env.app.state.maintenance is False
+    assert "different commit" in _rows(env.app)[0]["detail"]
+
+
+def test_refuses_without_a_confirmed_commit(env) -> None:
+    with pytest.raises(ApplyRefused, match="different commit|confirm"):
+        env.make().begin("alice", "0.3.0", "")
+    assert not env.paths.pending.exists()
+
+
+def test_requests_arriving_while_the_stores_close_get_503(api) -> None:
+    """Finding 4: once closing starts, even reads are refused, so nothing can touch a closing store."""
+    client, headers, app = api
+    app.state.closing = True
+    assert client.post("/api/v1/query", json={"query": "radiated emissions knowledge"},
+                       headers=headers).status_code == 503
+    assert client.get("/admin/login").status_code == 503
+    assert app.state.inflight == 0
+
+
+def test_exit_stops_admitting_requests_and_waits_for_stragglers(env) -> None:
+    """Finding 4: a read admitted just before the closing flag must finish before the stores are closed."""
+    seen = {}
+
+    def close_fn():
+        seen["closing"], seen["inflight"] = env.app.state.closing, env.app.state.inflight
+
+    def straggler():  # a request that was admitted after the first idle check but before the flag
+        while not getattr(env.app.state, "closing", False):
+            time.sleep(0.005)
+        env.app.state.inflight = 1
+        time.sleep(0.4)
+        env.app.state.inflight = 0
+
+    threading.Thread(target=straggler, daemon=True).start()
+    env.make(close_fn=close_fn, drain_timeout=10.0).begin("alice", "0.3.0", SHA)
+    assert env.done.wait(10)
+    assert seen == {"closing": True, "inflight": 0}
