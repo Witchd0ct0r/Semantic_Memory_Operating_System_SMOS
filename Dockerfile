@@ -31,6 +31,11 @@ RUN if [ -f /opt/smos/certs/ca-bundle.crt ]; then export PIP_CERT=/opt/smos/cert
 # Bundled embedding model (Apache-2.0), loaded by path.
 COPY models /opt/smos/models
 
+# Fingerprint of the files that need a rebuilt image when they change; the in-app updater
+# compares these with a release before it offers an update (docs/superpowers/specs/2026-10-28-self-update-design.md).
+COPY pyproject.toml Dockerfile compose.yaml /opt/smos/build-files/
+RUN python -m smos.update.manifest --out /opt/smos/build-info.json pyproject.toml=/opt/smos/build-files/pyproject.toml Dockerfile=/opt/smos/build-files/Dockerfile compose.yaml=/opt/smos/build-files/compose.yaml models=/opt/smos/models smos/launcher.py=/opt/smos/src/smos/launcher.py
+
 RUN useradd --system --uid 10001 --create-home --home-dir /home/smos --shell /usr/sbin/nologin smos \
  && mkdir /data \
  && chown smos:smos /data

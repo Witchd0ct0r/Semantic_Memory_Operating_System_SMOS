@@ -24,6 +24,19 @@ def test_dockerfile_runs_non_root_with_offline_model_and_volume() -> None:
     assert "ARG TORCH_INDEX_URL" in text
 
 
+def test_dockerfile_writes_build_info_with_all_rebuild_paths() -> None:
+    from smos.update.manifest import REBUILD_PATHS
+
+    text = _read("Dockerfile")
+    assert re.search(r"^COPY pyproject\.toml Dockerfile compose\.yaml ", text, re.M)
+    assert "python -m smos.update.manifest" in text and "/opt/smos/build-info.json" in text
+    run = text[text.index("python -m smos.update.manifest"):]
+    run = run[:run.index("\n\n")] if "\n\n" in run else run
+    for name in REBUILD_PATHS:
+        assert f"{name}=" in run, name
+    assert text.index("python -m smos.update.manifest") < text.index("USER smos")
+
+
 def test_dockerfile_has_no_secrets() -> None:
     text = _read("Dockerfile").lower()
     for word in ("password", "token", "secret"):
