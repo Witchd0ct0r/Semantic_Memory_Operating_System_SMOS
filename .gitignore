@@ -55,3 +55,4 @@ Thumbs.db
 
 .superpowers/
 .env
+certs/*.crt

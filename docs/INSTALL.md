@@ -40,7 +40,26 @@ Set:
 
 `.env` is private to your machine and is never committed to git.
 
-## 3. Build and start
+## 3. If your network inspects HTTPS (do this before building)
+
+Many company networks re-sign HTTPS traffic with their own certificate authority (CA). The server
+trusts it, but the build container does not, and the build stops with
+`CERTIFICATE_VERIFY_FAILED ... unable to get local issuer certificate`. To find out, run:
+
+```bash
+echo | openssl s_client -connect pypi.org:443 -servername pypi.org 2>/dev/null | openssl x509 -noout -issuer
+```
+
+If the issuer is a company or firewall name instead of a public one such as DigiCert, Sectigo or
+Let's Encrypt, give the build your CA bundle (the server already has it installed):
+
+```bash
+cp /etc/ssl/certs/ca-certificates.crt certs/ca-bundle.crt
+```
+
+The file stays on your machine (git ignores it). Skip this step if the check shows a public issuer.
+
+## 4. Build and start
 
 ```bash
 docker compose build
@@ -50,7 +69,7 @@ docker compose build
 docker compose up -d
 ```
 
-## 4. Check that it works
+## 5. Check that it works
 
 ```bash
 docker compose ps
@@ -64,7 +83,7 @@ curl -s http://localhost:8765/api/v1/health
 
 You should see `{"status":"ok","version":"0.2.0"}`.
 
-## 5. First login and giving people access
+## 6. First login and giving people access
 
 1. Open `http://<server>:8765/admin/login` and log in with the admin from `.env`.
 2. Under **Access**, type the user's name, choose **Read-only** (for people and agents that only
@@ -144,6 +163,7 @@ Your data is kept. SMOS upgrades its own database format on start and keeps a ba
 | `port is already allocated` | Something else uses 8765. Change the left number in `ports:` in `compose.yaml`, for example `"9000:8765"`, and set `SMOS_PUBLIC_URL` to match. |
 | Forgot the admin password | Stop SMOS, remove the account with `docker compose run --rm smos python -c "import sqlite3; c=sqlite3.connect('/data/admin.db'); c.execute('DELETE FROM admins'); c.commit()"`, then set a new `SMOS_ADMIN_PASSWORD` in `.env` and start SMOS; the first-start bootstrap creates the admin again. |
 | Invitation links point to the wrong address | Set `SMOS_PUBLIC_URL` in `.env`, then `docker compose up -d`. |
+| Build stops with `CERTIFICATE_VERIFY_FAILED` | Do step 3 (give the build your company CA bundle), then build again. |
 | Build is very slow or runs out of disk | The first build downloads about 3 GB. Check free space with `df -h`. |
 
 ## What is inside the container

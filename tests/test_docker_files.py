@@ -59,3 +59,14 @@ def test_bundled_model_folder_is_complete() -> None:
     folder = _ROOT / "models" / "all-MiniLM-L6-v2"
     for name in ("modules.json", "config.json", "tokenizer.json", "model.safetensors", "NOTICE.md"):
         assert (folder / name).is_file(), name
+
+
+def test_build_can_trust_a_company_ca_bundle() -> None:
+    text = _read("Dockerfile")
+    assert re.search(r"^COPY certs ", text, re.M)
+    assert "/opt/smos/certs/ca-bundle.crt" in text
+    assert "PIP_CERT" in text
+    assert (_ROOT / "certs" / "README.md").is_file()
+    assert re.search(r"^certs/\*\.crt$", _read(".gitignore"), re.M), "company certificates must not be committed"
+    lines = {line.strip() for line in _read(".dockerignore").splitlines()}
+    assert "certs" not in lines

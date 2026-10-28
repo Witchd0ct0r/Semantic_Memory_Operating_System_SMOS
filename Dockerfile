@@ -14,9 +14,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /opt/smos/src
 
+# Optional company CA bundle (see certs/README.md) for networks that re-sign HTTPS traffic.
+COPY certs /opt/smos/certs
+
 # Dependencies first, so a code change does not re-download PyTorch.
 COPY pyproject.toml ./
-RUN python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/requirements.txt \
+RUN if [ -f /opt/smos/certs/ca-bundle.crt ]; then export PIP_CERT=/opt/smos/certs/ca-bundle.crt; fi  && python -c "import tomllib; print('\n'.join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))" > /tmp/requirements.txt \
  && if [ -n "$TORCH_INDEX_URL" ]; then pip install torch --index-url "$TORCH_INDEX_URL"; fi \
  && pip install -r /tmp/requirements.txt \
  && rm /tmp/requirements.txt
