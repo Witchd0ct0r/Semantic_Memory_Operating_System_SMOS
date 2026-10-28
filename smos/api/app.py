@@ -29,13 +29,29 @@ def _version() -> str:
 
 
 _PRUNE_EVERY_S = 86400.0
+_PRUNE_BATCH = 1000
 
 
-def _prune_usage(app: FastAPI) -> None:
+def _prune_loop(app: FastAPI, days: int) -> None:
+    """Delete expired usage rows in small batches. The shared admin lock is held for one
+    batch at a time, so token authentication never waits for a whole backlog to be deleted."""
+    while True:
+        with app.state.admin_lock:
+            deleted = usage.prune_batch(app.state.admin_db, days, _PRUNE_BATCH)
+        if deleted < _PRUNE_BATCH:
+            return
+        time.sleep(0.005)
+
+
+def _prune_usage(app: FastAPI, background: bool = False) -> None:
     days = int(os.environ.get("SMOS_USAGE_RETENTION_DAYS", "90"))
-    with app.state.admin_lock:
-        usage.prune(app.state.admin_db, days)
     app.state.last_prune = time.monotonic()
+    if not background:  # at startup nothing is being served yet
+        _prune_loop(app, days)
+        return
+    thread = threading.Thread(target=_prune_loop, args=(app, days), daemon=True, name="usage-prune")
+    app.state.prune_thread = thread
+    thread.start()
 
 
 def create_app(
@@ -96,7 +112,7 @@ def create_app(
                     resp_bytes=int(response.headers.get("content-length") or 0),
                 )
             if time.monotonic() - app.state.last_prune > _PRUNE_EVERY_S:
-                _prune_usage(app)
+                _prune_usage(app, background=True)
         return response
 
     app.add_middleware(

@@ -123,3 +123,16 @@ def test_write_operations_say_they_need_a_read_write_token(scoped) -> None:
 def test_read_token_can_open_openapi_docs(scoped) -> None:
     client, _rw, read, _app = scoped
     assert client.get("/api/v1/openapi.json", headers=read).status_code == 200
+
+
+def test_router_membership_matches_pinned_lists() -> None:
+    """Classification is checked on the routers themselves, so a route declared with
+    include_in_schema=False cannot hide from the pin."""
+    from smos.api import routes
+
+    def ops(router):
+        return {(m, r.path) for r in router.routes for m in r.methods}
+
+    assert ops(routes.write) == WRITE_OPERATIONS
+    assert ops(routes.read) == READ_OPERATIONS
+    assert all(r.include_in_schema for r in routes.read.routes + routes.write.routes)

@@ -62,8 +62,22 @@ def recent(conn: sqlite3.Connection, token_id: Optional[int], limit: int = 100) 
     ]
 
 
-def prune(conn: sqlite3.Connection, retention_days: int) -> int:
+def prune_batch(conn: sqlite3.Connection, retention_days: int, limit: int) -> int:
+    """Delete at most `limit` rows older than the retention window; returns how many.
+    Small batches let callers release shared locks between deletes."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
-    cursor = conn.execute("DELETE FROM usage_log WHERE ts < ?", (cutoff,))
+    cursor = conn.execute(
+        "DELETE FROM usage_log WHERE id IN (SELECT id FROM usage_log WHERE ts < ? LIMIT ?)",
+        (cutoff, limit),
+    )
     conn.commit()
     return cursor.rowcount
+
+
+def prune(conn: sqlite3.Connection, retention_days: int, batch_size: int = 5000) -> int:
+    total = 0
+    while True:
+        deleted = prune_batch(conn, retention_days, batch_size)
+        total += deleted
+        if deleted < batch_size:
+            return total

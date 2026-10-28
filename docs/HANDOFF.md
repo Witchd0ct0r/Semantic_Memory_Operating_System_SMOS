@@ -66,6 +66,9 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
   (form defaults to read). Write endpoints live on `routes.write` behind `require_write` (403 for read
   tokens); `tests/test_api_scopes.py` pins the exact write-operation list, so a new endpoint fails the test
   until classified. Admin DB migration 2 (`scope` column, existing rows `rw`). 423 tests pass.
+- Second Codex review (`82c1a5c..77165cc`): 3 Important, all fixed (ref-counted per-document locks, batched
+  background usage pruning, router-level route-classification guard). 430 tests pass. Details:
+  `docs/standalone-core-verification.md` §7.
 - Next session: Project 2 (Docker). Needs a design pass first: base image, embedding model baked in
   for offline use, volume layout, healthcheck, `SMOS_PUBLIC_URL`/`SMOS_TRUST_PROXY`/HTTPS, and where
   the Swagger assets come from offline.

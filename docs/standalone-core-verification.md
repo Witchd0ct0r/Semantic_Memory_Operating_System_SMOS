@@ -90,3 +90,19 @@ The admin list shows each token's access level, the claim page and token page st
 list; read token refused on every write operation, not refused on reads; the database count is unchanged
 after attempted writes; 401 stays 401), `tests/test_admin_scopes.py` (inheritance, validation, migration 2
 keeps existing rows read/write), page tests in `tests/test_admin_pages.py`. Suite: 423 passed.
+
+## 7. Second Codex review and follow-up
+
+Review: `docs/superpowers/review/2026-10-28-follow-up-review.md` (range `82c1a5c..77165cc`): three
+Important findings, no Critical. Codex found the log redaction, ingest serialization (no deadlock with
+the store locks), section-summary lookup, read-only enforcement (no state change beyond the recall
+counter), scope handling on the admin side, and migration 2 sound. All three findings were reproduced
+with a failing test and fixed:
+
+| Finding | Fix | Tests |
+|---|---|---|
+| Per-document locks accumulate for the life of the process | `document_lock` is a reference-counted context manager; the entry is removed when the last holder or waiter leaves, including on exceptions and quarantined payloads | `tests/test_document_lock.py` |
+| Usage pruning could stall all API authentication while deleting a large backlog | deletes run in batches of 1,000, taking the admin lock for one batch at a time; the daily run is a background thread (startup runs it inline, before serving) | `tests/test_usage_retention.py` (batch limit; lock free between batches) |
+| The route-classification pin could miss a route hidden with `include_in_schema=False` | a second guard checks the `read` and `write` routers' own route lists against the pinned sets and requires every route to be in the schema; verified to fail when a hidden route is added | `tests/test_api_scopes.py::test_router_membership_matches_pinned_lists` |
+
+Suite: 430 passed.

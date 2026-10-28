@@ -3,6 +3,7 @@ from __future__ import annotations
 import atexit
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock
@@ -42,7 +43,7 @@ class VectorStore:
         self._insert_count = 0
         self._save_interval = save_interval
         self._new_ids: list[str] = []
-        self._doc_locks: dict[str, Lock] = {}
+        self._doc_locks: dict[str, list] = {}  # doc_id -> [lock, holders+waiters]
         self._doc_locks_guard = Lock()
 
         self._index: faiss.IndexIDMap = self._load_or_create_index()
@@ -369,11 +370,22 @@ class VectorStore:
             },
         }
 
-    def document_lock(self, doc_id: str) -> Lock:
-        """One lock per document id, so concurrent ingests of the same document
-        run one after the other instead of interleaving checkpoint reads/writes."""
+    @contextmanager
+    def document_lock(self, doc_id: str):
+        """Serialize work on one document id (concurrent ingests of the same document
+        run one after the other). The lock entry is reference-counted and removed when
+        the last holder or waiter leaves, so the map never outgrows the work in flight."""
         with self._doc_locks_guard:
-            return self._doc_locks.setdefault(doc_id, Lock())
+            entry = self._doc_locks.setdefault(doc_id, [Lock(), 0])
+            entry[1] += 1
+        try:
+            with entry[0]:
+                yield
+        finally:
+            with self._doc_locks_guard:
+                entry[1] -= 1
+                if entry[1] == 0:
+                    del self._doc_locks[doc_id]
 
     def set_summary(self, node_id: str, summary: str, source: str = "") -> None:
         """Attach caller-supplied summary text to any node id (memory uuid,
