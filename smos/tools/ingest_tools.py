@@ -165,6 +165,11 @@ def do_ingest_document_schema(
         status="complete",
     )
 
+    if payload.summary:
+        store.set_summary(doc_id, payload.summary, payload.summary_source or "")
+    else:
+        store.delete_summary(doc_id)
+
     return {
         "status": "success",
         "doc_id": doc_id,

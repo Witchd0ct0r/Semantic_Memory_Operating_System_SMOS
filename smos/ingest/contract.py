@@ -46,6 +46,14 @@ class IngestionPayload(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     transformer_name: Optional[str] = None
     transformer_version: Optional[str] = None
+    summary: Optional[str] = Field(
+        default=None,
+        description="Caller-written summary of the whole document. SMOS stores it and returns it "
+                    "next to the exact text; it never generates or alters it.",
+    )
+    summary_source: Optional[str] = Field(
+        default=None, description="Free-form name/version of whatever produced the summary."
+    )
     ingested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

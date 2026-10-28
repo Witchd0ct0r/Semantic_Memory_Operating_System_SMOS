@@ -379,6 +379,11 @@ class VectorStore:
             )
             self._db.commit()
 
+    def delete_summary(self, node_id: str) -> None:
+        with self._lock:
+            self._db.execute("DELETE FROM summaries WHERE node_id = ?", (node_id,))
+            self._db.commit()
+
     def get_summaries(self, node_ids: list[str]) -> dict[str, dict]:
         if not node_ids:
             return {}
