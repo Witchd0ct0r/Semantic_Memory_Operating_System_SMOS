@@ -42,6 +42,8 @@ class VectorStore:
         self._insert_count = 0
         self._save_interval = save_interval
         self._new_ids: list[str] = []
+        self._doc_locks: dict[str, Lock] = {}
+        self._doc_locks_guard = Lock()
 
         self._index: faiss.IndexIDMap = self._load_or_create_index()
         self._db: sqlite3.Connection = self._init_db()
@@ -366,6 +368,12 @@ class VectorStore:
                 "char_end": char_end,
             },
         }
+
+    def document_lock(self, doc_id: str) -> Lock:
+        """One lock per document id, so concurrent ingests of the same document
+        run one after the other instead of interleaving checkpoint reads/writes."""
+        with self._doc_locks_guard:
+            return self._doc_locks.setdefault(doc_id, Lock())
 
     def set_summary(self, node_id: str, summary: str, source: str = "") -> None:
         """Attach caller-supplied summary text to any node id (memory uuid,

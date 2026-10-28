@@ -43,9 +43,23 @@ def delete_document_segments(store: VectorStore, doc_id: str) -> None:
     ]
     for section in sections:
         store.graph.remove_node(section["id"])
+        store.delete_summary(section["id"])
 
 
 def do_ingest_document_schema(
+    payload: IngestionPayload,
+    store: VectorStore,
+    adapter: Optional[DomainAdapter] = None,
+) -> dict:
+    """Validate, segment, and store a structure-preserving ingestion payload.
+    Ingests of the same document id are serialized by a per-document lock.
+    See `_ingest_locked` for the full behavior."""
+    doc_id = derive_doc_id(payload.external_handle.system, payload.external_handle.native_id)
+    with store.document_lock(doc_id):
+        return _ingest_locked(payload, store, adapter)
+
+
+def _ingest_locked(
     payload: IngestionPayload,
     store: VectorStore,
     adapter: Optional[DomainAdapter] = None,

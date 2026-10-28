@@ -49,25 +49,43 @@ def _confidence(records: list[dict]) -> float:
     return max(0.0, min(1.0, 1.0 - (avg_distance / 2.0)))
 
 
+def _section_id(store: VectorStore, segment_id: str) -> Optional[str]:
+    for edge in store.graph.get_edges(segment_id, "in", ["contains"]):
+        node = store.graph.get_node(edge["source_id"])
+        if node is not None and node["type"] == "section":
+            return node["id"]
+    return None
+
+
 def to_retrieved_context(records: list[dict], store: VectorStore) -> RetrievedContext:
     """Exact stored text plus any caller-supplied summary; never synthesized.
-    A segment hit also carries the summary attached to its parent document."""
+    A segment hit also carries the summaries attached to its section and document."""
     ids = [r.get("id", "") for r in records]
-    doc_ids = [
-        d for d in ((r.get("metadata") or {}).get("doc_id") for r in records) if d
-    ]
-    summaries = store.get_summaries(ids + doc_ids)
+    section_ids: dict[str, str] = {}
+    doc_ids: list[str] = []
+    for r in records:
+        doc_id = (r.get("metadata") or {}).get("doc_id")
+        if not doc_id:
+            continue
+        doc_ids.append(doc_id)
+        section_id = _section_id(store, r.get("id", ""))
+        if section_id:
+            section_ids[r.get("id", "")] = section_id
+    summaries = store.get_summaries(ids + doc_ids + list(section_ids.values()))
     items = []
     for r in records:
         rid = r.get("id", "")
         meta = r.get("metadata") or {}
         own = summaries.get(rid, {})
+        section = summaries.get(section_ids.get(rid, ""), {})
         doc = summaries.get(meta.get("doc_id") or "", {})
         items.append(RetrievedItem(
             id=rid,
             content=r.get("content", ""),
             summary=own.get("summary"),
             summary_source=own.get("source"),
+            section_summary=section.get("summary"),
+            section_summary_source=section.get("source"),
             document_summary=doc.get("summary"),
             document_summary_source=doc.get("source"),
             score=r.get("score"),

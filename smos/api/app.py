@@ -28,6 +28,16 @@ def _version() -> str:
         return "0.0.0-dev"
 
 
+_PRUNE_EVERY_S = 86400.0
+
+
+def _prune_usage(app: FastAPI) -> None:
+    days = int(os.environ.get("SMOS_USAGE_RETENTION_DAYS", "90"))
+    with app.state.admin_lock:
+        usage.prune(app.state.admin_db, days)
+    app.state.last_prune = time.monotonic()
+
+
 def create_app(
     data_dir: Path,
     admin_user: Optional[str] = None,
@@ -60,6 +70,7 @@ def create_app(
     app.state.admin_db = admin_db
     app.state.admin_lock = threading.RLock()
     app.state.data_dir = data_dir
+    _prune_usage(app)
 
     def close() -> None:
         store.close()
@@ -84,6 +95,8 @@ def create_app(
                     req_bytes=int(request.headers.get("content-length") or 0),
                     resp_bytes=int(response.headers.get("content-length") or 0),
                 )
+            if time.monotonic() - app.state.last_prune > _PRUNE_EVERY_S:
+                _prune_usage(app)
         return response
 
     app.add_middleware(

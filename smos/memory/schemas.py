@@ -27,6 +27,8 @@ class RetrievedItem(BaseModel):
     content: str
     summary: Optional[str] = None
     summary_source: Optional[str] = None
+    section_summary: Optional[str] = None
+    section_summary_source: Optional[str] = None
     document_summary: Optional[str] = None
     document_summary_source: Optional[str] = None
     score: Optional[float] = None

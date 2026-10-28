@@ -56,3 +56,20 @@ Includes a concurrency check (8 threads × 6 writes+queries) in `tests/test_api_
 - Docker, HTTPS/reverse proxy behaviour (`SMOS_TRUST_PROXY`, `SMOS_COOKIE_SECURE`) — Project 2.
 - Swagger page rendering offline (assets come from a CDN).
 - Load beyond the 8-thread check; the admin DB shares one connection behind a lock.
+
+## 5. Independent review (Codex) and follow-up
+
+Review: `docs/superpowers/review/2026-10-28-standalone-core-review.md` (range `e903ff7..82c1a5c`).
+All five findings were checked against the code, reproduced with a failing test, fixed, and
+re-tested:
+
+| Finding | Severity | Fix | Test |
+|---|---|---|---|
+| Invitation secret in the Uvicorn access log | Critical | `RedactClaimSecret` filter on the access handler (`smos/api/logging_config.py`, used by `main.run`); checked live: 0 occurrences of the secret | `tests/test_log_redaction.py` |
+| Concurrent re-ingest of one document mixes versions | Important | per-document lock (`VectorStore.document_lock`) around `do_ingest_document_schema`; the race reproduced in round 2 before the fix | `tests/test_ingest_concurrency.py` |
+| Section summaries never returned | Important | segment hits carry `section_summary` / `section_summary_source` | `tests/test_retrieval_summaries.py` |
+| Re-ingest leaves summaries of removed sections | Important | `delete_document_segments` deletes them | `tests/test_retrieval_summaries.py` |
+| Usage-log retention never applied | Important | pruned at startup and then daily (`SMOS_USAGE_RETENTION_DAYS`, default 90) | `tests/test_usage_retention.py` |
+
+Reviewer's "checks that looked sound": auth coverage, admin surface, migrations, no generated
+text, retrieval behavior parity, input checks.

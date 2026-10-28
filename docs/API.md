@@ -53,7 +53,8 @@ revoked while pending. Invalid, used, expired and revoked links all show the sam
 {
   "results": [
     {"id": "…", "content": "exact stored text", "summary": null,
-     "summary_source": null, "document_summary": "Caps radiated emissions.",
+     "summary_source": null, "section_summary": null, "section_summary_source": null,
+     "document_summary": "Caps radiated emissions.",
      "document_summary_source": "parser-1", "score": 0.83, "metadata": {"type": "segment", "doc_id": "…"}}
   ],
   "sources": ["…"],
@@ -62,8 +63,8 @@ revoked while pending. Invalid, used, expired and revoked links all show the sam
 }
 ```
 
-`summary` is the summary attached to that exact item; `document_summary` is the one attached to
-its parent document (a segment hit shows both). Either is `null` when none was supplied. `mode` is `extractive`, or `uncertain` when
+`summary` is the summary attached to that exact item; `section_summary` and `document_summary` are
+the ones attached to its containing section and parent document (a segment hit can show all three). Either is `null` when none was supplied. `mode` is `extractive`, or `uncertain` when
 nothing matched.
 
 ### Ingestion contract (`POST /api/v1/documents`)
@@ -102,6 +103,10 @@ history), `/claim/<secret>` (public one-time token creation).
 | `SMOS_HOST` / `SMOS_PORT` | `0.0.0.0` / `8765` | Bind address |
 | `SMOS_ADMIN_USER` / `SMOS_ADMIN_PASSWORD` | — | Required on first start to create the admin |
 | `SMOS_INVITE_TTL_HOURS` | `72` | Invitation lifetime |
+| `SMOS_USAGE_RETENTION_DAYS` | `90` | Usage-log rows older than this are pruned (at start, then daily) |
 | `SMOS_PUBLIC_URL` | request URL | Base URL put in invitation links |
 | `SMOS_TRUST_PROXY` | off | `1` = use the first `X-Forwarded-For` entry as client IP |
 | `SMOS_COOKIE_SECURE` | off | `1` = mark the admin cookie `Secure` (use behind HTTPS) |
+
+The access log redacts invitation secrets (`/claim/<redacted>`). A reverse proxy in front of SMOS
+has its own logs: configure it not to log `/claim/*` paths, or treat those logs as secret.

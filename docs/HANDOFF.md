@@ -58,6 +58,10 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
 - Verified against the real running service (invitation flow, summaries, revoke) and the legal bench
   (unchanged). The real run caught one defect (document summary not visible on segment hits) which
   is fixed: results now carry `document_summary`.
+- Codex reviewed `e903ff7..82c1a5c` (`docs/superpowers/review/`): 1 Critical + 4 Important, all fixed with tests
+  (access-log secret redaction, per-document ingest lock, section summaries on hits, section-summary cleanup
+  on re-ingest, usage-log retention). Details in `docs/standalone-core-verification.md` §5. 399 tests pass.
+  A reverse proxy in front of SMOS needs its own `/claim/*` log handling (Project 2 install guide).
 - Next session: Project 2 (Docker). Needs a design pass first: base image, embedding model baked in
   for offline use, volume layout, healthcheck, `SMOS_PUBLIC_URL`/`SMOS_TRUST_PROXY`/HTTPS, and where
   the Swagger assets come from offline.

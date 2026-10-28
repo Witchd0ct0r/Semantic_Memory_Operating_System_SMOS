@@ -6,6 +6,7 @@ from pathlib import Path
 import uvicorn
 
 from smos.api.app import create_app
+from smos.api.logging_config import build_log_config
 
 
 def build_app():
@@ -21,6 +22,7 @@ def run() -> None:
         build_app(),
         host=os.environ.get("SMOS_HOST", "0.0.0.0"),
         port=int(os.environ.get("SMOS_PORT", "8765")),
+        log_config=build_log_config(),
     )
 
 
