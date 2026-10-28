@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}SMOS dashboard{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="60">{% endblock %}
+{% block content %}
+<section class="banner">
+  <strong>SMOS {{ version }}</strong>
+  <span class="muted">&middot; update checking arrives with the updater</span>
+  <span class="spacer"></span>
+  <nav class="ranges" aria-label="Time range">
+    {% for r in ranges %}<a class="range{% if r == range_key %} active{% endif %}" href="/admin/dashboard?range={{ r }}">{{ r }}</a>{% endfor %}
+  </nav>
+</section>
+
+<section>
+  <div class="tiles">
+    {% for t in tiles %}
+    <div class="tile" data-tile="{{ t.key }}"><span class="label">{{ t.label }}</span><span class="value">{{ t.value }}</span><span class="hint">{{ t.hint }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+
+<section>
+  <h2>API load</h2>
+  <div class="charts">
+    <div>{{ charts.load|safe }}</div>
+    <div>{{ charts.latency|safe }}</div>
+  </div>
+</section>
+
+<section>
+  <h2>Growth</h2>
+  <div class="charts">
+    <div>{{ charts.growth|safe }}</div>
+    <div>{{ charts.db_size|safe }}</div>
+  </div>
+</section>
+
+<section>
+  <h2>Hardware</h2>
+  <div class="tiles">
+    {% for t in allocation %}
+    <div class="tile" data-tile="{{ t.key }}"><span class="label">{{ t.label }}</span><span class="value">{{ t.value }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="charts">
+    <div>{{ charts.cpu|safe }}</div>
+    <div>{{ charts.memory|safe }}</div>
+    <div>{{ charts.disk|safe }}</div>
+  </div>
+</section>
+
+<section>
+  <h2>Most-used API calls</h2>
+  <table>
+    <tr><th>Call</th><th>Calls</th><th>Errors</th><th>Avg latency</th></tr>
+    {% for c in top_calls %}
+    <tr><td>{{ c.method }} {{ c.path }}</td><td>{{ c.calls }}</td><td>{{ c.errors }}</td><td>{{ "%.0f"|format(c.avg_latency_ms) }} ms</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No calls in this range.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>Token activity</h2>
+  <table>
+    <tr><th>Token</th><th>Access</th><th>Calls</th><th>Errors</th><th>Last seen</th></tr>
+    {% for t in token_activity %}
+    <tr>
+      <td><a href="/admin/usage?token={{ t.token_id }}">{{ t.name }}</a></td>
+      <td>{% if t.scope == "rw" %}read and write{% else %}read-only{% endif %}</td>
+      <td>{{ t.calls }}</td><td>{{ t.errors }}</td><td>{{ t.last_seen or "never" }}</td>
+    </tr>
+    {% else %}<tr><td colspan="5" class="muted">No tokens yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>Recent events</h2>
+  <table>
+    <tr><th>Time</th><th>Event</th><th>Call</th><th>Status</th><th>Token</th></tr>
+    {% for e in events %}
+    <tr><td>{{ e.ts }}</td><td>{{ e.kind }}</td><td>{{ e.method }} {{ e.path }}</td><td>{{ e.status }}</td><td>{{ e.token or "none" }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">Nothing yet.</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}

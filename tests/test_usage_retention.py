@@ -15,10 +15,10 @@ def _old_row(conn) -> None:
 
 def test_startup_prunes_rows_older_than_retention(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("SMOS_USAGE_RETENTION_DAYS", "30")
-    app = create_app(tmp_path / "d", admin_user="admin", admin_password="pw-123456789")
+    app = create_app(tmp_path / "d", admin_user="admin", admin_password="pw-123456789", start_sampler=False)
     _old_row(app.state.admin_db)
     app.state.close()
-    app2 = create_app(tmp_path / "d", admin_user="admin", admin_password="pw-123456789")
+    app2 = create_app(tmp_path / "d", admin_user="admin", admin_password="pw-123456789", start_sampler=False)
     assert usage.recent(app2.state.admin_db, token_id=None, limit=10) == []
     app2.state.close()
 
@@ -54,7 +54,7 @@ def test_pruning_releases_the_admin_lock_between_batches(tmp_path, monkeypatch) 
 
     monkeypatch.setenv("SMOS_USAGE_RETENTION_DAYS", "30")
     monkeypatch.setattr(app_module, "_PRUNE_BATCH", 10)
-    app = create_app(tmp_path / "d", admin_user="admin", admin_password="pw-123456789")
+    app = create_app(tmp_path / "d", admin_user="admin", admin_password="pw-123456789", start_sampler=False)
     for _ in range(45):
         _old_row(app.state.admin_db)
 

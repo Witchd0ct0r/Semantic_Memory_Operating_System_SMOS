@@ -7,11 +7,13 @@ import time
 from collections import defaultdict, deque
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from smos.admin import accounts, invitations, tokens, usage
+from smos.admin.dashboard_data import parse_range
+from smos.admin.dashboard_view import build_dashboard
 from smos.admin.tokens import SCOPES
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -109,7 +111,7 @@ def register_admin(app: FastAPI) -> None:
         request.session.clear()
         request.session["admin"] = str(form.get("username"))
         request.session["csrf"] = secrets.token_urlsafe(16)
-        return RedirectResponse("/admin/tokens", status_code=303)
+        return RedirectResponse("/admin/dashboard", status_code=303)
 
     @router.post("/admin/logout")
     async def logout(request: Request):
@@ -179,9 +181,18 @@ def register_admin(app: FastAPI) -> None:
         return _page(request, "usage.html", admin=request.session.get("admin"),
                      summary=summary, recent=recent, selected=token)
 
+    @router.get("/admin/dashboard", response_class=HTMLResponse)
+    async def dashboard(
+        request: Request,
+        range_: str | None = Query(None, alias="range"),
+        _admin: str = Depends(admin_required),
+    ):
+        context = build_dashboard(request.app, parse_range(range_))
+        return _page(request, "dashboard.html", admin=request.session.get("admin"), **context)
+
     @router.get("/admin")
     async def admin_root(_admin: str = Depends(admin_required)):
-        return RedirectResponse("/admin/tokens", status_code=303)
+        return RedirectResponse("/admin/dashboard", status_code=303)
 
     # ------------------------------------------------------------ public claim
     @router.get("/claim/{secret}", response_class=HTMLResponse)

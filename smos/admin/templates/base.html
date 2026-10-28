@@ -4,10 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}SMOS admin{% endblock %}</title>
+{% block head %}{% endblock %}
 <style>
-  :root { --bg:#f6f7f9; --fg:#1b1f24; --card:#fff; --line:#d9dde3; --accent:#1f5fbf; --bad:#b3261e; --muted:#5b6470; }
+  :root { --bg:#f6f7f9; --fg:#1b1f24; --card:#fff; --line:#d9dde3; --accent:#1f5fbf; --bad:#b3261e; --muted:#5b6470;
+    --c0:#1f5fbf; --c1:#b3261e; --c2:#2e7d32; --c3:#b26a00; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#14171b; --fg:#e6e9ee; --card:#1d2127; --line:#323943; --accent:#6ea8fe; --bad:#f28b82; --muted:#9aa4b2; }
+    :root { --bg:#14171b; --fg:#e6e9ee; --card:#1d2127; --line:#323943; --accent:#6ea8fe; --bad:#f28b82; --muted:#9aa4b2;
+    --c0:#6ea8fe; --c1:#f28b82; --c2:#7bd88f; --c3:#f0b45a; }
   }
   body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
   header { display:flex; gap:16px; align-items:center; padding:12px 16px; background:var(--card); border-bottom:1px solid var(--line); }
@@ -24,12 +27,26 @@
   .error { color:var(--bad); } .muted { color:var(--muted); }
   code.secret { display:block; padding:10px; background:var(--bg); border:1px solid var(--line); border-radius:6px; word-break:break-all; user-select:all; }
   form.inline { display:inline; }
+  .banner { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+  .banner .spacer { flex:1; }
+  .ranges a { padding:4px 10px; border:1px solid var(--line); border-radius:6px; margin-left:4px; color:var(--accent); text-decoration:none; }
+  .ranges a.active { background:var(--accent); color:var(--card); }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:12px; }
+  .tile { border:1px solid var(--line); border-radius:8px; padding:10px 12px; display:flex; flex-direction:column; }
+  .tile .label { color:var(--muted); font-size:12px; } .tile .value { font-size:22px; font-weight:600; } .tile .hint { color:var(--muted); font-size:11px; }
+  .charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px; }
+  .chart { width:100%; height:auto; }
+  .chart .grid { stroke:var(--line); stroke-width:1; } .chart .reference { stroke:var(--muted); stroke-width:1.5; }
+  .chart .axis-label { fill:var(--muted); font-size:11px; } .chart .line { stroke-width:2; }
+  .line.s0 { stroke:var(--c0); } .line.s1 { stroke:var(--c1); } .line.s2 { stroke:var(--c2); } .line.s3 { stroke:var(--c3); }
+  .swatch.s0 { fill:var(--c0); } .swatch.s1 { fill:var(--c1); } .swatch.s2 { fill:var(--c2); } .swatch.s3 { fill:var(--c3); }
 </style>
 </head>
 <body>
 {% if admin %}
 <header>
   <strong>SMOS admin</strong>
+  <a href="/admin/dashboard">Dashboard</a>
   <a href="/admin/tokens">Access</a>
   <a href="/admin/usage">Usage</a>
   <span class="spacer"></span>

@@ -14,6 +14,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from smos.admin import accounts, usage
 from smos.admin.db import open_admin_db
+from smos.admin.metrics import Sampler
 from smos.admin.pages import register_admin
 from smos.api import routes
 from smos.api.deps import require_token, require_token_or_admin_session
@@ -33,12 +34,18 @@ _PRUNE_EVERY_S = 86400.0
 _PRUNE_BATCH = 1000
 
 
-def _prune_loop(app: FastAPI, days: int) -> None:
-    """Delete expired usage rows in small batches. The shared admin lock is held for one
-    batch at a time, so token authentication never waits for a whole backlog to be deleted."""
+def _prune_loop(app: FastAPI, days: int, sample_days: int) -> None:
+    """Delete expired usage rows and dashboard samples in small batches. The shared admin lock is
+    held for one batch at a time, so token authentication never waits for a whole backlog."""
     while True:
         with app.state.admin_lock:
             deleted = usage.prune_batch(app.state.admin_db, days, _PRUNE_BATCH)
+        if deleted < _PRUNE_BATCH:
+            break
+        time.sleep(0.005)
+    while True:
+        with app.state.admin_lock:
+            deleted = usage.prune_samples_batch(app.state.admin_db, sample_days, _PRUNE_BATCH)
         if deleted < _PRUNE_BATCH:
             return
         time.sleep(0.005)
@@ -46,11 +53,12 @@ def _prune_loop(app: FastAPI, days: int) -> None:
 
 def _prune_usage(app: FastAPI, background: bool = False) -> None:
     days = int(os.environ.get("SMOS_USAGE_RETENTION_DAYS", "90"))
+    sample_days = int(os.environ.get("SMOS_METRICS_RETENTION_DAYS", "30"))
     app.state.last_prune = time.monotonic()
     if not background:  # at startup nothing is being served yet
-        _prune_loop(app, days)
+        _prune_loop(app, days, sample_days)
         return
-    thread = threading.Thread(target=_prune_loop, args=(app, days), daemon=True, name="usage-prune")
+    thread = threading.Thread(target=_prune_loop, args=(app, days, sample_days), daemon=True, name="usage-prune")
     app.state.prune_thread = thread
     thread.start()
 
@@ -59,6 +67,7 @@ def create_app(
     data_dir: Path,
     admin_user: Optional[str] = None,
     admin_password: Optional[str] = None,
+    start_sampler: bool = True,
 ) -> FastAPI:
     data_dir = Path(data_dir)
     model_source()  # an unusable embedding model stops startup before any file is touched
@@ -90,7 +99,13 @@ def create_app(
     app.state.data_dir = data_dir
     _prune_usage(app)
 
+    sampler = Sampler(app, interval=float(os.environ.get("SMOS_SAMPLE_INTERVAL_S", "60")))
+    app.state.sampler = sampler
+    if start_sampler:
+        sampler.start()
+
     def close() -> None:
+        sampler.stop()
         store.close()
         admin_db.close()
 

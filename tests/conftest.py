@@ -25,7 +25,8 @@ def api(tmp_path):
     from smos.admin import tokens
     from smos.api.app import create_app
 
-    app = create_app(tmp_path / "data", admin_user="admin", admin_password="correct-horse-1")
+    app = create_app(tmp_path / "data", admin_user="admin", admin_password="correct-horse-1",
+                     start_sampler=False)
     _token_id, plaintext = tokens.create_token(app.state.admin_db, "test-token")
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {plaintext}"}
