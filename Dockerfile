@@ -26,7 +26,7 @@ RUN if [ -f /opt/smos/certs/ca-bundle.crt ]; then export PIP_CERT=/opt/smos/cert
 
 COPY README.md ./
 COPY smos ./smos
-RUN pip install --no-deps .
+RUN if [ -f /opt/smos/certs/ca-bundle.crt ]; then export PIP_CERT=/opt/smos/certs/ca-bundle.crt; fi  && pip install --no-deps .
 
 # Bundled embedding model (Apache-2.0), loaded by path.
 COPY models /opt/smos/models

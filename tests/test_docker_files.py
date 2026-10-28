@@ -70,3 +70,13 @@ def test_build_can_trust_an_extra_ca_bundle() -> None:
     assert re.search(r"^certs/\*\.crt$", _read(".gitignore"), re.M), "local CA certificates must not be committed"
     lines = {line.strip() for line in _read(".dockerignore").splitlines()}
     assert "certs" not in lines
+
+
+def test_every_pip_step_uses_the_extra_ca_bundle() -> None:
+    """pip downloads build tools even for `pip install .`, so each RUN that calls pip needs the bundle."""
+    text = _read("Dockerfile")
+    steps = re.split(r"\n(?=(?:RUN|COPY|ENV|USER|WORKDIR|VOLUME|EXPOSE|HEALTHCHECK|CMD|FROM|ARG)\b)", text)
+    pip_steps = [s for s in steps if s.startswith("RUN") and "pip install" in s]
+    assert len(pip_steps) >= 2
+    for step in pip_steps:
+        assert "PIP_CERT=/opt/smos/certs/ca-bundle.crt" in step, step[:80]
