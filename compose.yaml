@@ -8,7 +8,9 @@ services:
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-}
     image: smos:0.2.0
     ports:
-      - "8765:8765"
+      # The left number is the port people use; change it with SMOS_HOST_PORT in .env if 8765 is
+      # blocked or taken. The container always listens on 8765 inside.
+      - "${SMOS_HOST_PORT:-8765}:8765"
     env_file:
       - .env
     volumes:

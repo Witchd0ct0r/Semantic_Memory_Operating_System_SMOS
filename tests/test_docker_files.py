@@ -36,7 +36,7 @@ def test_compose_persists_data_and_reads_env_file() -> None:
     assert re.search(r"^volumes:\s*\n\s+smos-data:", text, re.M)
     assert "env_file" in text and ".env" in text
     assert "restart: unless-stopped" in text
-    assert "8765:8765" in text
+    assert "${SMOS_HOST_PORT:-8765}:8765" in text
     assert "TORCH_INDEX_URL" in text
     assert "privileged" not in text and "docker.sock" not in text
 

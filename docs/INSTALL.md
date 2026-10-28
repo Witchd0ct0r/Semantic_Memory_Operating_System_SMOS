@@ -161,7 +161,8 @@ Your data is kept. SMOS upgrades its own database format on start and keeps a ba
 | `env file .env not found` | Do step 2. |
 | Container exits at once; log says "No admin account exists" | `SMOS_ADMIN_USER` / `SMOS_ADMIN_PASSWORD` are missing in `.env` and the volume is new. |
 | Log says "embedding model folder ... is incomplete" | The `models/` folder was not copied completely; run `git status` and `git checkout -- models`, then rebuild. |
-| `port is already allocated` | Something else uses 8765. Change the left number in `ports:` in `compose.yaml`, for example `"9000:8765"`, and set `SMOS_PUBLIC_URL` to match. |
+| `port is already allocated` | Something else uses 8765. Set `SMOS_HOST_PORT=9000` (any free port) in `.env`, set `SMOS_PUBLIC_URL` to match, then `docker compose up -d`. |
+| Browser times out, but `curl http://<server-address>:8765/api/v1/health` works on the server | Something between your PC and the server blocks the port (a network rule; check with `systemctl is-active ufw nftables firewalld` that the server has no host firewall). Ask your network administrator to allow the port, or pick a port your network already allows with `SMOS_HOST_PORT` in `.env` and run `docker compose up -d`. |
 | Forgot the admin password | Stop SMOS, remove the account with `docker compose run --rm smos python -c "import sqlite3; c=sqlite3.connect('/data/admin.db'); c.execute('DELETE FROM admins'); c.commit()"`, then set a new `SMOS_ADMIN_PASSWORD` in `.env` and start SMOS; the first-start bootstrap creates the admin again. |
 | Invitation links point to the wrong address | Set `SMOS_PUBLIC_URL` in `.env`, then `docker compose up -d`. |
 | Build stops with `CERTIFICATE_VERIFY_FAILED` | Do step 3 (give the build your network's CA bundle), then build again. |
