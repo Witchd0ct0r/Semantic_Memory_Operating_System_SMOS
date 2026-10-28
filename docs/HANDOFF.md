@@ -9,9 +9,9 @@ history log; git history is the log.
 ## Where things stand (2026-10-28, session 7)
 
 > **Latest handoff (read first):** `docs/handoffs/2026-10-28-1700-project-4-self-update-done.md`.
-> Projects 1-4 are implemented; Projects 1-3 are Codex-reviewed, Project 4 awaits its review
-> (`docs/superpowers/review/2026-10-28-4-review-package.md`). The Debian installation runs the Project 1-2 code and is
-> deliberately NOT updated until all projects are finished. Next: Codex review of Project 4, then Project 5 (documentation).
+> Projects 1-4 are implemented and Codex-reviewed (Project 4: review 4 fixed in `c042d4c`, see
+> `docs/update-verification.md` §4). The Debian installation runs the Project 1-2 code and is
+> deliberately NOT updated until all projects are finished. Next: verify inside the Docker image, then Project 5 (documentation).
 
 **Direction change: SMOS is becoming a standalone, self-hosted product** the Governor will
 install in Docker inside their company for trial runs. A local agent and third-party parsers
@@ -25,7 +25,7 @@ The standalone effort is five projects, one design at a time, in this order:
 | 1 | **Core**: no built-in AI, caller-supplied summaries, HTTP API + OpenAPI, bearer-token auth with invitation links, per-token usage, versioned migrations, minimal admin pages | **implemented and verified** (`docs/standalone-core-verification.md`) |
 | 2 | Docker packaging: image, data volume, healthcheck, install guide | **done and running on the Governor's Debian machine** (`docs/docker-verification.md`, `docs/INSTALL.md`) |
 | 3 | Full dashboard: metrics history (items, DB size, API load, hardware over time, top calls), line charts, layout A (single overview page) chosen in brainstorming | **implemented** (spec `2026-10-28-dashboard-design.md`, plan `2026-10-28-dashboard.md`); verification record `docs/dashboard-verification.md` |
-| 4 | Self-update from **GitHub Releases** (not commits): version check, snapshot, rollback of code and data, update button + checker on the dashboard | **implemented**, 733 tests; real end-to-end run 33/33 (`docs/update-verification.md`); NOT yet run inside the Docker image; Codex review package written (spec `2026-10-28-self-update-design.md`, plan `2026-10-28-self-update.md`, `docs/RELEASING.md`) |
+| 4 | Self-update from **GitHub Releases** (not commits): version check, snapshot, rollback of code and data, update button + checker on the dashboard | **implemented and Codex-reviewed (review 4: 1 Critical + 3 Important + 1 Minor, all fixed with tests)**, 743 tests; real end-to-end run 33/33 (`docs/update-verification.md`); NOT yet run inside the Docker image; package (spec `2026-10-28-self-update-design.md`, plan `2026-10-28-self-update.md`, `docs/RELEASING.md`) |
 | 5 | Documentation: install guide, user guide, parser-author guide, agent-oriented API guide (grows with each step) | queued |
 
 Design: `docs/superpowers/specs/2026-10-28-standalone-core-design.md`.

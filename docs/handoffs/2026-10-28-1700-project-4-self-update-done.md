@@ -25,8 +25,9 @@ not be until the Governor says all updates are finished. Nothing is running: no 
 
 ## Next steps (in order)
 
-1. Governor gives `docs/superpowers/review/2026-10-28-4-review-package.md` to Codex; reproduce each finding, fix it with a
-   test first, record the result (as for reviews 1-3). Optionally include the earlier unreviewed fixes `dcf38cd`, `4271f65`.
+1. DONE after this handoff was first written: Codex review 4 came back (1 Critical, 3 Important, 1 Minor); all fixed test-first in `c042d4c`
+   and recorded in `docs/update-verification.md` §4; suite 743; e2e 33/33. Optional: a further Codex round on `c042d4c` (the
+   rollback-marker logic in `smos/launcher.py` is the part worth a second look).
 2. Before the Debian update: build the image and verify inside it (see `docs/update-verification.md` §3): the in-image
    `/opt/smos/build-info.json` manifest must equal git's object ids for `pyproject.toml`, `Dockerfile`, `compose.yaml`,
    `models`, `smos/launcher.py` (otherwise every release shows a false "needs a rebuilt image"), SIGTERM/PID-1 behaviour, and

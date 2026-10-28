@@ -5,7 +5,7 @@ Date: 2026-10-28. Design `docs/superpowers/specs/2026-10-28-self-update-design.m
 
 ## 1. Unit and integration tests
 
-`python -m pytest tests/ -q` → **733 passed** (baseline before this project: 527). New files: `test_versioning`,
+`python -m pytest tests/ -q` → **743 passed** after the Codex review 4 fixes (733 before them; baseline before this project: 527). New files: `test_versioning`,
 `test_launcher_state`, `test_launcher_supervisor`, `test_update_config`, `test_update_manifest`, `test_update_github`,
 `test_update_unpack`, `test_update_status`, `test_update_apply`, `test_update_audit`, `test_update_pages`, plus additions to
 `test_docker_files`. All offline; GitHub is a local fake (`tests/fake_github.py`).
@@ -50,3 +50,20 @@ the supervisor writes. Result: **33/33 checks passed**.
   update on Debian (deliberately not updated).
 - Not yet re-reviewed by Codex: the review fixes of the third review (`dcf38cd`, `4271f65`); this project's own review
   package is `docs/superpowers/review/2026-10-28-4-review-package.md`.
+
+## 4. Codex review 4 (`docs/superpowers/review/2026-10-28-4-review.md`) and its fixes
+
+Range reviewed `ede8ab5..HEAD`. 1 Critical, 3 Important, 1 Minor. Every finding was reproduced with a failing test first,
+then fixed (commit `c042d4c`); suite 743 passed, and the real end-to-end run was repeated on the fixed code: 33/33.
+(Codex noted this file was missing from its workspace; it was committed in `b991223`, so its checkout was older.)
+
+| # | Severity | Finding | Fix | Test (RED then GREEN) |
+|---|---|---|---|---|
+| 1 | Critical | A crash during rollback's data restore let the next start run the new code on half-restored data | `rollback.json` marker written before any restore; a restart with a matching marker finishes the rollback and never starts the target; restore/pointer steps are idempotent; marker removed after `pending.json`; stale marker cleaned; missing snapshot fails loudly (exit 1) | `test_crash_during_rollback_restore_resumes_the_rollback_on_restart`, `test_interrupted_rollback_without_a_snapshot_fails_loudly_...`, `test_stale_rollback_marker_is_removed_...` |
+| 2 | Important | A staged update left over from an older image build was applied over a rebuilt image | `pending.json` carries `base_build_id`; the supervisor discards a pending update whose build differs (staging deleted, failure recorded) | `test_pending_update_staged_for_an_older_image_build_is_discarded`, `test_pending_records_the_image_build_it_was_prepared_for` |
+| 3 | Important | Confirmation bound only the version, not the commit the admin saw (moved tag) | the form posts the reviewed SHA; `Updater.begin(admin, version, sha)` refuses a different or missing commit | `test_refuses_when_the_tag_moved_to_another_commit`, `test_refuses_without_a_confirmed_commit`, `test_apply_without_the_confirmed_commit_is_refused` |
+| 4 | Important | A read admitted after the final idle check could race the store closing | after the first drain a `closing` flag makes the gate refuse everything (503), then it waits again for stragglers admitted just before the flag; only then close and exit | `test_requests_arriving_while_the_stores_close_get_503`, `test_exit_stops_admitting_requests_and_waits_for_stragglers` |
+| 5 | Minor | A negative cgroup `usage_usec` became the next CPU baseline (one absurd spike) | a negative counter is treated as missing | `test_negative_cgroup_cpu_counter_does_not_poison_the_next_sample` |
+
+Noted, not changed: a rejected concurrent `Updater.begin` call (second click while one is running) writes no audit row.
+It is not an update attempt, and the running attempt is recorded; deferred as a minor.
