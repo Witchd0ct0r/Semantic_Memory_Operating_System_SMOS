@@ -2,8 +2,8 @@
 
 Date: 2026-10-28. Spec: `docs/superpowers/specs/2026-10-28-docker-packaging-design.md`.
 Plan: `docs/superpowers/plans/2026-10-28-docker-packaging.md`.
-Tested on Docker Desktop 29.6.1 (Windows, Linux engine) with `python:3.12-slim`; the Governor repeats
-the install guide on the Debian machine (Docker 29.3.0, Compose 5.1.1, 2 cores, 7 GB RAM).
+Tested on Docker Desktop 29.6.1 (Windows, Linux engine) with `python:3.12-slim`, then installed on the
+Governor's Debian machine (Docker 29.3.0, Compose 5.1.1, 2 cores, 7 GB RAM) by following the install guide.
 
 ## Build
 
@@ -31,6 +31,22 @@ Removing the NVIDIA/Triton packages was tried: PyTorch then fails to import
 | Idle memory | about 0.5 GB |
 
 Tests: 438 + static Docker file checks (`tests/test_docker_files.py`) all pass.
+
+## Debian install (Governor's machine, 2026-10-28)
+
+Result: working. Findings that changed the repo:
+
+| Finding | Change |
+|---|---|
+| The build failed with `CERTIFICATE_VERIFY_FAILED`: the network re-signs HTTPS with its own CA, trusted by the host but not by the build container | optional `certs/ca-bundle.crt` (git-ignored) used by every `pip` step through `PIP_CERT`; install guide step 3 |
+| The first fix covered only one `pip` step; `pip install .` downloads build tools too | the bundle is applied to both steps; a test checks every `pip install` step |
+| Port 8765 timed out from client PCs; 8080 worked (a network rule; no host firewall) | `SMOS_HOST_PORT` in `.env`; troubleshooting row |
+| Some browsers upgrade `http://` to `https://` (log: `Invalid HTTP request received`) | troubleshooting row: private window, another browser or setting; `curl` proves the path |
+| `SMOS_PUBLIC_URL` filled from the server's own host name did not match the DNS name clients use | guide already says to use the address people type; the invitation link follows `SMOS_PUBLIC_URL` |
+
+Verified on the Debian machine: image built, container healthy, health endpoint on the server and from a
+client PC (`curl`), admin login in a browser, invitation link created and claimed, token used from a
+client PC to ingest a document (`success`) and query it back (exact text, score, document summary).
 
 ## Not verified here
 

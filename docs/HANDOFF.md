@@ -18,7 +18,7 @@ The standalone effort is five projects, one design at a time, in this order:
 | # | Project | Status |
 |---|---|---|
 | 1 | **Core**: no built-in AI, caller-supplied summaries, HTTP API + OpenAPI, bearer-token auth with invitation links, per-token usage, versioned migrations, minimal admin pages | **implemented and verified** (`docs/standalone-core-verification.md`) |
-| 2 | Docker packaging: image, data volume, healthcheck, install guide | **implemented and tested** (`docs/docker-verification.md`); the Governor still has to build/run it on the Debian machine with `docs/INSTALL.md` |
+| 2 | Docker packaging: image, data volume, healthcheck, install guide | **done and running on the Governor's Debian machine** (`docs/docker-verification.md`, `docs/INSTALL.md`) |
 | 3 | Full dashboard: metrics history (items, DB size, API load, hardware over time, top calls), line charts, layout A (single overview page) chosen in brainstorming | queued |
 | 4 | Self-update from remote `main` on request: version check, backup, migrate, rollback; update button + checker on the dashboard | queued |
 | 5 | Documentation: install guide, user guide, parser-author guide, agent-oriented API guide (grows with each step) | queued |
@@ -72,7 +72,10 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
 - **Project 2 done:** `Dockerfile`, `compose.yaml`, `.env.example`, bundled model in `models/`, `docs/INSTALL.md`.
   Company network blocks Hugging Face and the PyTorch CPU index, so the image uses PyPI's GPU PyTorch (large) and
   the model is loaded from `SMOS_EMBEDDING_MODEL_DIR`. Open item: Swagger UI assets still come from a CDN.
-- Next: Project 3 (full dashboard and metrics) design pass, after the Governor confirms the Debian install works.
+- Debian install works (ingest + query verified from a client PC). Learned there: the network re-signs HTTPS (extra CA
+  bundle in `certs/`, git-ignored), port 8765 was blocked while 8080 worked (`SMOS_HOST_PORT`), some browsers force
+  HTTPS. Never put the employer's names/hosts in the repo (memory `feedback-no-company-data-in-repo`).
+- Next: Project 3 (full dashboard and metrics) design pass.
 - **No stored data exists** to migrate; migration 1 is a plain baseline.
 - Development is on `main`; the future updater follows the remote `main`. `origin` is still
   far behind local `main` (nothing has been pushed).
