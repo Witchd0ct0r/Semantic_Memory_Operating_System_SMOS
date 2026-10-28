@@ -8,7 +8,8 @@ history log; git history is the log.
 
 ## Where things stand (2026-10-28, session 7)
 
-> **Latest handoff (read first):** `docs/handoffs/2026-10-28-1700-project-4-self-update-done.md`.
+> **Latest handoff (read first):** `docs/handoffs/2026-10-28-1830-debian-updated-to-0-3-0.md` (v0.3.0 released and installed on Debian; **open defect: every release would be shown as needing a rebuild**, fix first).
+> Previous: `docs/handoffs/2026-10-28-1700-project-4-self-update-done.md`.
 > Projects 1-4 are implemented and Codex-reviewed (Project 4: review 4 fixed in `c042d4c`, see
 > `docs/update-verification.md` §4). The Debian installation runs the Project 1-2 code and is
 > deliberately NOT updated until all projects are finished. Pushed to origin and tagged `v0.3.0` on 2026-10-28 (no GitHub Release page created yet). Next: verify inside the Docker image, then Project 5 (documentation).

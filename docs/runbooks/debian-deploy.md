@@ -35,13 +35,39 @@ project memory note); keep them in chat only.
 
 ```bash
 docker compose ps                                   # STATUS should say (healthy)
-curl -s http://localhost:8080/api/v1/health         # {"status":"ok","version":"0.2.0"} (use your SMOS_HOST_PORT)
+curl -s http://localhost:8080/api/v1/health         # {"status":"ok","version":"0.3.0"} (use your SMOS_HOST_PORT)
 docker compose logs --tail 15 smos
 echo | openssl s_client -connect pypi.org:443 -servername pypi.org 2>/dev/null | openssl x509 -noout -issuer
 ```
 
+## Rebuild / update recipe (used 2026-10-28 for 0.3.0; about 15 minutes in all)
+
+Needed whenever a release is shown as "needs a rebuilt image" (or for the first image with the updater). One command at a time:
+
+```bash
+docker compose stop                                   # data stays; never `down -v`
+docker volume ls                                      # the data volume is <folder>_smos-data (here smos_smos-data); the `certs` volume is not SMOS's
+docker run --rm -v smos_smos-data:/data -v "$PWD":/backup debian:stable-slim tar czf /backup/smos-backup.tgz -C /data .
+tar tzf smos-backup.tgz                               # expect ./admin.db ./faiss.index ./metadata.db
+git pull
+df -h .                                               # a build needs about 12 GB free
+docker compose build                                  # 384 s on 2026-10-28 (dependency layer 132 s, image export 244 s)
+docker compose run --rm --no-deps smos cat /opt/smos/build-info.json   # compare with `git rev-parse HEAD:<path>` for pyproject.toml Dockerfile compose.yaml models smos/launcher.py
+docker compose up -d                                  # migrates the databases (writes *.bak-vN first)
+docker compose ps                                     # (healthy) after 30-60 s
+curl -s http://localhost:8080/api/v1/health           # version
+```
+
+`.env` and `certs/ca-bundle.crt` are git-ignored and survive `git pull`. `smos-backup.tgz` is written into the install folder
+(untracked, root-owned); delete it when no longer needed.
+
 ## State of the installation
 
-Installed and working from the code of 2026-10-28 (Projects 1 and 2: API, tokens, Docker). **Not updated** with the
-dashboard (Project 3) or later work: the Governor decided not to touch the Debian installation until all planned
-updates are finished. Do not tell them to `git pull` there before they say so.
+- **2026-10-28 evening: updated to 0.3.0** (dashboard, self-update, Codex-reviewed). Image `smos:0.3.0`, container healthy on
+  host port 8080, health reports 0.3.0, startup log clean. The in-image `/opt/smos/build-info.json` manifest was compared with
+  git and **matched on all five entries** (so releases will not falsely say "needs a rebuilt image").
+- The dashboard "Check now" was reported to look good by the Governor (exact banner text not recorded; expected "SMOS is up to
+  date", which also proves outbound HTTPS to GitHub with the CA bundle works inside the container).
+- **Not yet exercised on this machine:** an actual in-place update (no release newer than 0.3.0 exists), rollback in the
+  container, and the real SIGTERM path. Do that with a harmless patch release (see the newest handoff).
+- Older images (`smos:0.2.0`, base images) are still on disk; `docker image prune` / `docker rmi smos:0.2.0` when happy.
