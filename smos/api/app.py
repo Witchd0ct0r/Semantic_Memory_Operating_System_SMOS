@@ -107,7 +107,8 @@ def create_app(
                     admin_db,
                     token_id=getattr(request.state, "token_id", None),
                     method=request.method,
-                    path=path,
+                    # the matched route template, so /nodes/<id>/text counts as one endpoint
+                    path=getattr(request.scope.get("route"), "path", None) or path,
                     status=response.status_code,
                     latency_ms=(time.perf_counter() - started) * 1000.0,
                     req_bytes=int(request.headers.get("content-length") or 0),
