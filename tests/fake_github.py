@@ -13,6 +13,27 @@ def json_response(obj, status: int = 200, headers: dict | None = None) -> tuple:
     return status, {"Content-Type": "application/json", **(headers or {})}, json.dumps(obj).encode()
 
 
+def release_tarball(sha: str, version: str, files: dict | None = None, repo: str = "repo") -> bytes:
+    """A GitHub-style source archive: top directory <repo>-<sha>, containing a tiny importable smos package."""
+    import io
+    import tarfile
+
+    members = {
+        "smos/__init__.py": f'__version__ = "{version}"\n'.encode(),
+        "smos/api/__init__.py": b"",
+        "smos/api/app.py": b"READY = True\n",
+        "Dockerfile": b"FROM python:3.12-slim\n",
+        **{k: (v if isinstance(v, bytes) else v.encode()) for k, v in (files or {}).items()},
+    }
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        for name, data in members.items():
+            info = tarfile.TarInfo(f"{repo}-{sha}/{name}")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return buffer.getvalue()
+
+
 class FakeGitHub:
     def __init__(self) -> None:
         self.routes: dict[str, Response] = {}

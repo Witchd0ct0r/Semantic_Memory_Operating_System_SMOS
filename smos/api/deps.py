@@ -33,6 +33,9 @@ def require_token(request: Request) -> None:
 def require_write(request: Request) -> None:
     """Routes that change database state need a read/write ('rw') token. A missing
     scope is treated as read-only, so a wiring mistake can only deny, never allow."""
+    if getattr(request.app.state, "maintenance", False):
+        raise HTTPException(status_code=503, detail="SMOS is restarting for an update, try again shortly",
+                            headers={"Retry-After": "30"})
     if getattr(request.state, "token_scope", None) != "rw":
         raise HTTPException(status_code=403, detail="this token is read-only")
 

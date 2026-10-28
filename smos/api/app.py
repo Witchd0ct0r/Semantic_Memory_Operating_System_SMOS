@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -17,9 +18,14 @@ from smos.admin.metrics import Sampler
 from smos.admin.pages import register_admin
 from smos.api import routes
 from smos.api.deps import require_token, require_token_or_admin_session
+from smos.launcher import UpdatePaths
 from smos.memory.embeddings import model_source
 from smos.memory.lifecycle import LifecycleManager
 from smos.memory.vector_store import VectorStore
+from smos.update import audit as update_audit
+from smos.update import service as update_service
+
+log = logging.getLogger("smos.api")
 
 
 def _version() -> str:
@@ -116,6 +122,11 @@ def create_app(
             "for the first start so the initial admin can be created."
         )
 
+    try:
+        update_audit.import_last_result(admin_db, UpdatePaths(data_dir))
+    except Exception:
+        log.exception("could not import the last update result")
+
     store = VectorStore(persist_path=data_dir)
     lifecycle = LifecycleManager(store)
     store._lifecycle_callback = lifecycle.on_insert
@@ -124,6 +135,8 @@ def create_app(
     app.state.admin_db = admin_db
     app.state.admin_lock = threading.RLock()
     app.state.data_dir = data_dir
+    app.state.maintenance = False  # set while an update restarts the server: writes get 503
+    app.state.inflight = 0
     app.state.unauth_budget = _MinuteBudget(int(os.environ.get("SMOS_UNAUTH_LOG_PER_MIN", "60")))
     app.state.unauth_suppressed = 0
     app.state.prune_every_rows = int(os.environ.get("SMOS_USAGE_PRUNE_EVERY_ROWS", "10000"))
@@ -179,6 +192,20 @@ def create_app(
         https_only=os.environ.get("SMOS_COOKIE_SECURE") == "1",
         max_age=8 * 3600,
     )
+    @app.middleware("http")
+    async def maintenance_gate(request: Request, call_next):
+        """Counts requests in flight (the updater waits for zero) and, during an update restart,
+        refuses admin and claim changes; /api/v1 writes are refused by require_write."""
+        app.state.inflight += 1
+        try:
+            if (app.state.maintenance and request.method not in ("GET", "HEAD", "OPTIONS")
+                    and request.url.path.startswith(("/admin", "/claim"))):
+                return JSONResponse({"detail": "SMOS is restarting for an update, try again shortly"},
+                                    status_code=503, headers={"Retry-After": "30"})
+            return await call_next(request)
+        finally:
+            app.state.inflight -= 1
+
     register_admin(app)
 
     open_router = APIRouter(prefix="/api/v1")
@@ -205,4 +232,5 @@ def create_app(
     def docs():
         return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="SMOS API")
 
+    update_service.attach(app, data_dir)
     return app

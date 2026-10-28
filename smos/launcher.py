@@ -335,6 +335,7 @@ class Supervisor:
             "ok": ok,
             "from_version": pending.get("from_version", ""),
             "to_version": pending.get("version", ""),
+            "sha": pending.get("sha", ""),
             "requested_by": pending.get("requested_by", ""),
             "requested_at": pending.get("requested_at", ""),
             "finished_at": _now_iso(),

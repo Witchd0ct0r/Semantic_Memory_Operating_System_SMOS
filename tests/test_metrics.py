@@ -168,7 +168,7 @@ def test_migration_3_adds_samples_and_keeps_existing_rows(tmp_path) -> None:
     old.close()
     upgraded = open_admin_db(tmp_path)
     assert upgraded.execute("SELECT name FROM tokens").fetchone()[0] == "keep"
-    assert upgraded.execute("SELECT version FROM schema_version").fetchone()[0] == 3
+    assert upgraded.execute("SELECT version FROM schema_version").fetchone()[0] == ADMIN_MIGRATIONS[-1][0]
     assert {r[1] for r in upgraded.execute("PRAGMA table_info(samples)")} == COLUMNS
     upgraded.close()
 

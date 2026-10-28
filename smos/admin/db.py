@@ -96,10 +96,27 @@ def _add_samples(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _add_update_log(conn: sqlite3.Connection) -> None:
+    """Version 4: one row per self-update attempt (who asked, from/to, how it ended)."""
+    conn.execute("""
+        CREATE TABLE update_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            at           TEXT NOT NULL,
+            admin_user   TEXT NOT NULL,
+            from_version TEXT NOT NULL,
+            to_version   TEXT NOT NULL,
+            sha          TEXT NOT NULL DEFAULT '',
+            outcome      TEXT NOT NULL,
+            detail       TEXT NOT NULL DEFAULT ''
+        )
+    """)
+
+
 ADMIN_MIGRATIONS: list[Migration] = [
     (1, "baseline", _baseline),
     (2, "token_scope", _add_scope),
     (3, "samples", _add_samples),
+    (4, "update_log", _add_update_log),
 ]
 
 

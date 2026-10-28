@@ -125,7 +125,7 @@ def test_pending_update_success(tmp_path) -> None:
     assert current["version"] == "0.3.0" and current["sha"] == "a" * 40 and current["base_build_id"] == BUILD
     result = launcher.read_json(paths.last_result)
     assert result["ok"] is True and result["to_version"] == "0.3.0" and result["from_version"] == "0.2.0"
-    assert result["requested_by"] == "admin"
+    assert result["requested_by"] == "admin" and result["sha"] == "a" * 40
     assert not paths.pending.exists() and not paths.staging_dir("0.3.0").exists()
     assert launcher.snapshot_matches(paths, "0.3.0@2026-10-28T10:00:00+00:00")
     assert h.health_calls[0] == "0.3.0"
