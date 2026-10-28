@@ -107,7 +107,7 @@ Please look for:
 
 ## 5. Evidence already collected
 
-- 423 tests pass. New tests: `test_admin_scopes.py` (14), `test_api_scopes.py`, scope cases in
+- 423 tests pass. New tests: `test_admin_scopes.py` (10), `test_api_scopes.py`, scope cases in
   `test_admin_pages.py`, plus the five fix tests above (each was seen failing before its fix;
   the ingest race reproduced as mixed versions in round 2).
 - Live runs: access log shows `/claim/<redacted>` (0 occurrences of the secret); a read-only token
