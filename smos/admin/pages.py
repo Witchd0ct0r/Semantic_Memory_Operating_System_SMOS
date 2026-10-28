@@ -101,7 +101,7 @@ def _invalid_claim(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "claim_invalid.html", {}, status_code=404, headers=_NO_STORE)
 
 
-def register_admin(app: FastAPI) -> None:
+def register_admin(app: FastAPI) -> APIRouter:
     app.state.throttle = Throttle()
     router = APIRouter(include_in_schema=False)
 
@@ -196,7 +196,7 @@ def register_admin(app: FastAPI) -> None:
                      summary=summary, recent=recent, selected=token)
 
     @router.get("/admin/dashboard", response_class=HTMLResponse)
-    async def dashboard(
+    def dashboard(  # a plain def: FastAPI runs it in a worker thread, off the event loop
         request: Request,
         range_: str | None = Query(None, alias="range"),
         _admin: str = Depends(admin_required),
@@ -243,3 +243,4 @@ def register_admin(app: FastAPI) -> None:
         )
 
     app.include_router(router)
+    return router

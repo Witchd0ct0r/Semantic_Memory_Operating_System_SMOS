@@ -75,7 +75,7 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
 - Debian install works (ingest + query verified from a client PC). Learned there: the network re-signs HTTPS (extra CA
   bundle in `certs/`, git-ignored), port 8765 was blocked while 8080 worked (`SMOS_HOST_PORT`), some browsers force
   HTTPS. Never put the employer's names/hosts in the repo (memory `feedback-no-company-data-in-repo`).
-- Project 3 done (dashboard, `docs/dashboard-verification.md`). Next: Project 4 (self-update: version check, backup, migrate, rollback, update button) design pass. Open question for it: how an update reaches a container (no Docker socket; likely an overlay of the Python code in the data volume plus a restart, with a rebuild needed only when dependencies change).
+- Project 3 done (dashboard, `docs/dashboard-verification.md`); third Codex review: 4 Important, all fixed (usage-log bounds, off-loop dashboard, lock-free counts, cgroup validation) and the suite is now hermetic/offline (527 tests). Next: Project 4 (self-update: version check, backup, migrate, rollback, update button) design pass. Open question for it: how an update reaches a container (no Docker socket; likely an overlay of the Python code in the data volume plus a restart, with a rebuild needed only when dependencies change).
 - **No stored data exists** to migrate; migration 1 is a plain baseline.
 - Development is on `main`; the future updater follows the remote `main`. `origin` is still
   far behind local `main` (nothing has been pushed).

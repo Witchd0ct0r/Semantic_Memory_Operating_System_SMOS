@@ -92,3 +92,17 @@ def prune_samples_batch(conn: sqlite3.Connection, retention_days: int, limit: in
     )
     conn.commit()
     return cursor.rowcount
+
+
+def prune_over_cap_batch(conn: sqlite3.Connection, max_rows: int, limit: int) -> int:
+    """Delete up to `limit` of the oldest rows while the table holds more than `max_rows`."""
+    total = conn.execute("SELECT COUNT(*) FROM usage_log").fetchone()[0]
+    excess = total - max_rows
+    if excess <= 0:
+        return 0
+    cursor = conn.execute(
+        "DELETE FROM usage_log WHERE id IN (SELECT id FROM usage_log ORDER BY id LIMIT ?)",
+        (min(excess, limit),),
+    )
+    conn.commit()
+    return cursor.rowcount

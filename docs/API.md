@@ -124,6 +124,9 @@ growth, CPU/memory/disk over time, most-used calls, per-token activity, recent e
 | `SMOS_USAGE_RETENTION_DAYS` | `90` | Usage-log rows older than this are pruned (at start, then daily) |
 | `SMOS_METRICS_RETENTION_DAYS` | `30` | Dashboard samples (hardware and store measurements, one per minute) older than this are pruned |
 | `SMOS_SAMPLE_INTERVAL_S` | `60` | Seconds between dashboard samples |
+| `SMOS_USAGE_MAX_ROWS` | `1000000` | Hard cap on usage-log rows; the oldest are deleted beyond it |
+| `SMOS_USAGE_PRUNE_EVERY_ROWS` | `10000` | A background prune also runs after this many new rows |
+| `SMOS_UNAUTH_LOG_PER_MIN` | `60` | Log rows per minute for requests without a valid token (probing); further ones are counted, not stored |
 | `SMOS_PUBLIC_URL` | request URL | Base URL put in invitation links |
 | `SMOS_TRUST_PROXY` | off | `1` = use the first `X-Forwarded-For` entry as client IP |
 | `SMOS_COOKIE_SECURE` | off | `1` = mark the admin cookie `Secure` (use behind HTTPS) |

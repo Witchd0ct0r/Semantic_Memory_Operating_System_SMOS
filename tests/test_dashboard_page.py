@@ -176,3 +176,18 @@ def test_timestamps_are_short(api) -> None:
     html = client.get("/admin/dashboard").text
     assert "+00:00" not in html
     assert re.search(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", html)
+
+
+def test_the_dashboard_handler_does_not_run_on_the_event_loop() -> None:
+    """Its SQL and store statistics are synchronous; as a plain `def` FastAPI runs it in a worker thread,
+    so a slow dashboard cannot stall API requests that share the event loop."""
+    import inspect
+
+    from fastapi import FastAPI
+
+    from smos.admin.pages import register_admin
+
+    router = register_admin(FastAPI())
+    routes = {r.path: r for r in router.routes if hasattr(r, "endpoint")}
+    assert "/admin/dashboard" in routes
+    assert not inspect.iscoroutinefunction(routes["/admin/dashboard"].endpoint)
