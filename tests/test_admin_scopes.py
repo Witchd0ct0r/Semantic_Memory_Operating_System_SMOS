@@ -87,6 +87,6 @@ def test_migration_2_keeps_existing_tokens_and_invitations_rw(tmp_path: Path) ->
     upgraded = open_admin_db(tmp_path)
     assert upgraded.execute("SELECT scope FROM tokens").fetchone()[0] == "rw"
     assert upgraded.execute("SELECT scope FROM invitations").fetchone()[0] == "rw"
-    assert upgraded.execute("SELECT version FROM schema_version").fetchone()[0] == 2
+    assert upgraded.execute("SELECT version FROM schema_version").fetchone()[0] == ADMIN_MIGRATIONS[-1][0]
     assert (tmp_path / "admin.db.bak-v1").exists()
     upgraded.close()
