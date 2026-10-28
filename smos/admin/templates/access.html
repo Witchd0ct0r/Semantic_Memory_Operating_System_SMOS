@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}SMOS access{% endblock %}
+{% block content %}
+<section>
+  <h1>Invite a user</h1>
+  <p class="muted">Creates a single-use link. Send the link to the user; they press <em>Create token</em> and keep the token themselves. You never see it.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/admin/invitations">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="label" placeholder="Who is it for? (label)" required>
+    <button type="submit">Create invitation link</button>
+  </form>
+</section>
+
+<section>
+  <h2>Tokens</h2>
+  <table>
+    <tr><th>Label</th><th>Created</th><th>Created by user (claim)</th><th>Last used</th><th>Status</th><th></th></tr>
+    {% for t in tokens %}
+    <tr>
+      <td>{{ t.name }}</td>
+      <td>{{ t.created_at }}</td>
+      <td>{% if t.claimed_at %}{{ t.claimed_at }}<br><span class="muted">{{ t.claimed_ip }} &middot; {{ t.claimed_user_agent }}</span>{% else %}<span class="muted">n/a</span>{% endif %}</td>
+      <td>{{ t.last_used_at or "never" }}</td>
+      <td>{% if t.revoked %}revoked{% else %}active{% endif %}</td>
+      <td>{% if not t.revoked %}<form class="inline" method="post" action="/admin/tokens/{{ t.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Revoke</button></form>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">No tokens yet.</td></tr>{% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>Invitations</h2>
+  <table>
+    <tr><th>Label</th><th>Created</th><th>Expires</th><th>Status</th><th></th></tr>
+    {% for i in invitations %}
+    <tr>
+      <td>{{ i.label }}</td>
+      <td>{{ i.created_at }}</td>
+      <td>{{ i.expires_at }}</td>
+      <td>{{ i.status }}</td>
+      <td>{% if i.status == "pending" %}<form class="inline" method="post" action="/admin/invitations/{{ i.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Revoke</button></form>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="5" class="muted">No invitations yet.</td></tr>{% endfor %}
+  </table>
+</section>
+{% endblock %}

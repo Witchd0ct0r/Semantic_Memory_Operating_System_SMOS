@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}SMOS usage{% endblock %}
+{% block content %}
+<section>
+  <h1>Usage per token (last 30 days)</h1>
+  <table>
+    <tr><th>Token</th><th>Calls</th><th>Errors</th><th>Last seen</th><th>Bytes</th></tr>
+    {% for s in summary %}
+    <tr>
+      <td><a href="/admin/usage?token={{ s.token_id }}">{{ s.name }}</a></td>
+      <td>{{ s.calls }}</td><td>{{ s.errors }}</td><td>{{ s.last_seen or "never" }}</td><td>{{ s.bytes }}</td>
+    </tr>
+    {% else %}<tr><td colspan="5" class="muted">No tokens yet.</td></tr>{% endfor %}
+  </table>
+</section>
+{% if selected is not none %}
+<section>
+  <h2>Recent calls for token {{ selected }}</h2>
+  <table>
+    <tr><th>Time</th><th>Call</th><th>Status</th><th>Latency (ms)</th><th>Bytes in / out</th></tr>
+    {% for r in recent %}
+    <tr><td>{{ r.ts }}</td><td>{{ r.method }} {{ r.path }}</td><td>{{ r.status }}</td><td>{{ "%.1f"|format(r.latency_ms) }}</td><td>{{ r.req_bytes }} / {{ r.resp_bytes }}</td></tr>
+    {% else %}<tr><td colspan="5" class="muted">No calls recorded.</td></tr>{% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Your SMOS token{% endblock %}
+{% block content %}
+<section style="max-width:620px;margin:48px auto">
+  <h1>Your token</h1>
+  <p><strong>Save it now. It will not be shown again</strong> and the link no longer works.</p>
+  <code class="secret" id="tok">{{ token }}</code>
+  <p><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('tok').textContent)">Copy token</button></p>
+  <p class="muted">Use it as <code>Authorization: Bearer &lt;token&gt;</code> on every API call.</p>
+</section>
+{% endblock %}

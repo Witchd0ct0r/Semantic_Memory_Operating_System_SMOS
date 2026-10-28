@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Invitation created{% endblock %}
+{% block content %}
+<section>
+  <h1>Invitation for {{ label }}</h1>
+  <p>Send this link to the user. It works once and expires in {{ ttl }} hours. <strong>It is shown only on this page.</strong></p>
+  <code class="secret" id="link">{{ link }}</code>
+  <p><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('link').textContent)">Copy link</button>
+     <a href="/admin/tokens">Back to access</a></p>
+</section>
+{% endblock %}

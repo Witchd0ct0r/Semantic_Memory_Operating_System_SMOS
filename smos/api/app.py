@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 from importlib import metadata
@@ -9,9 +10,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, FastAPI, Request
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
 
 from smos.admin import accounts, usage
 from smos.admin.db import open_admin_db
+from smos.admin.pages import register_admin
 from smos.api import routes
 from smos.api.deps import require_token, require_token_or_admin_session
 from smos.memory.lifecycle import LifecycleManager
@@ -39,12 +42,19 @@ def create_app(
         docs_url=None, redoc_url=None, openapi_url=None,
     )
 
-    store = VectorStore(persist_path=data_dir)
-    lifecycle = LifecycleManager(store)
-    store._lifecycle_callback = lifecycle.on_insert
     admin_db = open_admin_db(data_dir)
     if admin_user and admin_password:
         accounts.bootstrap_admin(admin_db, admin_user, admin_password)
+    if not accounts.has_admin(admin_db):
+        admin_db.close()
+        raise RuntimeError(
+            "No admin account exists. Set SMOS_ADMIN_USER and SMOS_ADMIN_PASSWORD "
+            "for the first start so the initial admin can be created."
+        )
+
+    store = VectorStore(persist_path=data_dir)
+    lifecycle = LifecycleManager(store)
+    store._lifecycle_callback = lifecycle.on_insert
 
     app.state.store = store
     app.state.admin_db = admin_db
@@ -75,6 +85,16 @@ def create_app(
                     resp_bytes=int(response.headers.get("content-length") or 0),
                 )
         return response
+
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=accounts.get_session_secret(admin_db),
+        session_cookie="smos_admin",
+        same_site="strict",
+        https_only=os.environ.get("SMOS_COOKIE_SECURE") == "1",
+        max_age=8 * 3600,
+    )
+    register_admin(app)
 
     open_router = APIRouter(prefix="/api/v1")
 
