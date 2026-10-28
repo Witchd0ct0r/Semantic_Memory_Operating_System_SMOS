@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from smos.memory.schemas import CompressedContext, MemoryObject
+from smos.memory.schemas import MemoryObject, RetrievedContext, RetrievedItem
 from smos.tools.semantic_tools import semantic_query, semantic_store, semantic_write
 
 
@@ -46,32 +46,37 @@ def test_semantic_write_no_tags(mock_store: MagicMock) -> None:
     assert call_arg.tags == []
 
 
-def test_semantic_query_returns_compressed_dict(mock_store: MagicMock) -> None:
-    expected = CompressedContext(
-        summary="PostgreSQL is used for primary storage.",
-        sources=["id1", "id2"],
-        confidence=0.87,
+def _ctx(ids: list[str], confidence: float = 0.5) -> RetrievedContext:
+    return RetrievedContext(
+        results=[RetrievedItem(id=i, content=f"content {i}") for i in ids],
+        sources=ids,
+        confidence=confidence,
+        mode="extractive" if ids else "uncertain",
     )
-    with patch("smos.tools.semantic_tools.build_compressed_context", return_value=expected):
+
+
+def test_semantic_query_returns_context_dict(mock_store: MagicMock) -> None:
+    expected = _ctx(["id1", "id2"], 0.87)
+    with patch("smos.tools.semantic_tools.build_context", return_value=expected):
         result = semantic_query("database storage", 5, mock_store)
 
     assert isinstance(result, dict)
-    assert result["summary"] == "PostgreSQL is used for primary storage."
+    assert [r["id"] for r in result["results"]] == ["id1", "id2"]
     assert result["sources"] == ["id1", "id2"]
     assert result["confidence"] == pytest.approx(0.87)
+    assert "summary" not in result
 
 
 def test_semantic_query_no_results(mock_store: MagicMock) -> None:
-    empty = CompressedContext(summary="No relevant memories found.", sources=[], confidence=0.0)
-    with patch("smos.tools.semantic_tools.build_compressed_context", return_value=empty):
+    with patch("smos.tools.semantic_tools.build_context", return_value=_ctx([], 0.0)):
         result = semantic_query("unknown topic", 5, mock_store)
 
     assert result["confidence"] == 0.0
     assert result["sources"] == []
+    assert result["mode"] == "uncertain"
 
 
 def test_semantic_query_bumps_recall(mock_store: MagicMock) -> None:
-    expected = CompressedContext(summary="s", sources=["id1", "id2"], confidence=0.5)
-    with patch("smos.tools.semantic_tools.build_compressed_context", return_value=expected):
+    with patch("smos.tools.semantic_tools.build_context", return_value=_ctx(["id1", "id2"])):
         semantic_query("database storage", 5, mock_store)
     mock_store.bump_recall.assert_called_once_with(["id1", "id2"])

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from smos.compression.context_builder import build_compressed_context
+from smos.compression.context_builder import build_context
 from smos.ingest.adapters.legal import LegalAdapter
 from smos.ingest.adapters.registry import all_edge_types, get_adapter, register_adapter, reset_registry
 from smos.ingest.transformers.markdown_transformer import markdown_to_payload
@@ -135,7 +135,7 @@ def test_legal_cross_reference_graph_rescue_end_to_end(store: VectorStore) -> No
         if "Annual stress-test results" in store.get_by_uuid(sid)["content"]
     )
 
-    context = build_compressed_context(
+    context = build_context(
         "asset threshold definition ten billion dollars", k=1, store=store
     )
     assert target_id in context.sources

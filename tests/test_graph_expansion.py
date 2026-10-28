@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from smos.compression.context_builder import build_compressed_context
+from smos.compression.context_builder import build_context
 from smos.memory.bm25_index import BM25Index
 
 
@@ -16,6 +16,7 @@ def _store_with(memories: list[dict], graph_neighbors: list[dict]):
         if n["type"] == "memory" and "record" in n:
             all_records[n["id"]] = n["record"]
     store.get_by_uuid.side_effect = lambda uid: all_records.get(uid)
+    store.get_summaries.return_value = {}
     return store
 
 
@@ -27,7 +28,7 @@ def test_graph_expansion_adds_linked_memory_not_found_by_rrf():
     ]
     store = _store_with([top_result], graph_neighbors)
 
-    result = build_compressed_context("JWTValidator", k=1, store=store)
+    result = build_context("JWTValidator", k=1, store=store)
 
     assert "id2" in result.sources
 
@@ -39,7 +40,7 @@ def test_graph_expansion_skips_non_memory_nodes():
     ]
     store = _store_with([top_result], graph_neighbors)
 
-    result = build_compressed_context("JWTValidator", k=1, store=store)
+    result = build_context("JWTValidator", k=1, store=store)
 
     assert "entity:JWTValidator" not in result.sources
 
@@ -51,7 +52,7 @@ def test_graph_expansion_skips_nodes_already_in_top():
     ]
     store = _store_with([top_result], graph_neighbors)
 
-    result = build_compressed_context("JWTValidator", k=1, store=store)
+    result = build_context("JWTValidator", k=1, store=store)
 
     assert result.sources.count("id1") == 1
 
@@ -67,7 +68,7 @@ def test_graph_expansion_caps_at_two_extra_memories():
     ]
     store = _store_with([top_result], graph_neighbors)
 
-    result = build_compressed_context("JWTValidator", k=1, store=store)
+    result = build_context("JWTValidator", k=1, store=store)
 
     assert len(result.sources) <= 3  # 1 RRF result + at most 2 graph extras
 
@@ -76,6 +77,6 @@ def test_no_graph_neighbors_leaves_result_unchanged():
     top_result = {"id": "id1", "content": "JWTValidator class handles tokens", "distance": 0.1, "tags": []}
     store = _store_with([top_result], [])
 
-    result = build_compressed_context("JWTValidator", k=1, store=store)
+    result = build_context("JWTValidator", k=1, store=store)
 
     assert result.sources == ["id1"]

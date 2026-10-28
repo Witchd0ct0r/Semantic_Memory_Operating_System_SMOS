@@ -10,7 +10,7 @@ class GraphStore:
     """Thread-safe node/edge graph layer over a shared SQLite connection.
 
     Shares the caller's `sqlite3.Connection` (same pattern VectorStore uses
-    for `memories`/`verbatim`/`ingested_files`) rather than opening its own
+    for `memories`/`verbatim`) rather than opening its own
     database file. Every public method holds its own internal lock, mirroring
     BM25Index — callers do not need to hold any outer lock to use GraphStore
     safely on its own, though VectorStore does call it from within its own

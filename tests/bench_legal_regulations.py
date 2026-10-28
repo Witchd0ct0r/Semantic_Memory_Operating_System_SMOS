@@ -45,7 +45,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smos.compression.context_builder import build_compressed_context
+from smos.compression.context_builder import build_context
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 from smos.ingest.adapters.legal import LegalAdapter
@@ -145,7 +145,7 @@ def _seed_citation_corpus(store: VectorStore) -> dict[str, str]:
 def _citation_recall(store: VectorStore, ids: dict[str, str]) -> float:
     hits = 0
     for citation, _content, _noise in _CITATIONS:
-        result = build_compressed_context(citation, k=3, store=store)
+        result = build_context(citation, k=3, store=store)
         if ids[citation] in result.sources:
             hits += 1
     return hits / len(_CITATIONS)
@@ -231,7 +231,7 @@ def _run_cross_ref_scenario(scenario: dict, tmp_root: Path, backtick: bool, grap
     for noise in _NOISE_DOCS:
         store.store(MemoryObject(type="doc", content=noise))
 
-    result = build_compressed_context(scenario["query"], k=1, store=store)
+    result = build_context(scenario["query"], k=1, store=store)
     return target_id in result.sources
 
 
@@ -281,7 +281,7 @@ def _run_adapter_scenario(scenario: dict, tmp_root: Path, graph_enabled: bool) -
     for noise in _NOISE_DOCS:
         store.store(MemoryObject(type="doc", content=noise))
 
-    result = build_compressed_context(scenario["query"], k=1, store=store)
+    result = build_context(scenario["query"], k=1, store=store)
     return target_id in result.sources
 
 

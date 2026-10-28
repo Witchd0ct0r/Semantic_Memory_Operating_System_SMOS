@@ -15,7 +15,7 @@ exactly the two retrieval mechanisms Phases 1 and 2 added (BM25 hybrid, graph
 expansion) against otherwise-identical code, with no risk of unrelated
 refactors between commits confounding the comparison. Phase 3 added no new
 retrieval mechanism to the default path (recall() strategies are opt-in;
-`hybrid` delegates unchanged to build_compressed_context) — its contribution
+`hybrid` delegates unchanged to build_context) — its contribution
 is measured separately, in tool-surface growth.
 
 Reuses the two corpora this repo already built and validated for exactly
@@ -33,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smos.compression.context_builder import build_compressed_context
+from smos.compression.context_builder import build_context
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 from tests.bench_phase2_vs_phase1 import _NOISE_DOCS as _GRAPH_NOISE_DOCS
@@ -50,7 +50,7 @@ _PRE_PHASE1_COMMIT = "23f051c"
 def _exact_term_recall(store: VectorStore, ids: dict[str, str]) -> float:
     hits = 0
     for term, _content, _noise in _EXACT_TERMS:
-        result = build_compressed_context(term, k=3, store=store)
+        result = build_context(term, k=3, store=store)
         if ids[term] in result.sources:
             hits += 1
     return hits / len(_EXACT_TERMS)
@@ -102,7 +102,7 @@ def _run_graph_scenario(scenario: dict, tmp_root: Path, bm25_enabled: bool, grap
     for noise in _GRAPH_NOISE_DOCS:
         store.store(MemoryObject(type="doc", content=noise))
 
-    result = build_compressed_context(scenario["query"], k=1, store=store)
+    result = build_context(scenario["query"], k=1, store=store)
     return target_id in result.sources
 
 

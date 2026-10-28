@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from smos.compression.context_builder import build_compressed_context
+from smos.compression.context_builder import build_context
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 
@@ -33,7 +33,7 @@ def semantic_query(
 ) -> dict:
     if not _validate_text(query):
         return _INVALID_INPUT_RESPONSE
-    result = build_compressed_context(query, k, store, tags=tags)
+    result = build_context(query, k, store, tags=tags)
     store.bump_recall(result.sources)
     return result.model_dump()
 

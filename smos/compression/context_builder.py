@@ -3,9 +3,8 @@ from __future__ import annotations
 import re
 from typing import Optional
 
-from smos.memory.schemas import CompressedContext
+from smos.memory.schemas import RetrievedContext, RetrievedItem
 from smos.memory.vector_store import VectorStore
-from smos.llm.summarizer import compress_memories_full
 
 _CANDIDATE_MULTIPLIER = 4
 _RRF_K = 60  # standard RRF constant
@@ -41,12 +40,44 @@ def _rrf_merge(
     return ranked
 
 
-def build_compressed_context(
+def _confidence(records: list[dict]) -> float:
+    """Mean-distance confidence in 0..1; BM25-only hits carry no FAISS distance
+    and default to a neutral mid-range value."""
+    if not records:
+        return 0.0
+    avg_distance = sum(r.get("distance", 1.0) for r in records) / len(records)
+    return max(0.0, min(1.0, 1.0 - (avg_distance / 2.0)))
+
+
+def to_retrieved_context(records: list[dict], store: VectorStore) -> RetrievedContext:
+    """Exact stored text plus any caller-supplied summary; never synthesized."""
+    ids = [r.get("id", "") for r in records]
+    summaries = store.get_summaries(ids)
+    items = [
+        RetrievedItem(
+            id=r.get("id", ""),
+            content=r.get("content", ""),
+            summary=summaries.get(r.get("id", ""), {}).get("summary"),
+            summary_source=summaries.get(r.get("id", ""), {}).get("source"),
+            score=r.get("score"),
+            metadata=r.get("metadata", {}),
+        )
+        for r in records
+    ]
+    return RetrievedContext(
+        results=items,
+        sources=ids,
+        confidence=_confidence(records),
+        mode="extractive" if items else "uncertain",
+    )
+
+
+def build_context(
     query: str,
     k: int,
     store: VectorStore,
     tags: Optional[list[str]] = None,
-) -> CompressedContext:
+) -> RetrievedContext:
     candidate_k = max(k * _CANDIDATE_MULTIPLIER, 20)
 
     # Vector retrieval — explicit tags scope the search; otherwise unfiltered.
@@ -59,12 +90,7 @@ def build_compressed_context(
     bm25_results = store.bm25.query(query, k=candidate_k)
 
     if not vector_results and not bm25_results:
-        return CompressedContext(
-            summary="No relevant memories found.",
-            sources=[],
-            confidence=0.0,
-            mode="uncertain",
-        )
+        return to_retrieved_context([], store)
 
     # BM25Index.query() pads results with zero-score entries (insertion-order
     # tied) when fewer than k terms match. Those carry no relevance signal, so
@@ -116,24 +142,4 @@ def build_compressed_context(
             existing_ids.add(node["id"])
             added += 1
 
-    # compress_memories_full() needs a "distance" per memory to derive
-    # confidence. BM25-only hits hydrated via get_by_uuid() don't carry a
-    # FAISS distance, so default them to a neutral mid-range value.
-    memories_for_compression = [
-        {
-            "id": c.get("id", ""),
-            "content": c.get("content", ""),
-            "distance": c.get("distance", 1.0),
-        }
-        for c in top
-    ]
-    sources = [c.get("id", "") for c in top]
-
-    summary, confidence, mode = compress_memories_full(memories_for_compression, query)
-
-    return CompressedContext(
-        summary=summary,
-        sources=sources,
-        confidence=confidence,
-        mode=mode,
-    )
+    return to_retrieved_context(top, store)

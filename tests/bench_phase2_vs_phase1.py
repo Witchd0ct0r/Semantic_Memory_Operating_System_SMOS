@@ -13,7 +13,7 @@ state (commit b890a19):
      only behavioral change to the read path. "Phase 1 state" is reproduced
      exactly (not approximately) by monkeypatching store.graph.traverse() to
      return [] — the expansion block still runs but appends nothing, which is
-     bit-for-bit what build_compressed_context did before Phase 2 (Task 5 of
+     bit-for-bit what build_context did before Phase 2 (Task 5 of
      the Phase 2 plan added nothing else to the ranking/scoring logic). This
      is more precise than checking out the old commit, because it isolates
      the single variable (graph on/off) against identical BM25/vector/RRF
@@ -46,7 +46,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from smos.compression.context_builder import build_compressed_context
+from smos.compression.context_builder import build_context
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 
@@ -110,7 +110,7 @@ def _run_recall_scenario(scenario: dict, tmp_root: Path, graph_enabled: bool) ->
     for noise in _NOISE_DOCS:
         store.store(MemoryObject(type="doc", content=noise))
 
-    result = build_compressed_context(scenario["query"], k=1, store=store)
+    result = build_context(scenario["query"], k=1, store=store)
     return target_id in result.sources
 
 

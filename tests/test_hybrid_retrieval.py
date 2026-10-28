@@ -20,6 +20,7 @@ def _make_store_with_memories(memories: list[dict], extra_bm25_docs: list[dict] 
     bm25.build([(m["id"], m["content"]) for m in memories + extra_bm25_docs])
     store.bm25 = bm25
     store.graph.traverse.return_value = []
+    store.get_summaries.return_value = {}
     all_records = memories + extra_bm25_docs
     store.get_by_uuid.side_effect = lambda uid: next(
         (m for m in all_records if m["id"] == uid), None
@@ -29,7 +30,7 @@ def _make_store_with_memories(memories: list[dict], extra_bm25_docs: list[dict] 
 
 def test_exact_term_memory_ranks_high():
     """BM25 should boost exact-match memories above pure semantic matches."""
-    from smos.compression.context_builder import build_compressed_context
+    from smos.compression.context_builder import build_context
 
     memories = [
         {"id": "id1", "content": "JWTValidator class handles token validation", "distance": 0.3, "tags": []},
@@ -38,22 +39,22 @@ def test_exact_term_memory_ranks_high():
     ]
     store = _make_store_with_memories(memories)
 
-    result = build_compressed_context("JWTValidator", k=2, store=store)
+    result = build_context("JWTValidator", k=2, store=store)
     assert result.confidence > 0.0
     # id1 has the exact term — should appear in sources
     assert "id1" in result.sources
 
 
-def test_hybrid_returns_compressedcontext():
-    from smos.compression.context_builder import build_compressed_context
-    from smos.memory.schemas import CompressedContext
+def test_hybrid_returns_retrieved_context():
+    from smos.compression.context_builder import build_context
+    from smos.memory.schemas import RetrievedContext
 
     memories = [
         {"id": "id1", "content": "test content for retrieval", "distance": 0.2, "tags": []},
     ]
     store = _make_store_with_memories(memories)
-    result = build_compressed_context("test content", k=1, store=store)
-    assert isinstance(result, CompressedContext)
+    result = build_context("test content", k=1, store=store)
+    assert isinstance(result, RetrievedContext)
 
 
 def test_bm25_only_hit_is_hydrated_via_get_by_uuid():
@@ -61,10 +62,10 @@ def test_bm25_only_hit_is_hydrated_via_get_by_uuid():
     hydrated via store.get_by_uuid() and survive missing "distance"/"tags"
     keys — get_by_uuid() results don't carry a FAISS distance the way
     vector-sourced dicts do. Without the `.get("distance", 1.0)` default in
-    build_compressed_context(), this crashes with KeyError on bare
+    build_context(), this crashes with KeyError on bare
     `c["distance"]` access.
     """
-    from smos.compression.context_builder import build_compressed_context
+    from smos.compression.context_builder import build_context
 
     memories = [
         {"id": "id1", "content": "completely unrelated filler text about weather", "distance": 0.5, "tags": []},
@@ -82,14 +83,14 @@ def test_bm25_only_hit_is_hydrated_via_get_by_uuid():
     # appearing in exactly 1 of them always has idf == log(1.5/1.5) == 0
     # (rank_bm25's formula), so "jwtvalidator" would score 0.0 even on the
     # matching doc and get filtered out as zero-relevance padding by
-    # build_compressed_context()'s BM25 zero-score filter.
+    # build_context()'s BM25 zero-score filter.
     filler_docs = [
         {"id": "filler-1", "content": "database migration script executed successfully", "metadata": {"tags": []}},
         {"id": "filler-2", "content": "caching layer improves response latency", "metadata": {"tags": []}},
     ]
     store = _make_store_with_memories(memories, extra_bm25_docs=[bm25_only_record, *filler_docs])
 
-    result = build_compressed_context("JWTValidator", k=2, store=store)
+    result = build_context("JWTValidator", k=2, store=store)
 
     # The hydration branch (store.get_by_uuid) must actually have been
     # exercised — this is what the previous tests failed to cover.

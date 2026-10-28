@@ -420,11 +420,11 @@ def bench_e2e() -> dict:
         mock_client.chat.completions.create.return_value = mock_response
         mock_client_fn.return_value = mock_client
 
-        from compression.context_builder import build_compressed_context
+        from compression.context_builder import build_context
 
         for q in queries:
             t0 = time.perf_counter()
-            _ = build_compressed_context(q, k=5, store=store)
+            _ = build_context(q, k=5, store=store)
             e2e_latencies.append(time.perf_counter() - t0)
 
     _cleanup(d)

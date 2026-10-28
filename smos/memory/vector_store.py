@@ -132,13 +132,6 @@ class VectorStore:
             )
         """)
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS ingested_files (
-                path        TEXT PRIMARY KEY,
-                memory_id   TEXT NOT NULL,
-                ingested_at TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
             CREATE TABLE IF NOT EXISTS ingest_quarantine (
                 key            TEXT PRIMARY KEY,
                 system         TEXT NOT NULL,
@@ -590,29 +583,6 @@ class VectorStore:
     # ------------------------------------------------------------------
     # File-ingestion tracking helpers
     # ------------------------------------------------------------------
-
-    def get_ingested_paths(self) -> set[str]:
-        """Return the set of file paths already ingested into this store."""
-        with self._lock:
-            rows = self._db.execute(
-                "SELECT path FROM ingested_files"
-            ).fetchall()
-        return {r[0] for r in rows}
-
-    def mark_files_ingested_batch(
-        self, path_id_pairs: list[tuple[str, str]]
-    ) -> None:
-        """Record that a batch of files has been ingested."""
-        if not path_id_pairs:
-            return
-        ts = datetime.now(timezone.utc).isoformat()
-        with self._lock:
-            self._db.executemany(
-                "INSERT OR REPLACE INTO ingested_files (path, memory_id, ingested_at) "
-                "VALUES (?,?,?)",
-                [(p, mid, ts) for p, mid in path_id_pairs],
-            )
-            self._db.commit()
 
     def save_quarantine(
         self, key: str, system: str, native_id: str, raw_payload: str, errors: str

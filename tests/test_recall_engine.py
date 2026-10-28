@@ -41,12 +41,12 @@ def test_recall_unknown_strategy_returns_error(store: VectorStore) -> None:
     assert result == {"error": "unknown strategy: bogus"}
 
 
-def test_recall_hybrid_matches_build_compressed_context(store: VectorStore) -> None:
+def test_recall_hybrid_matches_build_context(store: VectorStore) -> None:
     store.store(_mem("PostgreSQL uses MVCC for isolation."))
-    from smos.compression.context_builder import build_compressed_context
-    direct = build_compressed_context("database isolation", 5, store).model_dump()
+    from smos.compression.context_builder import build_context
+    direct = build_context("database isolation", 5, store).model_dump()
     via_recall = recall("database isolation", "hybrid", 5, "", "", "", "", store)
-    assert via_recall["summary"] == direct["summary"]
+    assert [r["id"] for r in via_recall["results"]] == [r["id"] for r in direct["results"]]
     assert via_recall["sources"] == direct["sources"]
 
 

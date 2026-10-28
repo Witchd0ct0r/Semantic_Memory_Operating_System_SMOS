@@ -13,7 +13,7 @@ Task 4 of the BM25 hybrid retrieval plan. The plan's brief called for a
 2. No `vector_store_with_corpus` fixture exists anywhere in this repo.
 
 This file implements the brief's actual test logic — seed exact-identifier
-memories plus semantically-similar noise, query via `build_compressed_context`
+memories plus semantically-similar noise, query via `build_context`
 for each exact term, assert recall >= 0.80 — as a real `test_*.py` module so
 pytest actually collects and runs it as part of the CI-equivalent suite,
 making it a genuine regression gate. It builds a real `VectorStore` (backed by
@@ -60,7 +60,7 @@ from pathlib import Path
 
 import pytest
 
-from smos.compression.context_builder import build_compressed_context
+from smos.compression.context_builder import build_context
 from smos.memory.schemas import MemoryObject
 from smos.memory.vector_store import VectorStore
 
@@ -211,7 +211,7 @@ def _seed_corpus(store: VectorStore) -> dict[str, str]:
 def _recall(store: VectorStore, ids: dict[str, str]) -> float:
     hits = 0
     for term, _content, _noise in _EXACT_TERMS:
-        result = build_compressed_context(term, k=3, store=store)
+        result = build_context(term, k=3, store=store)
         if ids[term] in result.sources:
             hits += 1
     return hits / len(_EXACT_TERMS)

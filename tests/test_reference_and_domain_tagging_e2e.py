@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from smos.compression.context_builder import build_compressed_context
+from smos.compression.context_builder import build_context
 from smos.ingest.adapters.markdown import MarkdownAdapter
 from smos.ingest.transformers.markdown_transformer import markdown_to_payload
 from smos.memory.vector_store import VectorStore
@@ -35,7 +35,7 @@ def test_markdown_cross_reference_graph_rescue_end_to_end(store: VectorStore) ->
         if "Annual results" in store.get_by_uuid(sid)["content"]
     )
 
-    context = build_compressed_context(
+    context = build_context(
         "asset threshold definition ten billion dollars", k=1, store=store
     )
     assert stress_id in context.sources

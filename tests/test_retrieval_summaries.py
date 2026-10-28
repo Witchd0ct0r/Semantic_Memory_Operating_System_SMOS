@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
+
+import pytest
+
+from smos.memory.schemas import MemoryObject
+from smos.memory.vector_store import VectorStore
+from smos.tools.semantic_tools import semantic_query
+
+
+@pytest.fixture
+def store(tmp_path: Path) -> VectorStore:
+    return VectorStore(persist_path=tmp_path / "data")
+
+
+def _mem(content: str) -> MemoryObject:
+    return MemoryObject(type="doc", content=content, timestamp=datetime.utcnow())
+
+
+def test_query_returns_stored_summary(store: VectorStore) -> None:
+    memory_id = store.store(_mem("PostgreSQL uses MVCC for transaction isolation."))
+    store.set_summary(memory_id, "Postgres isolates transactions via MVCC.", "parser-1")
+    result = semantic_query("how does postgres isolate transactions", 3, store)
+    item = next(r for r in result["results"] if r["id"] == memory_id)
+    assert item["content"] == "PostgreSQL uses MVCC for transaction isolation."
+    assert item["summary"] == "Postgres isolates transactions via MVCC."
+    assert item["summary_source"] == "parser-1"
+    assert result["mode"] == "extractive"
+
+
+def test_query_summary_null_when_absent(store: VectorStore) -> None:
+    memory_id = store.store(_mem("Redis is an in-memory data store used for caching."))
+    result = semantic_query("in-memory caching store", 3, store)
+    item = next(r for r in result["results"] if r["id"] == memory_id)
+    assert item["summary"] is None
+    assert item["summary_source"] is None
+
+
+def test_query_on_empty_store_is_uncertain(store: VectorStore) -> None:
+    result = semantic_query("anything at all here", 3, store)
+    assert result["results"] == []
+    assert result["sources"] == []
+    assert result["mode"] == "uncertain"
+    assert result["confidence"] == 0.0
