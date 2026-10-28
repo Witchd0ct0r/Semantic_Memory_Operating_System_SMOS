@@ -1,3 +1,3 @@
-from smos.server import run
+from smos.api.main import run
 
 run()

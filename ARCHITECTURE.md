@@ -1,26 +1,23 @@
 # SMOS Architecture Analysis
 
-> This document was produced by SMOS analyzing its own codebase. Claude read 10 source
-> files (982 lines total) using `tool_read_file_compress`, stored compressed summaries in
-> the semantic index, then ran 4 targeted `tool_semantic_query` calls to synthesise the
-> analysis below — without re-reading a single file at synthesis time.
->
-> **Context window at synthesis: ~850 tokens (4 queries × ~210 tokens each).
-> Without SMOS: ~4,910 tokens of raw source held in context.**
+> Architecture of SMOS 0.2 (standalone service). The built-in generative AI and the MCP
+> server are gone: SMOS stores exact text, retrieves it, and returns any summary a caller
+> supplied. Everything is reached through the authenticated HTTP API in `smos/api`.
+> Design record: `docs/superpowers/specs/2026-10-28-standalone-core-design.md`.
 
 ---
 
 ## 1. End-to-End Data Flow
 
-### 1.1 Write Path — `tool_semantic_store` / `tool_semantic_write`
+### 1.1 Write Path — `POST /api/v1/memories`
 
 ```
-MCP client → stdio → FastMCP (server.py)
+HTTP client → bearer-token check [api/deps.py] → usage-log middleware [api/app.py]
   │
-  ├─ _check_input() — min 10 chars
+  ├─ post_memory() [api/routes.py] — content min 10 chars
+  │    └─ MemoryObject(type, content, timestamp=utcnow(), tags)
   │
-  ├─ semantic_store() / semantic_write() [tools/semantic_tools.py]
-  │    └─ MemoryObject(type, content, timestamp=utcnow(), tags=[])
+  ├─ optional caller summary → VectorStore.set_summary(id, text, source)   [summaries table]
   │
   └─ VectorStore.store(memory) [memory/vector_store.py]
        acquire _lock
@@ -39,14 +36,14 @@ MCP client → stdio → FastMCP (server.py)
 Return: memory.id (UUID)
 ```
 
-### 1.2 Read Path — `tool_semantic_query`
+### 1.2 Read Path — `POST /api/v1/query`
 
 > **Updated for Phase 1 (BM25 hybrid retrieval, merged 2026-07-02, commit `b890a19`).**
 > `_classify_domain` and the fixed 70/30 rerank are gone — see below.
 
 ```
-MCP client → FastMCP
-  └─ semantic_query() → build_compressed_context() [compression/context_builder.py]
+HTTP client → bearer-token check
+  └─ semantic_query() → build_context() [compression/context_builder.py]
        │
        ├─ store.query_domain(query, k=max(k×4, 20), domain_tags) [falls back to
        │    store.query() if tags omitted or filter returns no results]
@@ -69,35 +66,25 @@ MCP client → FastMCP
        ├─ final sort: (rrf_score, term_overlap) — RRF is the primary key,
        │    term overlap only breaks ties between equal/near-equal RRF scores
        │
-       └─ compress_memories_full(top_k, query) [llm/summarizer.py]
-            └─ Ollama API call (synchronous) → retry once → extractive fallback
+       └─ to_retrieved_context(top_k, store)
+            ├─ exact stored text for each hit
+            ├─ store.get_summaries(ids) → caller-supplied summary (null when none)
+            └─ confidence = 1 - mean(distance)/2, clamped; mode = extractive | uncertain
 
-Return: CompressedContext {summary, sources, confidence, mode}
+Return: RetrievedContext {results[{id, content, summary, summary_source, score, metadata}],
+                          sources, confidence, mode}   — no text is ever generated
 ```
 
-### 1.3 File Read Path — `tool_read_file_compress`
-
-```
-MCP client → FastMCP
-  └─ read_file_compress(path, store) [tools/file_tools.py]
-       ├─ Path resolution — null-byte check + traversal guard
-       ├─ file.read_text()
-       ├─ summarize_text(content) [llm/summarizer.py]  ← LLM call
-       └─ VectorStore.store(MemoryObject(type="doc", tags=["file", path]))
-
-Return: {summary, id, source, error}
-```
-
-### 1.4 Structured Document Path — `tool_ingest_document` (Phase 5)
+### 1.3 Structured Document Path — `POST /api/v1/documents`
 
 > Added after Phase 5.5 and the requirements work (2026-10-13). Source of truth for the
-> payload fields is [docs/API.md §9](./docs/API.md#9-structured-document-ingestion-tool_ingest_document).
+> payload fields is [docs/API.md](./docs/API.md) and the generated OpenAPI (`/api/v1/openapi.json`).
 
 Documents that must be stored **exactly** and **linked** bypass the lossy summary path:
 
 ```
-MCP client → tool_ingest_document(payload_json)
-  ├─ IngestionPayload.model_validate_json     (type/schema error → {"status":"error"}, not quarantined)
+HTTP client → POST /api/v1/documents (body = IngestionPayload)
+  ├─ pydantic validation                     (type/schema error → HTTP 422, not quarantined)
   └─ do_ingest_document_schema(payload, store, adapter=None)   [tools/ingest_tools.py]
        ├─ validate_payload()  — errors → quarantine_payload() → {"status":"quarantined", ...}
        ├─ doc_id = sha1("system:native_id")[:16]          (idempotent upsert key)
@@ -114,7 +101,8 @@ MCP client → tool_ingest_document(payload_json)
        │    (targets the adapter marks document-local → concept:{doc_id}:{name})
        ├─ wire_source_links(): document --edge_type--> document   [ingest/link_wiring.py]
        │    owned edges (origin="source_link") replaced; unknown targets → placeholder document node
-       └─ save_checkpoint(status="complete")
+       ├─ save_checkpoint(status="complete")
+       └─ payload.summary → set_summary(doc_id) (cleared on re-sync when absent)
 
 Return: {status:"success", doc_id, segment_count, segment_ids, section_count,
          reference_count, link_count, resumed}
@@ -122,7 +110,7 @@ Return: {status:"success", doc_id, segment_count, segment_ids, section_count,
 
 Notes:
 
-- Over MCP no domain adapter is passed (a no-op adapter is used), so `reference_count` is 0 and
+- Over HTTP no domain adapter is passed (a no-op adapter is used), so `reference_count` is 0 and
   relationships come from `source_links`. In-text citation/term extraction (`MarkdownAdapter`,
   `LegalAdapter`) is available through the Python entry point.
 - `GraphStore.upsert_node` (not `add_node`, which is `INSERT OR IGNORE`) refreshes the document
@@ -133,12 +121,12 @@ Notes:
   (`concept:{doc_id}:{name}`), so two regulations' "Article 3" no longer collide; defined terms
   stay global so they can join across documents.
 
-### 1.5 Requirement Context Path — `tool_requirement_context`
+### 1.4 Requirement Context Path — `POST /api/v1/requirement-context`
 
 ```
-MCP client → tool_requirement_context(text|doc_id|system+native_id, level, domain_tags,
-                                      normative_tags, declared_links_json, token_budget, k)
-  └─ requirement_context_from_strings() → requirement_context(store, ...)   [memory/requirement_context.py]
+HTTP client → POST /api/v1/requirement-context {text|doc_id|system+native_id, level,
+                                domain_tags, normative_tags, declared_links, token_budget, k}
+  └─ requirement_context(store, ...)   [memory/requirement_context.py]
        ├─ resolve: stored item (document node, reconstruct() text, tags) and/or draft text
        ├─ declared links → hop-1 seeds (`declared <edge>`), unknown targets → unresolved_links
        ├─ linked:  BFS over depends_on / parent_of / member_of, both directions, ≤ 2 hops,
@@ -152,7 +140,7 @@ MCP client → tool_requirement_context(text|doc_id|system+native_id, level, dom
        │            unresolved_links
        └─ per-section budget = token_budget // 3; first item clipped rather than dropped
 
-Return: {query, linked, peers, normative, coverage, truncated}   — no LLM call anywhere
+Return: {query, linked, peers, normative, coverage, truncated}   — no model call anywhere
 ```
 
 ---
@@ -164,7 +152,7 @@ Return: {query, linked, peers, normative, coverage, truncated}   — no LLM call
 | `VectorStore._lock` | FAISS index + SQLite connection + `_insert_count` | All store/query/delete/tier operations |
 | `VectorStore._new_ids_lock` | `_new_ids: list[str]` | `store()` append; `_drain_new_ids()` clear |
 | `LifecycleManager._running` | "cycle running" flag (semaphore) | `_run_cycle()` — non-blocking acquire |
-| `file_tools._LOG_LOCK` | `logs/writes.jsonl` file handle | `_log_write()` |
+| `app.state.admin_lock` | the shared `admin.db` connection (tokens, usage log, sessions) | token auth, usage middleware, admin pages |
 
 ### Key contention scenario
 
@@ -176,10 +164,11 @@ Return: {query, linked, peers, normative, coverage, truncated}   — no LLM call
 
 ## 3. Failure Mode Catalogue
 
-### Ollama unreachable
-Query path: `compress_memories_full` catches the connection error and falls back to extractive summary (first sentence from top-3 memories). Mode returns `"uncertain"`. No crash, degraded quality.
+### Caller supplied no summary
+Not a failure: retrieval returns the exact stored text and `summary: null`. Nothing is synthesized to fill the gap, so results stay trustworthy; the parser decides whether summaries exist.
 
-File compress path: `summarize_text` falls back to first 3 sentences of file. Lower quality but stored successfully.
+### Newer or failed schema
+`run_migrations` (storage/migrations.py) refuses to open a data directory whose `schema_version` is newer than the code (`SchemaTooNewError`). Pending migrations run in one transaction after a file backup (`metadata.db.bak-v<N>`); a failure rolls the database back untouched.
 
 ### FAISS index corrupted
 `_load_or_create_index()` catches the read error and returns a fresh empty index. `_rebuild_index_if_stale()` detects the divergence (FAISS count = 0, SQLite count = n) and re-embeds all rows from SQLite in batches of 256. SQLite is the authoritative store — full recovery on next startup.
@@ -231,8 +220,7 @@ These were identified during self-analysis and are tracked for future releases.
 2. **N SQLite round-trips per query result**  
    `_query_internal()` issues one `SELECT` per result row. Replace with `WHERE row_id IN (...)` to batch all lookups into one query.
 
-3. **No input size guard before LLM calls**  
-   `compress_memories_full` passes all candidate content to the LLM without checking total token count. Large candidate sets silently exceed the model's context window.
+3. ~~**No input size guard before LLM calls**~~ — **Gone in 0.2**: SMOS no longer calls a model.
 
 ### Medium priority
 
@@ -269,21 +257,21 @@ These were identified during self-analysis and are tracked for future releases.
 
 ### Low priority
 
-8. **Double input validation** — `server.py::_check_input()` and `semantic_tools.py::_validate_text()` both enforce the 10-char minimum. One is redundant.
+8. **Input validation lives in two places** — the API routes (`_too_short`) and `semantic_tools._validate_text()` both enforce the 10-char minimum.
 
 9. **Tier promotion is insertion-order-based, not recency-based** — the oldest 25% of entries (by row_id) are always "cold" regardless of how recent they are.
 
-10. **`compress_memories` backward-compat wrapper discards `mode`** — callers cannot distinguish abstractive from extractive results.
 
 ---
 
 ## 6. Strengths
 
 - **Crash recovery** — SQLite is the authoritative store; FAISS is always rebuildable.
-- **Graceful LLM degradation** — both summarisation paths have extractive fallbacks; Ollama failures never crash callers.
+- **No generative dependency** — retrieval returns exact text plus caller-supplied summaries; there is no model to be down, slow or wrong.
+- **Authenticated by default** — every API call needs a bearer token; tokens are issued through one-time invitation links and stored only as hashes.
 - **Batch operations** — `delete_batch`, `update_tiers_batch` reduce lock acquisitions.
 - **Lifecycle guard** — `_running` non-blocking acquire prevents cycle pile-up under insert pressure.
-- **Path traversal protection** — null-byte check + `resolve()` + `relative_to()` in `file_tools.py`.
+- **Versioned storage** — numbered forward-only migrations with a pre-upgrade backup and all-or-nothing rollback.
 - **WAL mode** — allows SQLite readers during writes; reduces metadata-read lock pressure.
 - **BM25 hybrid retrieval (Phase 1)** — Reciprocal Rank Fusion over FAISS vector search
   and BM25Okapi fixes exact-term queries (function names, error codes, identifiers)
