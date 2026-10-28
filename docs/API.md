@@ -108,8 +108,10 @@ type, unknown source id), `401` auth, `404` unknown id or key, `422` schema viol
 
 ## Admin pages (not part of the API)
 
-`/admin/login`, `/admin/tokens` (access: tokens, invitations), `/admin/usage` (per-token call
-history), `/claim/<secret>` (public one-time token creation).
+`/admin/login`, `/admin/dashboard` (overview: documents, segments, database size, API load and latency,
+growth, CPU/memory/disk over time, most-used calls, per-token activity, recent events; ranges 1h, 24h, 7d,
+30d via `?range=`), `/admin/tokens` (access: tokens, invitations), `/admin/usage` (per-token call history),
+`/claim/<secret>` (public one-time token creation). Charts are drawn by SMOS itself, so the pages work offline.
 
 ## Configuration
 
@@ -120,6 +122,8 @@ history), `/claim/<secret>` (public one-time token creation).
 | `SMOS_ADMIN_USER` / `SMOS_ADMIN_PASSWORD` | — | Required on first start to create the admin |
 | `SMOS_INVITE_TTL_HOURS` | `72` | Invitation lifetime |
 | `SMOS_USAGE_RETENTION_DAYS` | `90` | Usage-log rows older than this are pruned (at start, then daily) |
+| `SMOS_METRICS_RETENTION_DAYS` | `30` | Dashboard samples (hardware and store measurements, one per minute) older than this are pruned |
+| `SMOS_SAMPLE_INTERVAL_S` | `60` | Seconds between dashboard samples |
 | `SMOS_PUBLIC_URL` | request URL | Base URL put in invitation links |
 | `SMOS_TRUST_PROXY` | off | `1` = use the first `X-Forwarded-For` entry as client IP |
 | `SMOS_COOKIE_SECURE` | off | `1` = mark the admin cookie `Secure` (use behind HTTPS) |

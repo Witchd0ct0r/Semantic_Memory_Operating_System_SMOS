@@ -97,6 +97,18 @@ Your parser or agent then sends `Authorization: Bearer <token>` on every call. T
 described at `http://<server>:8765/api/v1/docs` (log in as admin first, or use a token) and in
 `docs/API.md`.
 
+## The dashboard
+
+After logging in you land on the dashboard (`/admin/dashboard`). It shows how many documents and stored
+items SMOS holds, the database size, API calls, error rate and latency over time, CPU, memory and disk
+use against what the container is allocated, the most-used API calls, activity per token, and recent
+events (writes, errors, rejected tokens). Pick 1h, 24h, 7d or 30d at the top; the page refreshes itself
+every minute. History is kept in the data volume (30 days of hardware samples, 90 days of API calls by
+default), so it survives restarts.
+
+Hardware figures are the container's own: if you limit it (for example `mem_limit` or `cpus` in
+`compose.yaml`), the charts show usage against that limit.
+
 ## Everyday commands
 
 | Task | Command |

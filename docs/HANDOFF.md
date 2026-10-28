@@ -19,7 +19,7 @@ The standalone effort is five projects, one design at a time, in this order:
 |---|---|---|
 | 1 | **Core**: no built-in AI, caller-supplied summaries, HTTP API + OpenAPI, bearer-token auth with invitation links, per-token usage, versioned migrations, minimal admin pages | **implemented and verified** (`docs/standalone-core-verification.md`) |
 | 2 | Docker packaging: image, data volume, healthcheck, install guide | **done and running on the Governor's Debian machine** (`docs/docker-verification.md`, `docs/INSTALL.md`) |
-| 3 | Full dashboard: metrics history (items, DB size, API load, hardware over time, top calls), line charts, layout A (single overview page) chosen in brainstorming | queued |
+| 3 | Full dashboard: metrics history (items, DB size, API load, hardware over time, top calls), line charts, layout A (single overview page) chosen in brainstorming | **implemented** (spec `2026-10-28-dashboard-design.md`, plan `2026-10-28-dashboard.md`); verification record `docs/dashboard-verification.md` |
 | 4 | Self-update from remote `main` on request: version check, backup, migrate, rollback; update button + checker on the dashboard | queued |
 | 5 | Documentation: install guide, user guide, parser-author guide, agent-oriented API guide (grows with each step) | queued |
 
@@ -75,7 +75,7 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
 - Debian install works (ingest + query verified from a client PC). Learned there: the network re-signs HTTPS (extra CA
   bundle in `certs/`, git-ignored), port 8765 was blocked while 8080 worked (`SMOS_HOST_PORT`), some browsers force
   HTTPS. Never put the employer's names/hosts in the repo (memory `feedback-no-company-data-in-repo`).
-- Next: Project 3 (full dashboard and metrics) design pass.
+- Project 3 done (dashboard, `docs/dashboard-verification.md`). Next: Project 4 (self-update: version check, backup, migrate, rollback, update button) design pass. Open question for it: how an update reaches a container (no Docker socket; likely an overlay of the Python code in the data volume plus a restart, with a rebuild needed only when dependencies change).
 - **No stored data exists** to migrate; migration 1 is a plain baseline.
 - Development is on `main`; the future updater follows the remote `main`. `origin` is still
   far behind local `main` (nothing has been pushed).
