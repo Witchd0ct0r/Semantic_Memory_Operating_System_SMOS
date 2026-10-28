@@ -123,4 +123,12 @@ def _baseline(conn: sqlite3.Connection) -> None:
     """)
 
 
-STORE_MIGRATIONS: list[Migration] = [(1, "baseline", _baseline)]
+def _memories_type_index(conn: sqlite3.Connection) -> None:
+    """Version 2: makes the dashboard's per-type counts cheap (index-only) on large stores."""
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_type ON memories (type)")
+
+
+STORE_MIGRATIONS: list[Migration] = [
+    (1, "baseline", _baseline),
+    (2, "memories_type_index", _memories_type_index),
+]

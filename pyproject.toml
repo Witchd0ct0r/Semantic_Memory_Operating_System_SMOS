@@ -58,3 +58,5 @@ include = ["smos*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+# a test stuck for 5 minutes prints every thread's stack instead of stalling silently
+faulthandler_timeout = 300

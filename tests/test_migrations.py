@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from smos.memory.vector_store import VectorStore
-from smos.storage.migrations import Migration, SchemaTooNewError, run_migrations
+from smos.storage.migrations import STORE_MIGRATIONS, Migration, SchemaTooNewError, run_migrations
 
 
 def _create(name: str):
@@ -105,12 +105,12 @@ def test_store_baseline_creates_tables(tmp_path: Path) -> None:
     assert {"memories", "verbatim", "ingest_quarantine", "ingest_checkpoints",
             "summaries", "schema_version"} <= tables
     assert "ingested_files" not in tables
-    assert _version(store._db) == 1
+    assert _version(store._db) == STORE_MIGRATIONS[-1][0]
     store.close()
 
 
 def test_store_reopen_is_idempotent(tmp_path: Path) -> None:
     VectorStore(persist_path=tmp_path / "data").close()
     store = VectorStore(persist_path=tmp_path / "data")
-    assert _version(store._db) == 1
+    assert _version(store._db) == STORE_MIGRATIONS[-1][0]
     store.close()

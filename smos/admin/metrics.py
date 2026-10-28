@@ -31,12 +31,28 @@ def _int(text: Optional[str]) -> Optional[int]:
         return None
 
 
+def _non_negative(value: Optional[int]) -> Optional[int]:
+    return value if value is not None and value >= 0 else None
+
+
+def _positive(value: Optional[int]) -> Optional[int]:
+    return value if value is not None and value > 0 else None
+
+
+def _quota_cores(quota_text: Optional[str], period_text: Optional[str]) -> Optional[float]:
+    """CPU cores from a quota/period pair; None (no usable limit) for 0, negative, 'max' or garbage."""
+    quota, period = _int(quota_text), _int(period_text)
+    if quota is None or period is None or quota <= 0 or period <= 0:
+        return None
+    return quota / period
+
+
 def _host_cores() -> float:
     return float(psutil.cpu_count() or os.cpu_count() or 1)
 
 
 def _cpu_percent(usage_us: Optional[int], cores: float, previous: Optional[dict], now: float) -> Optional[float]:
-    if usage_us is None or not previous or previous.get("usage") is None:
+    if usage_us is None or not previous or previous.get("usage") is None or cores <= 0:
         return None
     elapsed_us = (now - previous["t"]) * 1_000_000
     if elapsed_us <= 0:
@@ -62,23 +78,21 @@ def read_hardware(
     usage_us: Optional[int] = None
 
     if (cgroup_root / "memory.current").exists():  # cgroup v2
-        used = _int(_read(cgroup_root / "memory.current"))
-        raw_limit = _read(cgroup_root / "memory.max")
-        limit = None if raw_limit in (None, "max") else _int(raw_limit)
-        cpu_max = (_read(cgroup_root / "cpu.max") or "max 100000").split()
-        if len(cpu_max) == 2 and cpu_max[0] != "max" and int(cpu_max[1]) > 0:
-            cores = int(cpu_max[0]) / int(cpu_max[1])
+        used = _non_negative(_int(_read(cgroup_root / "memory.current")))
+        limit = _positive(_int(_read(cgroup_root / "memory.max")))  # "max" and garbage: no limit
+        cpu_max = (_read(cgroup_root / "cpu.max") or "").split()
+        if len(cpu_max) == 2:
+            cores = _quota_cores(cpu_max[0], cpu_max[1]) or cores
         for line in (_read(cgroup_root / "cpu.stat") or "").splitlines():
             if line.startswith("usage_usec"):
                 usage_us = _int(line.split()[1])
     elif (cgroup_root / "memory" / "memory.usage_in_bytes").exists():  # cgroup v1
-        used = _int(_read(cgroup_root / "memory" / "memory.usage_in_bytes"))
-        raw_limit = _int(_read(cgroup_root / "memory" / "memory.limit_in_bytes"))
+        used = _non_negative(_int(_read(cgroup_root / "memory" / "memory.usage_in_bytes")))
+        raw_limit = _positive(_int(_read(cgroup_root / "memory" / "memory.limit_in_bytes")))
         limit = raw_limit if raw_limit is not None and raw_limit < _V1_UNLIMITED else None
-        quota = _int(_read(cgroup_root / "cpu" / "cpu.cfs_quota_us"))
-        period = _int(_read(cgroup_root / "cpu" / "cpu.cfs_period_us"))
-        if quota and quota > 0 and period and period > 0:
-            cores = quota / period
+        cores = _quota_cores(
+            _read(cgroup_root / "cpu" / "cpu.cfs_quota_us"), _read(cgroup_root / "cpu" / "cpu.cfs_period_us")
+        ) or cores
         ns = _int(_read(cgroup_root / "cpuacct" / "cpuacct.usage"))
         usage_us = ns // 1000 if ns is not None else None
     else:  # no cgroup (development): the host's numbers

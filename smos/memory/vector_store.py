@@ -43,6 +43,8 @@ class VectorStore:
         self._insert_count = 0
         self._save_interval = save_interval
         self._new_ids: list[str] = []
+        self._stats_lock = Lock()
+        self._stats_conn: Optional[sqlite3.Connection] = None
         self._doc_locks: dict[str, list] = {}  # doc_id -> [lock, holders+waiters]
         self._doc_locks_guard = Lock()
 
@@ -428,17 +430,24 @@ class VectorStore:
             rows = self._db.execute(sql, params).fetchall()
         return [{"id": r[0], "content": r[1]} for r in rows]
 
+    def _reader(self) -> sqlite3.Connection:
+        """A separate read-only connection (WAL lets it read while the main connection writes),
+        so counting never waits for, or holds up, `_lock`."""
+        if self._stats_conn is None:
+            uri = f"{self._db_file.resolve().as_uri()}?mode=ro"
+            self._stats_conn = sqlite3.connect(uri, uri=True, check_same_thread=False, timeout=10)
+        return self._stats_conn
+
     def stats(self) -> dict:
         """Cheap counts for the dashboard: documents (placeholders excluded), segments, all memories."""
-        with self._lock:
-            documents = self._db.execute(
+        with self._stats_lock:
+            conn = self._reader()
+            documents = conn.execute(
                 "SELECT COUNT(*) FROM graph_nodes WHERE type = 'document' "
                 "AND COALESCE(json_extract(metadata, '$.placeholder'), 0) = 0"
             ).fetchone()[0]
-            segments = self._db.execute(
-                "SELECT COUNT(*) FROM memories WHERE type = 'segment'"
-            ).fetchone()[0]
-            memories = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+            segments = conn.execute("SELECT COUNT(*) FROM memories WHERE type = 'segment'").fetchone()[0]
+            memories = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         return {"documents": documents, "segments": segments, "memories": memories}
 
     def file_sizes(self) -> dict:
@@ -640,6 +649,10 @@ class VectorStore:
             self._db.commit()
 
     def close(self) -> None:
+        with self._stats_lock:
+            if self._stats_conn is not None:
+                self._stats_conn.close()
+                self._stats_conn = None
         with self._lock:
             self._save_index()
             self._db.close()

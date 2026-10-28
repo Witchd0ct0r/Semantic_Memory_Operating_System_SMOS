@@ -47,6 +47,7 @@ class GraphStore:
                     UNIQUE(source_id, target_id, edge_type)
                 )
             """)
+            self._db.execute("CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes (type)")
             self._db.commit()
 
     def _migrate_legacy_graph_nodes_check(self) -> None:

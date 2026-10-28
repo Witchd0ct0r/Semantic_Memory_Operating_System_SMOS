@@ -186,3 +186,78 @@ def test_prune_samples_batch_deletes_only_old_rows_within_limit(tmp_path) -> Non
     assert usage.prune_samples_batch(conn, retention_days=30, limit=3) == 0
     assert conn.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 1
     conn.close()
+
+
+def test_zero_cpu_quota_does_not_break_later_readings(tmp_path) -> None:
+    root = _cgroup_v2(tmp_path / "cg", cpu_max="0 100000", usage_usec=1_000_000)
+    first = metrics.read_hardware(root, previous=None, now=100.0)
+    assert first["cpu_cores"] >= 1  # a zero quota means "no usable limit", not zero cores
+    _cgroup_v2(root, cpu_max="0 100000", usage_usec=3_000_000)
+    second = metrics.read_hardware(root, previous=first["cpu_state"], now=110.0)  # must not raise
+    assert second["cpu_percent"] is None or second["cpu_percent"] >= 0
+
+
+def test_negative_cpu_quota_and_garbage_cpu_max_are_unlimited(tmp_path) -> None:
+    for text in ("-5 100000", "abc def", "100000", "", "200000 0"):
+        root = _cgroup_v2(tmp_path / f"cg-{abs(hash(text))}", cpu_max=text)
+        assert metrics.read_hardware(root, previous=None, now=1.0)["cpu_cores"] >= 1, text
+
+
+def test_negative_memory_figures_are_rejected(tmp_path) -> None:
+    root = _cgroup_v2(tmp_path / "cg", mem_current=-5, mem_max="-100")
+    hw = metrics.read_hardware(root, previous=None, now=1.0)
+    assert hw["mem_used"] > 0
+    assert hw["mem_limit"] > 0 and hw["mem_limit"] >= hw["mem_used"] * 0 + 1
+
+
+def test_garbage_memory_files_fall_back_to_the_host(tmp_path) -> None:
+    root = _cgroup_v2(tmp_path / "cg", mem_current="not-a-number", mem_max="also-not")
+    hw = metrics.read_hardware(root, previous=None, now=1.0)
+    assert hw["mem_used"] > 0 and hw["mem_limit"] > 0
+
+
+def test_a_failed_reading_does_not_stop_later_samples(tmp_path) -> None:
+    app = _app(tmp_path)
+    root = _cgroup_v2(tmp_path / "cg", cpu_max="0 100000", usage_usec=1_000_000)
+    sampler = metrics.Sampler(app, interval=60, cgroup_root=root)
+    assert sampler.sample_once() is True
+    _cgroup_v2(root, cpu_max="0 100000", usage_usec=5_000_000)
+    assert sampler.sample_once() is True
+    assert app.state.admin_db.execute("SELECT COUNT(*) FROM samples").fetchone()[0] == 2
+
+
+def test_stats_do_not_wait_for_the_store_lock(tmp_path) -> None:
+    store = VectorStore(persist_path=tmp_path / "data")
+    do_ingest_document_schema(_payload("A"), store)
+    result: dict = {}
+
+    def run() -> None:
+        result["stats"] = store.stats()
+
+    with store._lock:  # e.g. a long embedding or batch write holds the store lock
+        worker = threading.Thread(target=run)
+        worker.start()
+        worker.join(timeout=5)
+        finished_while_locked = not worker.is_alive()
+    worker.join(timeout=5)
+    assert finished_while_locked, "stats() blocked on the store lock"
+    assert result["stats"]["documents"] == 1
+
+
+def test_counts_are_index_backed(tmp_path) -> None:
+    store = VectorStore(persist_path=tmp_path / "data")
+    indexes = {r[1] for r in store._db.execute("PRAGMA index_list(memories)")}
+    graph_indexes = {r[1] for r in store._db.execute("PRAGMA index_list(graph_nodes)")}
+    assert "idx_memories_type" in indexes
+    assert "idx_graph_nodes_type" in graph_indexes
+    plan = " ".join(str(r) for r in store._db.execute(
+        "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM memories WHERE type = 'segment'"))
+    assert "idx_memories_type" in plan
+
+
+def test_stats_see_data_committed_after_the_reader_connection_opened(tmp_path) -> None:
+    store = VectorStore(persist_path=tmp_path / "data")
+    assert store.stats()["documents"] == 0
+    do_ingest_document_schema(_payload("A"), store)
+    do_ingest_document_schema(_payload("B"), store)
+    assert store.stats()["documents"] == 2
