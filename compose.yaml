@@ -6,7 +6,7 @@ services:
         # Leave empty to take PyTorch from PyPI (large image). Set to a CPU-only index
         # URL in .env if one becomes reachable.
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-}
-    image: smos:0.2.0
+    image: smos:0.3.0
     ports:
       # The left number is the port people use; change it with SMOS_HOST_PORT in .env if 8765 is
       # blocked or taken. The container always listens on 8765 inside.

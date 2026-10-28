@@ -4,6 +4,8 @@ import re
 from datetime import datetime, timedelta, timezone
 
 import pytest
+
+import smos
 from fastapi.testclient import TestClient
 
 from smos.admin import tokens
@@ -52,7 +54,7 @@ def test_page_has_every_panel_and_charts(api) -> None:
         assert marker in html, marker
     assert html.count("<svg") >= 6
     assert 'http-equiv="refresh"' in html
-    assert "0.2.0" in html  # update banner slot shows the running version
+    assert smos.__version__ in html  # update banner slot shows the running version
 
 
 def test_numbers_follow_real_traffic(api) -> None:

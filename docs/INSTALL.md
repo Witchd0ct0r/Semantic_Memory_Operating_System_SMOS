@@ -83,7 +83,7 @@ The `STATUS` column shows `healthy` after about a minute (the model loads on sta
 curl -s http://localhost:8765/api/v1/health
 ```
 
-You should see `{"status":"ok","version":"0.2.0"}`.
+You should see `{"status":"ok","version":"0.3.0"}`.
 
 ## 6. First login and giving people access
 

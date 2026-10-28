@@ -4,6 +4,7 @@ import re
 
 import pytest
 
+import smos
 from smos import launcher
 from smos.launcher import UpdatePaths
 from smos.update.apply import ApplyRefused
@@ -82,7 +83,7 @@ def test_dashboard_shows_each_banner_state(admin, status, expected) -> None:
     install(status)
     page = client.get("/admin/dashboard")
     assert page.status_code == 200 and expected in page.text
-    assert "SMOS 0.2.0" in page.text
+    assert f"SMOS {smos.__version__}" in page.text
 
 
 def test_dashboard_banner_lists_rebuild_files(admin) -> None:
