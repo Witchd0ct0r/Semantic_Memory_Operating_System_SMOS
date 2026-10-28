@@ -14,7 +14,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /opt/smos/src
 
-# Optional company CA bundle (see certs/README.md) for networks that re-sign HTTPS traffic.
+# Optional extra CA bundle (see certs/README.md) for networks that re-sign HTTPS traffic.
 COPY certs /opt/smos/certs
 
 # Dependencies first, so a code change does not re-download PyTorch.

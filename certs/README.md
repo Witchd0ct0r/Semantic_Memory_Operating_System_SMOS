@@ -1,4 +1,4 @@
-# Company certificate for the image build
+# Extra CA certificates for the image build
 
 Some networks inspect HTTPS traffic and re-sign it with their own certificate authority (CA). The
 host trusts that CA, but the build container does not, so `pip install` fails with
