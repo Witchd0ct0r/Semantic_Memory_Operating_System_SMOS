@@ -72,3 +72,7 @@ not be until the Governor says all updates are finished. Nothing is running: no 
 - `docs/superpowers/specs/2026-10-28-self-update-design.md`, `.../plans/2026-10-28-self-update.md`, `docs/RELEASING.md`,
   `docs/update-verification.md`, `docs/runbooks/scripts/e2e_update.py`, `docs/superpowers/review/2026-10-28-4-review-package.md`.
 - `docs/HANDOFF.md` — current state and the five-project table.
+
+## Update (after the review fixes)
+
+Version bumped to **0.3.0** (`smos/__init__.py`, `pyproject.toml`, `compose.yaml` image tag), `main` pushed to origin (`fb808b6`) and tag `v0.3.0` pushed. No GitHub Release page exists yet, so the dashboard banner of any installation says "up to date". Debian still runs the old code and needs one rebuild to get the updater (do it only when the Governor says all updates are finished).
