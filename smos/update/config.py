@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 DEFAULT_REPO = "Witchd0ct0r/Semantic_Memory_Operating_System_SMOS"
 _REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
-_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "host.docker.internal"}
+LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "host.docker.internal"}
 
 
 @dataclass(frozen=True)
@@ -54,4 +54,4 @@ def _acceptable_base(url: str) -> bool:
     parts = urlsplit(url)
     if parts.scheme == "https" and parts.hostname:
         return True
-    return parts.scheme == "http" and parts.hostname in _LOOPBACK_HOSTS
+    return parts.scheme == "http" and parts.hostname in LOOPBACK_HOSTS
