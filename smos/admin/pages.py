@@ -86,7 +86,7 @@ def _invalid_claim(request: Request) -> HTMLResponse:
 
 def register_admin(app: FastAPI) -> None:
     app.state.throttle = Throttle()
-    router = APIRouter()
+    router = APIRouter(include_in_schema=False)
 
     # ------------------------------------------------------------ login
     @router.get("/admin/login", response_class=HTMLResponse)
