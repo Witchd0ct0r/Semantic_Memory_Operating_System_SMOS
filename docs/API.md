@@ -53,7 +53,8 @@ revoked while pending. Invalid, used, expired and revoked links all show the sam
 {
   "results": [
     {"id": "…", "content": "exact stored text", "summary": null,
-     "summary_source": null, "score": 0.83, "metadata": {"type": "segment", "doc_id": "…"}}
+     "summary_source": null, "document_summary": "Caps radiated emissions.",
+     "document_summary_source": "parser-1", "score": 0.83, "metadata": {"type": "segment", "doc_id": "…"}}
   ],
   "sources": ["…"],
   "confidence": 0.81,
@@ -61,7 +62,8 @@ revoked while pending. Invalid, used, expired and revoked links all show the sam
 }
 ```
 
-`summary` is `null` when no summary was supplied. `mode` is `extractive`, or `uncertain` when
+`summary` is the summary attached to that exact item; `document_summary` is the one attached to
+its parent document (a segment hit shows both). Either is `null` when none was supplied. `mode` is `extractive`, or `uncertain` when
 nothing matched.
 
 ### Ingestion contract (`POST /api/v1/documents`)

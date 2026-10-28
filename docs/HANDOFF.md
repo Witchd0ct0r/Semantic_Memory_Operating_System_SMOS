@@ -17,7 +17,7 @@ The standalone effort is five projects, one design at a time, in this order:
 
 | # | Project | Status |
 |---|---|---|
-| 1 | **Core**: no built-in AI, caller-supplied summaries, HTTP API + OpenAPI, bearer-token auth with invitation links, per-token usage, versioned migrations, minimal admin pages | **implemented** (see below) |
+| 1 | **Core**: no built-in AI, caller-supplied summaries, HTTP API + OpenAPI, bearer-token auth with invitation links, per-token usage, versioned migrations, minimal admin pages | **implemented and verified** (`docs/standalone-core-verification.md`) |
 | 2 | Docker packaging: image, data volume, healthcheck, install guide | next |
 | 3 | Full dashboard: metrics history (items, DB size, API load, hardware over time, top calls), line charts, layout A (single overview page) chosen in brainstorming | queued |
 | 4 | Self-update from remote `main` on request: version check, backup, migrate, rollback; update button + checker on the dashboard | queued |
@@ -55,6 +55,12 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
 
 ### Things to know
 
+- Verified against the real running service (invitation flow, summaries, revoke) and the legal bench
+  (unchanged). The real run caught one defect (document summary not visible on segment hits) which
+  is fixed: results now carry `document_summary`.
+- Next session: Project 2 (Docker). Needs a design pass first: base image, embedding model baked in
+  for offline use, volume layout, healthcheck, `SMOS_PUBLIC_URL`/`SMOS_TRUST_PROXY`/HTTPS, and where
+  the Swagger assets come from offline.
 - **No stored data exists** to migrate; migration 1 is a plain baseline.
 - Development is on `main`; the future updater follows the remote `main`. `origin` is still
   far behind local `main` (nothing has been pushed).

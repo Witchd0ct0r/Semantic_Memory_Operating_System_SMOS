@@ -50,20 +50,29 @@ def _confidence(records: list[dict]) -> float:
 
 
 def to_retrieved_context(records: list[dict], store: VectorStore) -> RetrievedContext:
-    """Exact stored text plus any caller-supplied summary; never synthesized."""
+    """Exact stored text plus any caller-supplied summary; never synthesized.
+    A segment hit also carries the summary attached to its parent document."""
     ids = [r.get("id", "") for r in records]
-    summaries = store.get_summaries(ids)
-    items = [
-        RetrievedItem(
-            id=r.get("id", ""),
-            content=r.get("content", ""),
-            summary=summaries.get(r.get("id", ""), {}).get("summary"),
-            summary_source=summaries.get(r.get("id", ""), {}).get("source"),
-            score=r.get("score"),
-            metadata=r.get("metadata", {}),
-        )
-        for r in records
+    doc_ids = [
+        d for d in ((r.get("metadata") or {}).get("doc_id") for r in records) if d
     ]
+    summaries = store.get_summaries(ids + doc_ids)
+    items = []
+    for r in records:
+        rid = r.get("id", "")
+        meta = r.get("metadata") or {}
+        own = summaries.get(rid, {})
+        doc = summaries.get(meta.get("doc_id") or "", {})
+        items.append(RetrievedItem(
+            id=rid,
+            content=r.get("content", ""),
+            summary=own.get("summary"),
+            summary_source=own.get("source"),
+            document_summary=doc.get("summary"),
+            document_summary_source=doc.get("source"),
+            score=r.get("score"),
+            metadata=meta,
+        ))
     return RetrievedContext(
         results=items,
         sources=ids,

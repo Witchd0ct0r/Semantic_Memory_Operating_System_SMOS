@@ -44,3 +44,27 @@ def test_query_on_empty_store_is_uncertain(store: VectorStore) -> None:
     assert result["sources"] == []
     assert result["mode"] == "uncertain"
     assert result["confidence"] == 0.0
+
+
+def test_segment_hit_carries_its_documents_summary(store: VectorStore) -> None:
+    from smos.ingest.contract import ContentBlock, ExternalHandle, IngestionPayload
+    from smos.tools.ingest_tools import do_ingest_document_schema
+
+    payload = IngestionPayload(
+        external_handle=ExternalHandle(system="sys", native_id="R-1"),
+        blocks=[ContentBlock(block_type="paragraph", text="The system shall limit radiated emissions.")],
+        summary="Caps radiated emissions.",
+        summary_source="parser-9",
+    )
+    doc_id = do_ingest_document_schema(payload, store)["doc_id"]
+    result = semantic_query("limit radiated emissions", 3, store)
+    item = next(r for r in result["results"] if r["metadata"].get("doc_id") == doc_id)
+    assert item["summary"] is None  # the segment itself has none
+    assert item["document_summary"] == "Caps radiated emissions."
+    assert item["document_summary_source"] == "parser-9"
+
+
+def test_plain_memory_has_no_document_summary(store: VectorStore) -> None:
+    store.store(_mem("Redis is an in-memory data store used for caching."))
+    result = semantic_query("in-memory caching store", 3, store)
+    assert result["results"][0]["document_summary"] is None
