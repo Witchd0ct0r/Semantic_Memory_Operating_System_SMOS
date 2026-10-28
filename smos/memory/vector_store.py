@@ -16,6 +16,7 @@ from smos.memory.embeddings import embed, embed_batch
 from smos.memory.entity_extractor import extract_entities
 from smos.memory.graph_store import GraphStore
 from smos.memory.schemas import MemoryObject
+from smos.storage.migrations import STORE_MIGRATIONS, run_migrations
 
 _DEFAULT_DB_PATH = Path.home() / ".smos" / "data"
 _EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 output dimension
@@ -68,90 +69,7 @@ class VectorStore:
         conn = sqlite3.connect(str(self._db_file), check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS memories (
-                row_id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                uuid      TEXT UNIQUE NOT NULL,
-                type      TEXT NOT NULL,
-                content   TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                tags      TEXT NOT NULL DEFAULT '',
-                tier      TEXT NOT NULL DEFAULT 'hot'
-            )
-        """)
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN tier TEXT NOT NULL DEFAULT 'hot'")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN source_ids TEXT NOT NULL DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN recall_count INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN last_recalled TEXT")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN doc_id TEXT")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN ordinal INTEGER")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN char_start INTEGER")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            conn.execute("ALTER TABLE memories ADD COLUMN char_end INTEGER")
-        except sqlite3.OperationalError:
-            pass
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS summaries (
-                node_id    TEXT PRIMARY KEY,
-                summary    TEXT NOT NULL,
-                source     TEXT NOT NULL DEFAULT '',
-                updated_at TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS verbatim (
-                key       TEXT PRIMARY KEY,
-                content   TEXT NOT NULL,
-                label     TEXT NOT NULL DEFAULT '',
-                timestamp TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ingest_quarantine (
-                key            TEXT PRIMARY KEY,
-                system         TEXT NOT NULL,
-                native_id      TEXT NOT NULL,
-                raw_payload    TEXT NOT NULL,
-                errors         TEXT NOT NULL,
-                quarantined_at TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ingest_checkpoints (
-                doc_id          TEXT PRIMARY KEY,
-                content_hash    TEXT NOT NULL,
-                total_leaves    INTEGER NOT NULL,
-                next_leaf_index INTEGER NOT NULL DEFAULT 0,
-                segment_ids     TEXT NOT NULL DEFAULT '',
-                status          TEXT NOT NULL DEFAULT 'in_progress',
-                updated_at      TEXT NOT NULL
-            )
-        """)
+        run_migrations(conn, STORE_MIGRATIONS, self._db_file)
         conn.commit()
         return conn
 
