@@ -32,7 +32,7 @@ order or a deadlock affects every answer the service gives. Report only; do not 
 ## 2. Run it
 
 ```bash
-rtk proxy python -m pytest tests -q                       # expect 1070 passed (about 3.5 minutes)
+rtk proxy python -m pytest tests -q                       # expect 1071 passed (about 3.5 minutes)
 rtk proxy python -m pytest tests/test_bm25_equivalence.py tests/test_rwlock.py -q   # the BM25 guard on its own, ~15 s
 python -m tests.bench_bm25                                # old against new, per query and per single add (dev PC, ~1 minute)
 ```
@@ -86,7 +86,18 @@ scores tie to 1e-12 swap inside the tie. The suite breaks the guard on purpose o
    unchanged when `errors` is `None`.
 7. **The report.** `_errors_section` and the template with hostile stored `errors` values (huge lists, NaN or infinity, wrong types,
    deeply nested data, HTML in messages); every value should reach the template as plain text that Jinja escapes.
-8. **Calibration method.** Is it defensible to set 25/40 and 10/20 flags from one pair of identical runs, and to mark them provisional?
+8. **A defect the new error analytics exposed (pre-existing, not fixed in this release).** Running the benchmark smoke preset repeatedly
+   (`runner.run` with `SMOKE`, about 3 runs in 10) produced one failed request in the "mixed: reads with writer" step: `POST /api/v1/query`
+   answers 500 and the client sees a dropped connection a millisecond later. The captured server log (the digest now reads it) shows
+   `SystemError: error return without exception set` raised at `smos/memory/vector_store.py::bump_recall`, `self._db.commit()`, called from
+   `semantic_tools.semantic_query` while a document ingest runs in another request. The same symptom appeared in the first Quick run on the
+   target host under release 0.3.3 (read and writer errors in the mixed test), so it is older than this work. What is known: `self._db` is
+   one `sqlite3` connection (`check_same_thread=False`) shared by `VectorStore` (guarded by `VectorStore._lock`) and `GraphStore` (guarded by
+   its own `_lock`; `context_builder` calls `store.graph.*` without holding `VectorStore._lock`), and several read paths may hold unfinished
+   statements. A quick two-lock stress (three threads on `graph.get_node/get_edges`, one on `set_summary`, 15 s) did **not** reproduce it,
+   so the cause is not proven. Please say what you think the mechanism is (an unfinished cursor when `COMMIT` runs, two locks over one
+   connection, anything in `ingest` chunking) and the smallest safe fix; a fix is not part of this release.
+9. **Calibration method.** Is it defensible to set 25/40 and 10/20 flags from one pair of identical runs, and to mark them provisional?
    Is `query_p95_ms` (a tail statistic from 100 samples) a poor comparison metric compared with the mean or p50?
 
 ## 4. Known limits and honest gaps
