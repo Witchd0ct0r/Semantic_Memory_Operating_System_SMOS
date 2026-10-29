@@ -80,6 +80,8 @@ class Updater:
     def begin(self, admin: str, expected_version: str, expected_sha: str) -> None:
         if not self._config.enabled:
             raise ApplyRefused("Updates are switched off on this installation.")
+        if getattr(self._app.state, "benchmark_active", False):
+            raise ApplyRefused("A benchmark is running; wait for it to finish or cancel it, then update.")
         if not self._busy.acquire(blocking=False):
             raise ApplyRefused("An update is already running or the server is restarting for one.")
         handed_over = False

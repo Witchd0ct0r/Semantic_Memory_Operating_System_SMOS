@@ -18,6 +18,7 @@ from smos.admin.metrics import Sampler
 from smos.admin.pages import register_admin
 from smos.api import routes
 from smos.api.deps import require_token, require_token_or_admin_session
+from smos.bench.service import BenchmarkService
 from smos.launcher import UpdatePaths
 from smos.memory.embeddings import model_source
 from smos.memory.lifecycle import LifecycleManager
@@ -137,6 +138,8 @@ def create_app(
     app.state.data_dir = data_dir
     app.state.maintenance = False  # set while an update restarts the server: writes get 503
     app.state.inflight = 0
+    app.state.api_inflight = 0  # /api/v1 requests being served (a benchmark start waits for zero)
+    app.state.benchmark_active = False  # set while a benchmark runs: /api/v1 answers 503 except health
     app.state.closing = False  # set just before the stores are closed for an update restart
     app.state.unauth_budget = _MinuteBudget(int(os.environ.get("SMOS_UNAUTH_LOG_PER_MIN", "60")))
     app.state.unauth_suppressed = 0
@@ -198,7 +201,13 @@ def create_app(
         """Counts requests in flight (the updater waits for zero) and, during an update restart,
         refuses admin and claim changes; /api/v1 writes are refused by require_write."""
         app.state.inflight += 1
+        api_request = request.url.path.startswith("/api/v1")
+        if api_request:
+            app.state.api_inflight += 1
         try:
+            if (api_request and app.state.benchmark_active and request.url.path != "/api/v1/health"):
+                return JSONResponse({"detail": "SMOS is running a benchmark, try again shortly"},
+                                    status_code=503, headers={"Retry-After": "30"})
             if app.state.closing:  # the stores are about to close: refuse everything, reads too
                 return JSONResponse({"detail": "SMOS is restarting for an update, try again shortly"},
                                     status_code=503, headers={"Retry-After": "30"})
@@ -209,6 +218,8 @@ def create_app(
             return await call_next(request)
         finally:
             app.state.inflight -= 1
+            if api_request:
+                app.state.api_inflight -= 1
 
     register_admin(app)
 
@@ -237,4 +248,15 @@ def create_app(
         return get_swagger_ui_html(openapi_url="/api/v1/openapi.json", title="SMOS API")
 
     update_service.attach(app, data_dir)
+
+    benchmark = BenchmarkService(app, data_dir)
+    app.state.bench = benchmark
+    benchmark.recover_on_startup()
+    closing_stores = app.state.close
+
+    def close_all() -> None:
+        benchmark.close()
+        closing_stores()
+
+    app.state.close = close_all
     return app
