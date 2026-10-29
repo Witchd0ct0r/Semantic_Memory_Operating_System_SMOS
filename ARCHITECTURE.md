@@ -243,13 +243,15 @@ These were identified during self-analysis and are tracked for future releases.
 6. **`lru_cache` on `_get_model()` is not thread-safe during first population**  
    If two threads call `embed()` simultaneously before the model is cached, both may attempt model load concurrently.
 
-7. **NEW (Phase 1) — `BM25Index.update()`/`.remove()` full-rebuild cost**
-   The single-item paths rebuild the entire `BM25Okapi` index per call — O(n) per
-   call, O(n²) cumulative at scale, held inside `VectorStore._lock`. `add_batch()`/
-   `remove_batch()` (used by `store_batch()`/`delete_batch()`) amortize this to once
-   per call, but single `store()`/`delete()` calls still pay the full rebuild.
-   Accepted as a documented Phase-1 limitation; needs an incremental-index redesign
-   before Phase 4 (HNSW) if corpora grow large.
+7. **RESOLVED (0.3.4) — `BM25Index` full-rebuild cost and serialized queries**
+   The index used `rank_bm25.BM25Okapi`: every add or remove rebuilt the whole index, and every query scored every
+   document in pure Python under one lock, so keyword search cost grew with the size of the store and concurrent queries
+   ran one after another. `BM25Index` is now a numpy inverted index (postings per word): a query touches only the
+   documents that contain its words, add and remove are incremental (removed documents are marked dead and the index
+   compacts itself past 25% dead), and queries share a read lock (`smos/memory/rwlock.py`) while mutations are
+   exclusive. Scores, ordering and tie-breaks are unchanged: `tests/bm25_reference.py` keeps the old implementation as an
+   oracle and `tests/test_bm25_equivalence.py` compares the two on random corpora and operation sequences.
+   `tests/bench_bm25.py` measures old against new.
 
 ### Added with Phase 5 / requirements work
 
@@ -282,6 +284,6 @@ These were identified during self-analysis and are tracked for future releases.
 - **Versioned storage** — numbered forward-only migrations with a pre-upgrade backup and all-or-nothing rollback.
 - **WAL mode** — allows SQLite readers during writes; reduces metadata-read lock pressure.
 - **BM25 hybrid retrieval (Phase 1)** — Reciprocal Rank Fusion over FAISS vector search
-  and BM25Okapi fixes exact-term queries (function names, error codes, identifiers)
+  and BM25 (Okapi scoring) fixes exact-term queries (function names, error codes, identifiers)
   that pure vector search missed. Exact-term recall gate: 1.00 hybrid vs 0.33
   vector-only on a tuned corpus.
