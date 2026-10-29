@@ -6,19 +6,24 @@ history log; git history is the log.
 
 ---
 
-## Where things stand (2026-10-29, session 9)
+## Where things stand (2026-10-29, session 10)
 
-> **Session 9 added the Benchmark page (project 6, table below).** Read `docs/benchmark-verification.md` for what was run and what is open
-> (Standard runs and threshold calibration on Debian; Codex review 7 is resolved). The next real release must still be 0.3.3 or higher.
+> **Session 10 prepared release 0.3.4 (committed locally, NOT pushed, NOT tagged).** Contents: the BM25 keyword search is now a numpy
+> inverted index (`smos/memory/bm25_index.py`, read-write lock in `smos/memory/rwlock.py`, exact same scores/order as the old
+> rank_bm25 class, which lives on as the test oracle `tests/bm25_reference.py`); `SMOS_TORCH_THREADS` setting
+> (`smos/memory/embeddings.py`, unset = old behavior); benchmark error analytics (`smos/bench/errorlog.py`, an "Request errors" section on
+> the report, server-log digest); per-metric comparison flags calibrated from two Standard runs. Design
+> `docs/superpowers/specs/2026-10-29-bm25-index-design.md`, plan `docs/superpowers/plans/2026-10-29-bm25-index.md`. 1069 tests pass; no
+> file that forces a rebuilt image changed, so the dashboard update works. v0.3.3 is the latest published release (Debian runs it).
+> **Next:** Governor approves push + `v0.3.4` release (`docs/RELEASING.md`); then on Debian: update, Quick, Standard twice (and the
+> `SMOS_TORCH_THREADS` 1 vs 2 comparison, `docs/runbooks/benchmark.md`), and read the new Errors section (the intermittent writer errors of
+> the mixed test were never explained). Benchmark results from the company host are company data: never put them in the repo.
+> Dev-PC micro-benchmark `tests/bench_bm25.py`: roughly 80x faster per query at 5,000 segments and 230x at 25,000 (old vs new), 100,000
+> segments about 1 ms; the Debian effect on throughput (GIL, both cores) is still unmeasured.
 
-
-> **Latest handoff (read first):** `docs/handoffs/2026-10-29-1359-benchmark-codex-7-resolved-pushed.md` (benchmark page pushed, Codex 7 resolved;
-> release 0.3.3+, Standard runs and calibration on Debian). Previous: `docs/handoffs/2026-10-29-1330-benchmark-page-done-codex-7-ready.md`.
-> Projects 1-5 are implemented. v0.3.1 is the latest real release; Debian runs 0.3.2 (the update drill's overlay), so the next real
-> release must be 0.3.3 or higher. Project 5 added `docs/guide/`, a tested example parser (`docs/examples/`) and guard tests; it
-> recorded seven behaviors as technical debt (see the handoff). Codex review 6 is resolved
-> (3 findings, `docs/guide-verification.md` section 6). Open: the two Debian checks
-> (`docs/guide-verification.md` section 4), choosing the next project from the debt list.
+> **Previous handoff:** `docs/handoffs/2026-10-29-1359-benchmark-codex-7-resolved-pushed.md` (benchmark page, Codex 7 resolved).
+> Projects 1-6 are implemented. Open: the two Debian checks (`docs/guide-verification.md` section 4), choosing the next project from the
+> debt list in `docs/guide/known-limits-and-roadmap.md`.
 
 **Direction change: SMOS is becoming a standalone, self-hosted product** the Governor will
 install in Docker inside their company for trial runs. A local agent and third-party parsers
