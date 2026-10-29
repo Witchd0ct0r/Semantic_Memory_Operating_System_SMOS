@@ -8,12 +8,10 @@ history log; git history is the log.
 
 ## Where things stand (2026-10-29, session 8)
 
-> **Latest handoff (read first):** `docs/handoffs/2026-10-29-0900-v0-3-1-released-review-5-ready.md`.
-> v0.3.1 is released (tag + GitHub Release): it fixes the defect that made every release look like it needed a rebuild.
-> Debian still runs 0.3.0 and needs ONE rebuild (recipe in `docs/runbooks/debian-deploy.md`), then the update drill
-> (`docs/runbooks/update-drill.md`). Review package 5 for Codex: `docs/superpowers/review/2026-10-29-5-review-package.md`.
-> HNSW: assessed, recommendation "not yet" (`docs/hnsw-assessment.md`). Next after the drill and review: Project 5
-> (documentation).
+> **Latest handoff (read first):** `docs/handoffs/2026-10-29-1030-drill-passed-codex-5-resolved.md`.
+> v0.3.1 released; Debian rebuilt to it; the update drill PASSED on the real image (in-place update, automatic rollback of code
+> and data, clean SIGTERM). Codex review 5 (3 Minor, all test gaps) resolved (`docs/update-verification.md` section 5).
+> HNSW assessed: not yet (`docs/hnsw-assessment.md`). Next: Project 5 (documentation). Do NOT publish a real `v0.3.2` (see below).
 
 **Direction change: SMOS is becoming a standalone, self-hosted product** the Governor will
 install in Docker inside their company for trial runs. A local agent and third-party parsers

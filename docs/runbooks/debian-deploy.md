@@ -70,7 +70,14 @@ curl -s http://localhost:8080/api/v1/health           # version
   date", which also proves outbound HTTPS to GitHub with the CA bundle works inside the container).
 - **Not yet exercised on this machine:** an actual in-place update (no release newer than 0.3.0 exists), rollback in the
   container, and the real SIGTERM path. Do that with a harmless patch release (see the newest handoff).
-- **0.3.1 (released 2026-10-29) is the next rebuild**: it fixes the "every release needs a rebuild" defect. Rebuild with the
-  recipe above; the image is now tagged `smos:latest` (compose uses `smos:${SMOS_IMAGE_TAG:-latest}`), so the old `smos:0.3.0`
-  stays on disk until removed (`docker rmi smos:0.3.0`). Afterwards run `update-drill.md` to prove in-place update and rollback.
+- **2026-10-29: rebuilt to 0.3.1** (`smos:latest`, in-image manifest equals git on all five entries, *Check now* said "up to
+  date"). Old images `smos:0.2.0` removed, `smos:0.3.0` and the build cache cleaned.
+- **2026-10-29: update drill passed** (`update-drill.md`, throwaway repo, since deleted): in-place update 0.3.1 -> 0.3.2 applied from the
+  dashboard (no rebuild offered, history row "applied", data and counts unchanged, container not recreated); failing 0.3.3
+  (migration 5 succeeds, then startup raises) was **rolled back** automatically ("the new code exited with code 1 before becoming
+  healthy"), health back to 0.3.2, counts unchanged, and admin.db had no `drill_marker` table and schema version 4, so the DATA
+  was restored. `docker compose stop` took 1.0 s (SIGTERM through PID 1 is clean).
+- **Caution:** the installation now runs the drill repository's 0.3.2 code as an overlay on the 0.3.1 image (identical to the real
+  0.3.1 except a docstring). The real repository must NOT publish a different `v0.3.2`: this install would say "up to date".
+  Next real release: 0.3.3 or higher, or rebuild the image first (a rebuilt image discards the older overlay).
 - Older images (`smos:0.2.0`, base images) are still on disk; `docker image prune` / `docker rmi smos:0.2.0` when happy.
