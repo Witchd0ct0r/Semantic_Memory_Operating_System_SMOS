@@ -8,14 +8,14 @@ history log; git history is the log.
 
 ## Where things stand (2026-10-29, session 10)
 
-> **Session 10 prepared release 0.3.4 (committed locally, NOT pushed, NOT tagged).** Contents: the BM25 keyword search is now a numpy
+> **Session 10 published release v0.3.4 (2026-10-29; pushed and tagged; Debian update + Quick + Standard x2 pending on the Governor).** Contents: the BM25 keyword search is now a numpy
 > inverted index (`smos/memory/bm25_index.py`, read-write lock in `smos/memory/rwlock.py`, exact same scores/order as the old
 > rank_bm25 class, which lives on as the test oracle `tests/bm25_reference.py`); `SMOS_TORCH_THREADS` setting
 > (`smos/memory/embeddings.py`, unset = old behavior); benchmark error analytics (`smos/bench/errorlog.py`, an "Request errors" section on
 > the report, server-log digest); per-metric comparison flags calibrated from two Standard runs. Design
 > `docs/superpowers/specs/2026-10-29-bm25-index-design.md`, plan `docs/superpowers/plans/2026-10-29-bm25-index.md`. 1069 tests pass; no
-> file that forces a rebuilt image changed, so the dashboard update works. v0.3.3 is the latest published release (Debian runs it).
-> **Next:** Governor approves push + `v0.3.4` release (`docs/RELEASING.md`); then on Debian: update, Quick, Standard twice (and the
+> file that forces a rebuilt image changed, so the dashboard update works. v0.3.4 is the latest published release.
+> **Next:** on Debian: update from the dashboard, Quick, Standard twice (and the
 > `SMOS_TORCH_THREADS` 1 vs 2 comparison, `docs/runbooks/benchmark.md`), and read the new Errors section (the intermittent writer errors of
 > the mixed test were never explained). Benchmark results from the company host are company data: never put them in the repo.
 > **Found with the new error analytics and FIXED in 0.3.4:** a real server under mixed read/write load sometimes answered a query with 500
