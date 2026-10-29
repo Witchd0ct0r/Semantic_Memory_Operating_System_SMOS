@@ -109,3 +109,92 @@ def test_dry_run_posts_nothing(parser, tmp_path, monkeypatch, capsys) -> None:
     code = parser.main(["--pdf", str(pdf), "--system", "s", "--designation", "D 1", "--name", "D", "--dry-run"])
     assert code == 0
     assert "2 blocks" in capsys.readouterr().out
+
+
+# --- against a real SMOS app (the behavior the guide documents) -------------------------------------
+
+_PAGES = [
+    ["1 Scope", "Température ± 0,5 mm à 20 °C – hôtel.", "", "1.1 Purpose"],
+    ["2 Terms", "A widget is a small mechanical thing used for testing.", "", "2.1 Widget limits",
+     "The maximum permitted widget deflection shall not exceed two millimetres."],
+]
+
+
+def _payload(parser, tmp_path, pages=None, designation="ACME 1000"):
+    pdf = tmp_path / "std.pdf"
+    pdf.write_bytes(make_pdf(pages or _PAGES))
+    return parser.build_payload(pdf, system="std-pdf", designation=designation, doc_name=designation,
+                                domain_tags=["widgets"])
+
+
+def test_ingest_and_exact_reconstruction(parser, api, tmp_path) -> None:
+    client, headers, _app = api
+    payload = _payload(parser, tmp_path)
+    body = client.post("/api/v1/documents", json=payload, headers=headers).json()
+    assert body["status"] == "success"
+    text = client.get(f"/api/v1/nodes/{body['doc_id']}/text", headers=headers).json()
+    assert text["text"] == "".join(b["text"] for b in payload["blocks"])
+    assert "Température ± 0,5 mm à 20 °C – hôtel." in text["text"]
+
+
+def test_query_returns_the_matching_clause(parser, api, tmp_path) -> None:
+    client, headers, _app = api
+    doc_id = client.post("/api/v1/documents", json=_payload(parser, tmp_path), headers=headers).json()["doc_id"]
+    results = client.post("/api/v1/query", json={"query": "maximum permitted widget deflection", "k": 3},
+                          headers=headers).json()["results"]
+    assert "deflection shall not exceed two millimetres" in results[0]["content"]
+    assert results[0]["metadata"]["doc_id"] == doc_id
+
+
+def test_reingest_is_idempotent_and_changed_pdf_replaces(parser, api, tmp_path) -> None:
+    client, headers, _app = api
+    payload = _payload(parser, tmp_path)
+    first = client.post("/api/v1/documents", json=payload, headers=headers).json()
+    second = client.post("/api/v1/documents", json=payload, headers=headers).json()
+    assert second["doc_id"] == first["doc_id"] and second["segment_count"] == first["segment_count"]
+    changed = [list(p) for p in _PAGES]
+    changed[1][4] = "The maximum permitted widget deflection shall not exceed five furlongs."
+    third = client.post("/api/v1/documents", json=_payload(parser, tmp_path, changed), headers=headers).json()
+    assert third["doc_id"] == first["doc_id"]
+    results = client.post("/api/v1/query", json={"query": "maximum permitted widget deflection", "k": 10},
+                          headers=headers).json()["results"]
+    texts = " ".join(r["content"] for r in results)
+    assert "five furlongs" in texts and "two millimetres" not in texts
+
+
+def test_read_only_token_cannot_ingest(parser, api, tmp_path) -> None:
+    from smos.admin import tokens
+
+    client, _headers, app = api
+    _id, read_token = tokens.create_token(app.state.admin_db, "ro", scope="read")
+    response = client.post("/api/v1/documents", json=_payload(parser, tmp_path),
+                           headers={"Authorization": f"Bearer {read_token}"})
+    assert response.status_code == 403
+    assert response.json() == {"detail": "this token is read-only"}
+
+
+def test_link_to_an_uningested_standard(parser, api, tmp_path) -> None:
+    """Pins documented behavior: a link may name a document that is not stored (yet)."""
+    client, headers, _app = api
+    pages = [["1 Scope", "Applies together with ISO 9001 only."]]
+    payload = _payload(parser, tmp_path, pages)
+    assert payload["source_links"]
+    response = client.post("/api/v1/documents", json=payload, headers=headers)
+    assert response.status_code == 200 and response.json()["status"] == "success"
+
+
+def test_heading_without_body_and_body_before_first_heading(parser, api, tmp_path) -> None:
+    client, headers, _app = api
+    only_heading = _payload(parser, tmp_path, [["1 Scope"]], designation="H 1")
+    body_first = _payload(parser, tmp_path, [["Some preface text.", "", "1 Scope", "Body."]], designation="H 2")
+    for payload in (only_heading, body_first):
+        assert client.post("/api/v1/documents", json=payload, headers=headers).json()["status"] == "success"
+
+
+def test_blocks_without_trailing_newline_run_together(api) -> None:
+    client, headers, _app = api
+    payload = {"external_handle": {"system": "t", "native_id": "n"},
+               "blocks": [{"block_type": "paragraph", "text": "First line."},
+                          {"block_type": "paragraph", "text": "Second line."}]}
+    doc_id = client.post("/api/v1/documents", json=payload, headers=headers).json()["doc_id"]
+    assert client.get(f"/api/v1/nodes/{doc_id}/text", headers=headers).json()["text"] == "First line.Second line."
