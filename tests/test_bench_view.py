@@ -101,3 +101,41 @@ def test_history_rows_for_cancelled_run() -> None:
     assert rows[0]["peak_rps"] == 41.0 and rows[0]["verdict"] == "not_needed"
     assert rows[2]["vs_previous"] == "regression"   # startup 9 s against the earlier run's 5 s
     assert rows[3]["vs_previous"] == "n/a"          # nothing older to compare with
+
+
+_ERRORS = {
+    "total": 7, "more_groups": 2,
+    "groups": [{"phase": "mixed: writer", "request": "document ingest", "category": "http 500", "count": 5,
+                "first_s": 1.25, "last_s": 9.0, "example": "<script>alert(1)</script>"},
+               {"phase": "4 clients", "request": "query", "category": "timeout", "count": 2,
+                "first_s": 3.0, "last_s": 3.5, "example": ""}],
+    "server": {"exceptions": [{"error": "sqlite3.OperationalError: database is locked", "count": 5}],
+               "locked_lines": 5, "timeout_lines": 1},
+}
+
+
+def test_report_has_no_errors_section_for_older_results() -> None:
+    assert build_report(_run(make_result()), None)["errors"] is None
+
+
+def test_report_errors_section_rows() -> None:
+    errors = build_report(_run(make_result(errors=_ERRORS)), None)["errors"]
+    assert errors["total"] == 7 and errors["more_groups"] == 2
+    assert errors["rows"][0] == ["mixed: writer", "document ingest", "http 500", "5", "1.2 - 9.0 s", "<script>alert(1)</script>"]
+    assert errors["rows"][1][:5] == ["4 clients", "query", "timeout", "2", "3.0 - 3.5 s"]
+    assert errors["server_rows"] == [["sqlite3.OperationalError: database is locked", "5"]]
+    assert errors["locked_lines"] == 5 and errors["timeout_lines"] == 1
+
+
+def test_report_with_zero_errors_says_so() -> None:
+    clean = {"total": 0, "groups": [], "more_groups": 0,
+             "server": {"exceptions": [], "locked_lines": 0, "timeout_lines": 0}}
+    errors = build_report(_run(make_result(errors=clean)), None)["errors"]
+    assert errors["total"] == 0 and errors["rows"] == [] and errors["server_rows"] == []
+
+
+def test_malformed_errors_value_degrades_instead_of_raising() -> None:
+    for junk in ([], "oops", {"total": "many", "groups": "x"}, {"total": 3, "groups": [{"count": "n"}, 5, None]}):
+        report = build_report(_run(make_result(errors=junk)), None)
+        assert report["errors"] is None or isinstance(report["errors"], dict)
+        assert report["tiles"]  # the rest of the report still builds

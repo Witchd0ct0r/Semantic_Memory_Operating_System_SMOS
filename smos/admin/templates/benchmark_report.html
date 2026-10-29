@@ -109,6 +109,32 @@
 </section>
 {% endif %}
 
+{% if report.errors %}
+<section data-errors="{{ report.errors.total }}">
+  <h2>Request errors</h2>
+  {% if report.errors.total == 0 %}
+  <p class="muted">No request errors were recorded during this run.</p>
+  {% else %}
+  <p>{{ report.errors.total }} request(s) failed. Each row is one kind of failure; the time is seconds since that step started.</p>
+  <table>
+    <tr><th>Where</th><th>Request</th><th>What</th><th>How many</th><th>When</th><th>Example</th></tr>
+    {% for row in report.errors.rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+  {% if report.errors.more_groups %}<p class="muted">{{ report.errors.more_groups }} more kind(s) of failure are not listed; the downloaded JSON has the first 50.</p>{% endif %}
+  {% if report.errors.server_rows or report.errors.locked_lines or report.errors.timeout_lines %}
+  <h3>What the server logged</h3>
+  {% if report.errors.server_rows %}
+  <table>
+    <tr><th>Exception</th><th>How many</th></tr>
+    {% for row in report.errors.server_rows %}<tr><td>{{ row[0] }}</td><td>{{ row[1] }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+  <p class="muted">Log lines mentioning a locked database: {{ report.errors.locked_lines }}; mentioning a timeout: {{ report.errors.timeout_lines }}.</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
 <section>
   <h2>Run details</h2>
   <dl class="details">

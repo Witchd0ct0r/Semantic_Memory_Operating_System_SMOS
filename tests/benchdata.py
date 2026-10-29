@@ -17,6 +17,7 @@ def make_result(
     sweep: Optional[list[dict]] = None,
     startup_s: float = 5.0,
     ingest_rate: float = 80.0,
+    errors: Optional[dict] = None,
 ) -> dict:
     sizes = sizes or [1000, 5000, 10000, 25000]
     p95s = p95s or [20.0, 25.0, 30.0, 38.0]
@@ -48,7 +49,7 @@ def make_result(
         {"clients": 16, "requests": 330, "errors": 0, "rps": 41.0, "p50_ms": 380.0, "p95_ms": 450.0, "p99_ms": 500.0,
          "client_cpu_share": 0.3, "client_limited": False},
     ]
-    return {
+    result = {
         "schema": 1, "preset": "standard", "seed": 1, "budget_ms": budget_ms, "sizes": sizes,
         "scaling": scaling, "sweep": sweep,
         "mixed": {"clients": 4, "read_p95_alone_ms": 120.0, "read_p95_with_writer_ms": 180.0, "writer_docs": 12},
@@ -57,3 +58,6 @@ def make_result(
         "warnings": [], "started_at": "2026-10-30T09:00:00+00:00", "finished_at": "2026-10-30T09:20:00+00:00",
         "cleanup": "verified",
     }
+    if errors is not None:
+        result["errors"] = errors
+    return result

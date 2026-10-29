@@ -226,3 +226,20 @@ def test_start_has_no_other_caller() -> None:
         if hits and path.name != "service.py":
             callers[path.relative_to(root).as_posix()] = hits
     assert callers == {"admin/pages.py": 1, "api/app.py": 1}, callers
+
+
+def test_report_page_shows_errors_escaped_or_a_no_errors_line(admin) -> None:
+    errors = {"total": 3, "more_groups": 0,
+              "groups": [{"phase": "mixed: writer", "request": "document ingest", "category": "http 500", "count": 3,
+                          "first_s": 1.0, "last_s": 2.0, "example": "<b>boom</b>"}],
+              "server": {"exceptions": [{"error": "<i>locked</i>", "count": 3}], "locked_lines": 3, "timeout_lines": 0}}
+    page = admin.client.get(f"/admin/benchmark/{_store_run(admin.app, make_result(errors=errors))}")
+    assert page.status_code == 200 and "Request errors" in page.text and "document ingest" in page.text
+    assert "<b>boom</b>" not in page.text and "&lt;b&gt;boom" in page.text
+    assert "<i>locked</i>" not in page.text and "&lt;i&gt;locked" in page.text
+    clean = {"total": 0, "groups": [], "more_groups": 0,
+             "server": {"exceptions": [], "locked_lines": 0, "timeout_lines": 0}}
+    page = admin.client.get(f"/admin/benchmark/{_store_run(admin.app, make_result(errors=clean))}")
+    assert "No request errors" in page.text
+    page = admin.client.get(f"/admin/benchmark/{_store_run(admin.app, make_result())}")
+    assert "Request errors" not in page.text and "No request errors" not in page.text

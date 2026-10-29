@@ -246,6 +246,44 @@ def _tiles(result: dict, comparison: list[dict]) -> list[dict]:
     ]
 
 
+def _int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _seconds(value) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return number if number == number else 0.0
+
+
+def _errors_section(raw: Optional[dict]) -> Optional[dict]:
+    """The failed requests of a run as table rows; None when the run predates error collection or the value is junk."""
+    errors = raw.get("errors") if isinstance(raw, dict) else None
+    if not isinstance(errors, dict):
+        return None
+    groups = errors.get("groups")
+    rows = []
+    for group in groups if isinstance(groups, list) else []:
+        if not isinstance(group, dict):
+            continue
+        rows.append([str(group.get("phase", "")), str(group.get("request", "")), str(group.get("category", "")),
+                     str(_int(group.get("count"))),
+                     f"{_seconds(group.get('first_s')):.1f} - {_seconds(group.get('last_s')):.1f} s",
+                     str(group.get("example", ""))])
+    server = errors.get("server") if isinstance(errors.get("server"), dict) else {}
+    exceptions = server.get("exceptions")
+    server_rows = [[str(item.get("error", "")), str(_int(item.get("count")))]
+                   for item in (exceptions if isinstance(exceptions, list) else []) if isinstance(item, dict)]
+    return {"total": _int(errors.get("total"), sum(_int(r[3]) for r in rows)), "rows": rows,
+            "more_groups": _int(errors.get("more_groups")), "server_rows": server_rows,
+            "locked_lines": _int(server.get("locked_lines")), "timeout_lines": _int(server.get("timeout_lines"))}
+
+
 def _message(run: dict, result: Optional[dict], complete: bool) -> str:
     status = run.get("status")
     if status == "failed":
@@ -282,6 +320,7 @@ def build_report(run: dict, previous: Optional[dict]) -> dict:
     tiles = _guard(lambda: _tiles(result, comparison), [], problems) if has_data else []
     verdict = _guard(lambda: hnsw_verdict(result, budget), None, problems) if has_data else None
     charts = _guard(lambda: _build_charts(result, budget), [], problems) if has_data else []
+    errors = _guard(lambda: _errors_section(raw), None, problems) if known else None
 
     message = _message(run, raw, complete)
     if problems:
@@ -299,7 +338,7 @@ def build_report(run: dict, previous: Optional[dict]) -> dict:
     warnings = (raw or {}).get("warnings")
     return {
         "run": run, "complete": complete and not problems, "message": message, "tiles": tiles, "verdict": verdict,
-        "charts": charts, "comparison": comparison, "details": details,
+        "charts": charts, "comparison": comparison, "errors": errors, "details": details,
         "warnings": [str(w) for w in warnings] if isinstance(warnings, list) else [],
         "definitions": METRIC_DEFINITIONS,
     }
