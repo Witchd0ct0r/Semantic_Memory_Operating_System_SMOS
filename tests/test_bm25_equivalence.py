@@ -166,3 +166,42 @@ def test_only_empty_documents_do_not_crash_and_pad_with_zero_scores() -> None:
     index = BM25Index()
     index.build([("a", ""), ("b", "")])
     assert index.query("anything", 5) == [("b", 0.0), ("a", 0.0)]
+
+
+def test_concurrent_queries_during_batches_see_whole_batches() -> None:
+    import threading
+    import time
+
+    index = BM25Index()
+    index.build([("base", "unrelated filler text")])
+    stop, errors = threading.Event(), []
+
+    def writer() -> None:
+        try:
+            i = 0
+            while not stop.is_set():
+                index.add_batch([(f"p{i}a", f"marker{i} unique_pair"), (f"p{i}b", f"marker{i} unique_pair")])
+                if i >= 3:
+                    index.remove_batch([f"p{i - 3}a", f"p{i - 3}b"])
+                i += 1
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    def reader() -> None:
+        try:
+            while not stop.is_set():
+                found = {u for u, s in index.query("unique_pair", 1000) if s > 0}
+                for u in found:
+                    other = u[:-1] + ("b" if u.endswith("a") else "a")
+                    assert other in found, f"{u} seen without {other}"
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=writer)] + [threading.Thread(target=reader) for _ in range(3)]
+    for t in threads:
+        t.start()
+    time.sleep(1.5)
+    stop.set()
+    for t in threads:
+        t.join(10)
+    assert errors == []

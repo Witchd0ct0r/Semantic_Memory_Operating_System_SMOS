@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import math
 import re
-import threading
 from collections import Counter
 from typing import Optional
 
 import numpy as np
+
+from smos.memory.rwlock import RWLock
 
 # Okapi BM25 constants, the values rank_bm25.BM25Okapi used (its outputs are what this class must reproduce).
 _K1 = 1.5
@@ -50,7 +51,7 @@ class BM25Index:
     """
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._lock = RWLock()
         self._compactions = 0
         self._clear()
 
@@ -171,7 +172,7 @@ class BM25Index:
 
     def build(self, corpus: list[tuple[str, str]]) -> None:
         """Build index from (uuid, content) pairs. Replaces existing index."""
-        with self._lock:
+        with self._lock.write():
             self._load([(uuid, Counter(_tokenize(content))) for uuid, content in corpus])
 
     def update(self, uuid: str, content: str) -> None:
@@ -180,7 +181,7 @@ class BM25Index:
 
     def add_batch(self, docs: list[tuple[str, str]]) -> None:
         """Add multiple (uuid, content) pairs; uuids already present are skipped."""
-        with self._lock:
+        with self._lock.write():
             added = False
             for uuid, content in docs:
                 if uuid in self._slot_of:
@@ -196,7 +197,7 @@ class BM25Index:
 
     def remove_batch(self, uuids: list[str]) -> None:
         """Remove multiple documents by uuid; uuids not present are skipped."""
-        with self._lock:
+        with self._lock.write():
             doomed = [uuid for uuid in dict.fromkeys(uuids) if uuid in self._slot_of]
             if not doomed:
                 return
@@ -209,7 +210,7 @@ class BM25Index:
 
         Note: Results may include zero-score entries (insertion-order tie-broken) when no query terms match the corpus.
         Callers should not assume all returned entries are relevant matches."""
-        with self._lock:
+        with self._lock.read():
             if self._live == 0 or k <= 0:
                 return []
             n = self._n_slots
