@@ -7,8 +7,11 @@ from smos.bench.stats import peak_throughput, project_size_at_budget, sustainabl
 
 PROJECTION_HEADROOM = 3.0   # the budget must be this many times the largest measured size away
 VECTOR_SHARE_MIN = 0.25     # vector search must be at least this share of a query for HNSW to help
-REGRESSION_PCT = 20.0       # more than this much worse is a regression
-SLOWER_PCT = 10.0           # more than this much worse is "slower"
+# Comparison flags, (slower %, regression %): more than the first much worse is "slower", more than the second a
+# regression. Provisional, from two identical runs on one machine: query latency and throughput varied by 10-20%
+# between them, ingest rate and startup by under 5%. Tighten as more run pairs accumulate.
+NOISY_FLAGS = (25.0, 40.0)    # latency and throughput
+STEADY_FLAGS = (10.0, 20.0)   # ingest rate and startup
 SMALL_RANGE_SEGMENTS = 10_000
 DEFAULT_BUDGET_MS = 200.0
 
@@ -44,13 +47,13 @@ METRIC_DEFINITIONS: dict[str, str] = {
     "mrr": "Mean reciprocal rank of the target segment over the needle queries (synthetic text).",
 }
 
-# key -> (label, higher_is_better)
-_COMPARED: dict[str, tuple[str, bool]] = {
-    "peak_rps": ("Peak requests/s", True),
-    "sustainable_rps": ("Sustainable requests/s", True),
-    "query_p95_ms": ("Query p95 at the largest size (ms)", False),
-    "ingest_seg_per_s": ("Ingest segments/s", True),
-    "startup_s": ("Startup at the largest size (s)", False),
+# key -> (label, higher_is_better, (slower %, regression %))
+_COMPARED: dict[str, tuple[str, bool, tuple[float, float]]] = {
+    "peak_rps": ("Peak requests/s", True, NOISY_FLAGS),
+    "sustainable_rps": ("Sustainable requests/s", True, NOISY_FLAGS),
+    "query_p95_ms": ("Query p95 at the largest size (ms)", False, NOISY_FLAGS),
+    "ingest_seg_per_s": ("Ingest segments/s", True, STEADY_FLAGS),
+    "startup_s": ("Startup at the largest size (s)", False, STEADY_FLAGS),
 }
 
 
@@ -81,18 +84,18 @@ def compare_runs(current: dict, previous: Optional[dict]) -> list[dict]:
     now = key_metrics(current)
     before = key_metrics(previous) if previous else {}
     rows = []
-    for key, (label, higher_is_better) in _COMPARED.items():
+    for key, (label, higher_is_better, (slower_pct, regression_pct)) in _COMPARED.items():
         cur, prev = now.get(key), before.get(key)
         row = {"key": key, "label": label, "previous": prev, "current": cur, "change_pct": None, "flag": "n/a"}
         if cur is not None and prev:
             change = (cur - prev) / prev * 100.0
             worse = -change if higher_is_better else change
             row["change_pct"] = change
-            if worse > REGRESSION_PCT:
+            if worse > regression_pct:
                 row["flag"] = "regression"
-            elif worse > SLOWER_PCT:
+            elif worse > slower_pct:
                 row["flag"] = "slower"
-            elif worse < -SLOWER_PCT:
+            elif worse < -slower_pct:
                 row["flag"] = "better"
             else:
                 row["flag"] = "ok"

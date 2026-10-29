@@ -85,10 +85,12 @@ make a test fail.
 
 ## 5. Known gaps and what is still open
 
-- **Standard and Full presets were not run** (decided with the Governor: they run on the Debian host). The 10% / 20% comparison
-  thresholds and the HNSW verdict thresholds are design values, **not calibrated**: they need at least two Standard runs on the same
-  machine to show run-to-run noise. The first Standard run on Debian also replaces the pessimistic latency figures in
-  `ARCHITECTURE.md` section 4 with measured ones for that machine.
+- **Calibration (2026-10-29).** Two Standard runs of identical code on the target host showed query latency and throughput varying by
+  10-20% between runs, ingest rate and startup by under 5%. The comparison flags are therefore per metric
+  (`NOISY_FLAGS` 25% / 40% for latency and throughput, `STEADY_FLAGS` 10% / 20% for ingest and startup in `smos/bench/analysis.py`),
+  provisional until more run pairs exist. The HNSW verdict thresholds (3x headroom, 25% vector share) were checked against the same
+  runs and left unchanged. The measured results are company data and are deliberately not recorded in this repository; the runs'
+  JSON exports are kept by the Governor. Full and Quick-on-other-hardware runs are still unmeasured.
 - Only one real run has a report, so the comparison table was exercised by tests only (a "no earlier run" page was seen for real).
 - Windows-only evidence for process-tree and orphan handling; the Linux/Docker behaviour (process groups, `docker stop`) is covered by
   the same code paths and by tests that run on any OS, but has not been run on the Debian host.

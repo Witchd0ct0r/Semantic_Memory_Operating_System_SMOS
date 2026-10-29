@@ -104,3 +104,37 @@ def test_compare_tolerates_missing_metric() -> None:
 def test_every_compared_metric_has_a_definition() -> None:
     for row in compare_runs(make_result(), make_result()):
         assert analysis.METRIC_DEFINITIONS[row["key"]]
+
+
+def _p95_run(p95: float) -> dict:
+    return make_result([1000, 5000, 10000, 25000], [10.0, 15.0, 20.0, p95])
+
+
+def test_latency_noise_between_identical_runs_is_not_flagged() -> None:
+    # two real runs of the same code differed by about 15% in query p95 and peak throughput
+    assert _row(compare_runs(_p95_run(115.0), _p95_run(100.0)), "query_p95_ms")["flag"] == "ok"
+    assert _row(compare_runs(_p95_run(85.0), _p95_run(100.0)), "query_p95_ms")["flag"] == "ok"
+
+
+def test_latency_slower_between_25_and_40_percent() -> None:
+    assert _row(compare_runs(_p95_run(130.0), _p95_run(100.0)), "query_p95_ms")["flag"] == "slower"
+
+
+def test_latency_regression_over_40_percent() -> None:
+    assert _row(compare_runs(_p95_run(150.0), _p95_run(100.0)), "query_p95_ms")["flag"] == "regression"
+
+
+def test_latency_better_when_over_25_percent_faster() -> None:
+    assert _row(compare_runs(_p95_run(70.0), _p95_run(100.0)), "query_p95_ms")["flag"] == "better"
+
+
+def _sweep(rps: float) -> list[dict]:
+    return [{"clients": 1, "requests": 100, "errors": 0, "rps": rps, "p50_ms": 40.0, "p95_ms": 50.0, "p99_ms": 60.0,
+             "client_cpu_share": 0.1, "client_limited": False}]
+
+
+def test_throughput_noise_is_not_flagged_but_a_big_drop_is() -> None:
+    base = make_result(sweep=_sweep(10.0))
+    assert _row(compare_runs(make_result(sweep=_sweep(8.6)), base), "peak_rps")["flag"] == "ok"
+    assert _row(compare_runs(make_result(sweep=_sweep(7.0)), base), "peak_rps")["flag"] == "slower"
+    assert _row(compare_runs(make_result(sweep=_sweep(5.0)), base), "peak_rps")["flag"] == "regression"
