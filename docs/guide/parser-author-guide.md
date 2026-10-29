@@ -60,7 +60,7 @@ SMOS cuts the joined text into **segments**, the units it embeds and returns:
 1. Every block is a candidate segment. Block types and heading levels are not used for cutting.
 2. A block longer than **800 characters** is split by sentences (then by size). The pieces become several segments and SMOS
    adds a **section** node for that block.
-3. A block shorter than **20 characters** is merged into the **previous** segment (or, if the previous one is also tiny, into the next).
+3. A block shorter than **20 characters** is merged into the **previous** segment (a tiny block at the very start is merged into the next one).
 
 Consequences for you:
 
