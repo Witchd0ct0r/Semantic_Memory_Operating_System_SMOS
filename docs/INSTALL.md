@@ -123,8 +123,10 @@ Things to know before you press it:
   restart the container); the admin pages keep working. *Cancel* ends it within seconds.
 - It runs on **generated text in a temporary store** under `bench-tmp/` in the data volume. Your documents are never read or changed,
   and everything temporary is deleted when the run ends, is cancelled or SMOS restarts.
-- It needs free disk (a few hundred MB for Quick, about 1.4 GB for Full) and about 1.5-2 GB of free memory, because it loads a second
-  copy of the embedding model. The page shows what each size needs and refuses to start if it is not available.
+- It needs free disk (a few hundred MB for Quick, about 1.4 GB for Full) and about 2.2 GB of free memory or more: the benchmark runs
+  a measuring process and its own server, each with a copy of the embedding model (the measuring process frees its copy before the
+  server starts, but the operating system may not take the memory back at once). The page shows what each size needs and refuses to
+  start if it is not available.
 - It starts **only from this page**. There is no API or command-line way to start one, and updates are refused while one runs.
 - Each report is kept (the newest 50) with the SMOS version and hardware, is compared with the previous run of the same size, can be
   downloaded as JSON, and has an **Export PDF** button (it opens the browser's print dialog; choose *Save as PDF*).

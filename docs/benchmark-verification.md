@@ -102,3 +102,22 @@ make a test fail.
    answers again afterwards.
 3. Run **Standard** twice. Send the two reports (Download JSON) so the thresholds can be calibrated.
 4. Check `ls <data dir>/bench-tmp` is empty afterwards and `docker top smos` shows no leftover `smos.bench` process.
+
+## 7. Codex review 7: resolution
+
+`docs/superpowers/review/2026-10-29-7-review.md`: 5 Important and 3 Minor, all fixed test-first (RED shown, then GREEN; the new
+guards were mutation-checked). Tests are in `tests/test_bench_review7.py`; suite 936 passed.
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | A Windows junction at `bench-tmp` redirects cleanup outside the data dir | `safe_run_dir` rejects links and reparse points (`_is_link`) for `bench-tmp` and the run directory, and requires `bench-tmp` to resolve directly inside the data directory |
+| 2 | Orphan kill matched a prefix-sibling path (`bench-tmp-other`) | `_inside` compares whole path components (normalised, absolute); tests for a sibling server and a sibling runner path |
+| 3 | Update and benchmark could both pass their checks | one `app.state.transition_lock`: `Updater.begin` checks the benchmark flag and claims "staging" in one step, `BenchmarkService.start` checks the updater and sets its flag in one step; a test pauses the updater inside its window and proves the benchmark refuses |
+| 4 | A supervisor thread that fails to start leaves a live runner and the flag set | `_abandon`: kill the runner family, delete the directory, record `failed`, clear the flag, then refuse |
+| 5 | A failed result write leaves a `running` row that blocks every later run | `_store` retries a minimal final `failed` row (up to 3 times) naming the storage error |
+| 6 | Mixed-load p95 hid failed reads | `mixed_step` returns read errors and client-limited flags for both phases; the report table shows them and the p95 is labelled "successful reads" |
+| 7 | "peak" RSS was a single post-probe sample | renamed `largest_post_probe_rss_bytes` (`runner.RSS_KEY`); older stored reports keep the old key and still render |
+| 8 | RAM estimate and install note undercounted model copies | the runner frees its model (`release_model`) before the server starts and the memory estimate is now 2.2 GiB plus 6 KiB per segment; the install note says two copies. Also found while fixing this: the model load was inside the timed ingest, so ingest rates were understated at small sizes; the model is now loaded before timing (`_open_and_warm`) |
+
+Not re-run for real after these fixes (only the runner's smoke run in the suite, which starts a real server); the Quick run on Debian
+is the next real check. Quick-run numbers in section 2 predate fixes 7 and 8 (ingest rates there include model loading).

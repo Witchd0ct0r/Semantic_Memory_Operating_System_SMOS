@@ -25,6 +25,10 @@ def _fmt(value, digits: int = 1, unit: str = "") -> str:
     return f"{value:,.{digits}f} {unit}".strip()
 
 
+def _yes_no(value) -> str:
+    return "–" if value is None else ("yes" if value else "no")
+
+
 def _get(data, *keys):
     for key in keys:
         if not isinstance(data, dict) or key not in data:
@@ -77,12 +81,15 @@ def _build_charts(result: dict, budget: float) -> list[dict]:
     if isinstance(mixed, dict) and mixed.get("read_p95_alone_ms") is not None:
         charts.add(
             "mixed", "Reads while a writer is ingesting",
-            "The same read load twice: alone, then while one client keeps ingesting new documents. p95 latency of the reads.",
+            "The same read load twice: alone, then while one client keeps ingesting new documents. The p95 is the latency "
+            "of the successful reads; reads that failed are counted in the errors column.",
             bar_chart([("alone", mixed["read_p95_alone_ms"]), ("with a writer", mixed.get("read_p95_with_writer_ms"))],
                       title="Reads while a writer is ingesting (p95)", unit="ms"),
-            ["Case", "Read p95 ms", "Read req/s"],
-            [["alone", _fmt(mixed.get("read_p95_alone_ms")), _fmt(mixed.get("read_rps_alone"))],
-             ["with a writer", _fmt(mixed.get("read_p95_with_writer_ms")), _fmt(mixed.get("read_rps_with_writer"))]])
+            ["Case", "Read p95 ms (successful reads)", "Read req/s", "Read errors", "Client-limited"],
+            [["alone", _fmt(mixed.get("read_p95_alone_ms")), _fmt(mixed.get("read_rps_alone")),
+              str(mixed.get("read_errors_alone", "–")), _yes_no(mixed.get("read_client_limited_alone"))],
+             ["with a writer", _fmt(mixed.get("read_p95_with_writer_ms")), _fmt(mixed.get("read_rps_with_writer")),
+              str(mixed.get("read_errors_with_writer", "–")), _yes_no(mixed.get("read_client_limited_with_writer"))]])
     return charts.ordered()
 
 

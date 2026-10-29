@@ -11,6 +11,7 @@ import os
 import shutil
 import threading
 import time
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
@@ -80,14 +81,17 @@ class Updater:
     def begin(self, admin: str, expected_version: str, expected_sha: str) -> None:
         if not self._config.enabled:
             raise ApplyRefused("Updates are switched off on this installation.")
-        if getattr(self._app.state, "benchmark_active", False):
-            raise ApplyRefused("A benchmark is running; wait for it to finish or cancel it, then update.")
-        if not self._busy.acquire(blocking=False):
-            raise ApplyRefused("An update is already running or the server is restarting for one.")
+        # checking for a running benchmark and claiming "staging" is one step (the benchmark's start does the mirror
+        # image under the same lock), so the two can never both pass their checks
+        with getattr(self._app.state, "transition_lock", None) or nullcontext():
+            if getattr(self._app.state, "benchmark_active", False):
+                raise ApplyRefused("A benchmark is running; wait for it to finish or cancel it, then update.")
+            if not self._busy.acquire(blocking=False):
+                raise ApplyRefused("An update is already running or the server is restarting for one.")
+            self._state = "staging"
         handed_over = False
         status: Optional[UpdateStatus] = None
         try:
-            self._state = "staging"
             status = self._check_ready(expected_version, expected_sha)
             self._stage(status)
             self._hand_over(admin, status)

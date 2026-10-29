@@ -12,10 +12,12 @@ import logging
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import threading
 import time
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -48,25 +50,49 @@ def default_command(work_dir: Path, preset: str, budget_ms: float) -> list[str]:
             "--budget-ms", repr(float(budget_ms))]
 
 
+def _is_link(path: Path) -> bool:
+    """A symbolic link or, on Windows, a junction or any other reparse point (which `Path.is_symlink` misses)."""
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & 0x400)
+
+
+def _inside(candidate: str, base: Path) -> bool:
+    """True when `candidate` is `base` or lies below it (whole path components, never a string prefix)."""
+    try:
+        path = Path(os.path.normcase(os.path.abspath(candidate)))
+        root = Path(os.path.normcase(os.path.abspath(base)))
+    except (OSError, ValueError):
+        return False
+    return path == root or root in path.parents
+
+
 def safe_run_dir(data_dir: Path, run_id: int) -> Path:
-    """`<data dir>/bench-tmp/<run id>`, and nothing else: the id must be a positive integer and the directory, if it
-    exists, must really sit inside bench-tmp (no link or junction pointing elsewhere)."""
+    """`<data dir>/bench-tmp/<run id>`, and nothing else: the id must be a positive integer, bench-tmp must be a real
+    directory directly inside the data directory (no link or junction), and so must the run directory if it exists."""
     if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id <= 0:
         raise ValueError(f"not a benchmark run id: {run_id!r}")
-    base = Path(data_dir) / BENCH_DIR
-    if base.is_symlink():
+    data = Path(data_dir)
+    base = data / BENCH_DIR
+    if _is_link(base):
         raise ValueError("bench-tmp is a link")
+    if base.exists() and base.resolve().parent != data.resolve():
+        raise ValueError(f"{base} does not lie directly inside {data}")
     path = base / str(run_id)
-    if path.exists() or path.is_symlink():
-        if path.is_symlink() or path.resolve() != base.resolve() / str(run_id):
+    if path.exists() or _is_link(path):
+        if _is_link(path) or path.resolve() != base.resolve() / str(run_id):
             raise ValueError(f"{path} does not lie inside {base}")
     return path
 
 
 def requirements(preset: Preset) -> tuple[int, int]:
-    """(free disk bytes, free memory bytes) a run of this preset needs; estimates with a margin."""
+    """(free disk bytes, free memory bytes) a run of this preset needs; estimates with a margin. Memory counts the
+    measuring process and the benchmark's own server, each holding a copy of the embedding model (the runner frees its copy
+    before the server starts, but the allocator may not give it back at once)."""
     segments = preset.sizes[-1]
-    return int(segments * 8 * 1024 * 1.5) + 200 * 1024 * 1024, int(1.5 * 1024 ** 3) + segments * 6 * 1024
+    return int(segments * 8 * 1024 * 1.5) + 200 * 1024 * 1024, int(2.2 * 1024 ** 3) + segments * 6 * 1024
 
 
 def _default_free_disk(path: Path) -> int:
@@ -129,16 +155,25 @@ class BenchmarkService:
             raise ValueError(f"the latency budget must be between 0 and {MAX_BUDGET_MS:.0f} ms")
 
         with self._lock:
-            self._check_can_start(spec)
-            self.app.state.benchmark_active = True
+            # the update interlock: checking for an update and setting our flag is one step, as it is in Updater.begin
+            with getattr(self.app.state, "transition_lock", None) or nullcontext():
+                self._check_can_start(spec)
+                self.app.state.benchmark_active = True
+            active = None
             try:
                 self._drain()
                 active = self._launch(admin, spec, budget)
+                self._active = active
+                try:
+                    threading.Thread(target=self._watch, args=(active, spec), daemon=True,
+                                     name="benchmark-watch").start()
+                except BaseException as err:
+                    self._abandon(active, f"the supervisor could not be started: {err}")
+                    raise BenchmarkRefused(f"The benchmark could not be started: {err}") from None
             except BaseException:
+                self._active = None
                 self.app.state.benchmark_active = False
                 raise
-            self._active = active
-            threading.Thread(target=self._watch, args=(active, spec), daemon=True, name="benchmark-watch").start()
             return active.run_id
 
     def cancel(self) -> bool:
@@ -212,7 +247,6 @@ class BenchmarkService:
         (a shell, an editor) is never touched, and neither is this process or any ancestor of it."""
         if not base.is_dir() or not any(base.iterdir()):
             return  # no run left anything behind, so there is nothing to look for (the scan reads every process)
-        marker = str(base)
         protected = {os.getpid()}
         try:
             protected.update(p.pid for p in psutil.Process().parents())
@@ -225,9 +259,10 @@ class BenchmarkService:
                 if not (proc.info["name"] or "").lower().startswith("python"):
                     continue
                 cmd = proc.info["cmdline"] or []
-                belongs = "smos.bench" in cmd and any(arg.startswith(marker) for arg in cmd)
+                belongs = "smos.bench" in cmd and any(_inside(arg, base) for arg in cmd)
                 if not belongs and "smos.api.main" in cmd:
-                    belongs = proc.environ().get("SMOS_DATA_DIR", "").startswith(marker)
+                    data_dir = proc.environ().get("SMOS_DATA_DIR", "")
+                    belongs = bool(data_dir) and _inside(data_dir, base)
                 if not belongs:
                     continue
                 victims = proc.children(recursive=True) + [proc]
@@ -381,6 +416,20 @@ class BenchmarkService:
         except subprocess.TimeoutExpired:
             pass
 
+    def _abandon(self, active: "_Active", reason: str) -> None:
+        """A launched run that nothing supervises: end its processes, delete its directory, record it as failed."""
+        try:
+            self._kill_family(active.process, {})
+        except Exception:
+            log.exception("could not stop the runner of benchmark %d", active.run_id)
+        self._remove_dir(active.run_dir)
+        try:
+            with self.app.state.admin_lock:
+                benchmarks.finish_run(self.app.state.admin_db, active.run_id, status="failed", result=None,
+                                      hardware=None, error=reason)
+        except Exception:
+            log.exception("could not record the failed start of benchmark %d", active.run_id)
+
     def _remove_dir(self, run_dir: Path) -> Optional[str]:
         """Delete the run directory; returns an error text if something is left."""
         problem: Optional[str] = None
@@ -417,8 +466,20 @@ class BenchmarkService:
                 benchmarks.finish_run(self.app.state.admin_db, active.run_id, status=status, result=stored,
                                       hardware=hardware, error=error)
                 benchmarks.prune(self.app.state.admin_db)
-        except Exception:
+            return
+        except Exception as err:
             log.exception("could not store benchmark run %d", active.run_id)
+            reason = f"The result could not be stored ({err}); the run itself ended as {status}. {error}".strip()
+        for _attempt in range(3):  # leave a final row, so a stuck 'running' row never blocks the next run
+            try:
+                with self.app.state.admin_lock:
+                    benchmarks.finish_run(self.app.state.admin_db, active.run_id, status="failed",
+                                          result={"schema": 1, "partial": True, "cleanup": cleanup},
+                                          hardware=None, error=reason)
+                return
+            except Exception:
+                log.exception("could not record the final state of benchmark %d", active.run_id)
+                time.sleep(0.1)
 
     @staticmethod
     def _read_json(path: Path) -> Optional[dict]:

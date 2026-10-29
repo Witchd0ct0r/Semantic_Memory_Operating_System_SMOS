@@ -6,6 +6,7 @@ directory it is given; the live service reads `progress.json` while it runs and 
 from __future__ import annotations
 
 import argparse
+import gc
 import hashlib
 import json
 import platform
@@ -30,6 +31,7 @@ from smos.bench.presets import PRESETS, SMOKE, Preset
 from smos.bench.stats import find_knee
 from smos.launcher import write_json_atomic
 
+RSS_KEY = "largest_post_probe_rss_bytes"  # one sample per size, after the latency probe: not a true peak
 SECRET_ENV = "SMOS_BENCH_LAUNCH_SECRET"
 HASH_FILE = "launch.sha256"
 REFUSAL = "benchmarks are started from the admin page"
@@ -60,6 +62,23 @@ def hardware_info() -> dict:
         "mem_total": live["mem_limit"], "platform": platform.platform(), "faiss": faiss.__version__,
         "python": platform.python_version(), "embedding_model": _MODEL_NAME,
     }
+
+
+def release_model() -> None:
+    """Free this process's copy of the embedding model, so it and the benchmark's server never both hold one."""
+    from smos.memory import embeddings
+
+    embeddings._get_model.cache_clear()
+    gc.collect()
+
+
+def _open_and_warm(data_dir: Path):
+    """Open the store and load the model now, so loading it is not counted in the timed ingest."""
+    from smos.memory.embeddings import warm_up
+
+    store = phases.open_store(data_dir)
+    warm_up()
+    return store
 
 
 class _Progress:
@@ -99,7 +118,7 @@ def run(work_dir: Path, preset: Preset, budget_ms: float, seed: int = 1) -> dict
         label = f"{size} segments"
 
         progress.update(f"{label}: ingesting")
-        store = phases.open_store(data_dir)
+        store = _open_and_warm(data_dir)
         try:
             ingest = phases.ingest_to(store, builder, size)
             progress.update(f"{label}: ingested", advance=True)
@@ -112,6 +131,7 @@ def run(work_dir: Path, preset: Preset, budget_ms: float, seed: int = 1) -> dict
             segments = store.count()
         finally:
             store.close()
+            release_model()
         footprint = phases.store_footprint(data_dir)
 
         progress.update(f"{label}: starting a server")
@@ -148,7 +168,7 @@ def run(work_dir: Path, preset: Preset, budget_ms: float, seed: int = 1) -> dict
     result = {
         "schema": 1, "preset": preset.name, "seed": seed, "budget_ms": budget_ms, "sizes": list(preset.sizes),
         "scaling": scaling, "sweep": sweep, "mixed": mixed, "hardware": hardware_info(),
-        "resources": {"peak_server_rss_bytes": peak_rss, "final_disk_bytes": scaling[-1]["disk_bytes"]},
+        "resources": {RSS_KEY: peak_rss, "final_disk_bytes": scaling[-1]["disk_bytes"]},
         "corpus_fingerprint": hashlib.sha1(json.dumps(docs, sort_keys=True).encode()).hexdigest(),
         "warnings": warnings, "started_at": started_at, "finished_at": _now(),
     }

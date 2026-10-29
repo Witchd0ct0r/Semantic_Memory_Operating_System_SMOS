@@ -138,6 +138,7 @@ def create_app(
     app.state.data_dir = data_dir
     app.state.maintenance = False  # set while an update restarts the server: writes get 503
     app.state.inflight = 0
+    app.state.transition_lock = threading.Lock()  # an update and a benchmark never start together (check + set)
     app.state.api_inflight = 0  # /api/v1 requests being served (a benchmark start waits for zero)
     app.state.benchmark_active = False  # set while a benchmark runs: /api/v1 answers 503 except health
     app.state.closing = False  # set just before the stores are closed for an update restart

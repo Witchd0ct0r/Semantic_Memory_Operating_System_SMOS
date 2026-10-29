@@ -9,7 +9,7 @@ history log; git history is the log.
 ## Where things stand (2026-10-29, session 9)
 
 > **Session 9 added the Benchmark page (project 6, table below).** Read `docs/benchmark-verification.md` for what was run and what is open
-> (Standard runs and threshold calibration on Debian; Codex review 7). The next real release must still be 0.3.3 or higher.
+> (Standard runs and threshold calibration on Debian; Codex review 7 is resolved). The next real release must still be 0.3.3 or higher.
 
 
 > **Latest handoff (read first):** `docs/handoffs/2026-10-29-1330-benchmark-page-done-codex-7-ready.md` (benchmark page done; Codex package 7
@@ -34,7 +34,7 @@ The standalone effort is five projects plus the benchmark page (6), one design a
 | 3 | Full dashboard: metrics history (items, DB size, API load, hardware over time, top calls), line charts, layout A (single overview page) chosen in brainstorming | **implemented** (spec `2026-10-28-dashboard-design.md`, plan `2026-10-28-dashboard.md`); verification record `docs/dashboard-verification.md` |
 | 4 | Self-update from **GitHub Releases** (not commits): version check, snapshot, rollback of code and data, update button + checker on the dashboard | **implemented and Codex-reviewed (review 4: 1 Critical + 3 Important + 1 Minor, all fixed with tests)**, 743 tests; real end-to-end run 33/33 (`docs/update-verification.md`); NOT yet run inside the Docker image; package (spec `2026-10-28-self-update-design.md`, plan `2026-10-28-self-update.md`, `docs/RELEASING.md`) |
 | 5 | Documentation: guide for parser authors, agents and reporters (`docs/guide/`), tested example parser, guard tests | **implemented** (spec `2026-10-29-documentation-design.md`, plan `2026-10-29-documentation.md`, record `docs/guide-verification.md`); Codex review 6 resolved |
-| 6 | **Benchmark page** (admin): run from the page (API in maintenance, throwaway store), chart report with HNSW verdict, comparison with the previous run, print-to-PDF, guaranteed cleanup, start only from the admin panel | **implemented** (spec `2026-10-29-benchmark-design.md`, plan `2026-10-29-benchmark.md`, record `docs/benchmark-verification.md`); Quick run, cancel and hard-kill verified for real on the dev PC; **Standard/Full not yet run (Governor, on Debian)**; Codex review 7 package written, not yet reviewed |
+| 6 | **Benchmark page** (admin): run from the page (API in maintenance, throwaway store), chart report with HNSW verdict, comparison with the previous run, print-to-PDF, guaranteed cleanup, start only from the admin panel | **implemented** (spec `2026-10-29-benchmark-design.md`, plan `2026-10-29-benchmark.md`, record `docs/benchmark-verification.md`); Quick run, cancel and hard-kill verified for real on the dev PC; **Standard/Full not yet run (Governor, on Debian)**; Codex review 7 resolved (8 findings, `docs/benchmark-verification.md` section 7) |
 
 Design: `docs/superpowers/specs/2026-10-28-standalone-core-design.md`.
 Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.

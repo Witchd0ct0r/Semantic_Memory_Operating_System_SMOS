@@ -295,5 +295,8 @@ def mixed_step(base_url: str, token: str, clients: int, seconds: float, probes: 
     return {
         "clients": clients, "read_p95_alone_ms": alone["p95_ms"], "read_p95_with_writer_ms": with_writer["p95_ms"],
         "read_rps_alone": alone["rps"], "read_rps_with_writer": with_writer["rps"],
+        "read_errors_alone": alone["errors"], "read_errors_with_writer": with_writer["errors"],
+        "read_client_limited_alone": alone["client_limited"],
+        "read_client_limited_with_writer": with_writer["client_limited"],
         "writer_docs": written["docs"], "writer_errors": written["errors"],
     }
