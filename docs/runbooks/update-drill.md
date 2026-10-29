@@ -16,11 +16,13 @@ never move or be deleted, `docs/RELEASING.md`).
 
 ## 1. Good release: `v0.3.2` (only `smos/` and the version line change)
 
-On the dev PC, in a clone whose `origin` is the drill repository:
+Prepared locally in `C:\Private\smos-update-drill` (a clone of `main` with no remote; commits `drill: harmless patch 0.3.2`,
+tag `v0.3.2`, and the failing `v0.3.3` after it). Publish in this order, never both releases at once:
 
-1. Edit `smos/__init__.py` to `0.3.2` and make one harmless change under `smos/` (a docstring is enough).
-2. `rtk proxy python -m pytest tests -q`, commit, `git tag v0.3.2`, push `main` and the tag.
-3. On the drill repository create a GitHub Release for `v0.3.2` with notes ("drill: harmless patch").
+1. Add the remote and push `main` plus ONLY the two drill tags:
+   `git remote add origin https://github.com/<owner>/smos-update-drill.git`,
+   `git push origin main v0.3.1 v0.3.2 v0.3.3` (the old v0.1.x / v0.3.0 tags stay local).
+2. On GitHub create a Release for tag `v0.3.2` only (notes: "drill: harmless patch"). Do not create one for `v0.3.3` yet.
 
 On Debian: open `/admin/update`, press *Check now*. Expected: "Release 0.3.2 is available", **not** "needs a rebuilt image".
 (If it says rebuild, the single-sourcing fix did not hold: stop and read the listed differing files.) Press *Update* and
@@ -29,15 +31,13 @@ an `update_log` row "success", data intact (counts unchanged).
 
 ## 2. Failing release: `v0.3.3` (must roll back)
 
-Make the new code unable to start healthy, the way a real bad release would: append an admin-DB migration that raises
-(`smos/admin/db.py`: add `(5, "drill", _boom)` to `ADMIN_MIGRATIONS`, where `_boom` raises `RuntimeError("drill")`). Bump to
-`0.3.3`, tag, push, create the release (notes: "drill: must be rolled back").
-
-The staged package still imports, so it passes the smoke test and the failure appears at startup (the migration), which is the
-case the rollback exists for. On Debian press *Update*. Expected: the supervisor starts the new code, health never reports
-0.3.3 (up to 120 s), the supervisor kills the child, restores the pre-update snapshot of the data directory and starts 0.3.2
-again; `/api/v1/health` reports `0.3.2`; `update_log` shows a rolled-back result; counts unchanged; `docker logs smos` shows
-the reason.
+`v0.3.3` adds admin-DB migration 5 (creates the table `drill_marker`, succeeds) and then makes `open_admin_db` raise, so the
+new code migrates the data and then cannot start: the worst case for a restore. Create its GitHub Release (notes: "drill: must
+be rolled back"), press *Check now*, *Update*. Expected: health never reports 0.3.3 (up to 120 s), the supervisor kills the
+child, restores the pre-update snapshot of the data directory and starts 0.3.2 again; `/api/v1/health` reports `0.3.2`;
+`update_log` shows a rolled-back result; counts unchanged; `docker compose logs smos` shows the reason. **Proof that the data was
+restored, not just the code:** `docker compose exec smos python -c "import sqlite3; print(sqlite3.connect('/data/admin.db').execute(\"select name from sqlite_master where name='drill_marker'\").fetchall())"` prints `[]`
+(and `select * from schema_version` on admin.db says 4).
 
 If time allows, as separate runs: `docker restart smos` during the 120 s wait (restart-safe marker `rollback.json`), and
 `docker stop smos` (SIGTERM through PID 1; the container should exit within the 60 s grace period).
