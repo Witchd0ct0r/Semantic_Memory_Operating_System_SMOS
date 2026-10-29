@@ -20,6 +20,7 @@ import psutil
 from smos.admin import tokens
 from smos.admin.db import open_admin_db
 from smos.bench.corpus import CorpusBuilder, Probe
+from smos.bench.errorlog import ErrorLog, category_for, message_from_body
 from smos.bench.stats import summarize_latencies
 
 CLIENT_LIMITED_SHARE = 0.85   # above this share of one core the load generator, not SMOS, is the limit
@@ -73,6 +74,17 @@ def request(base_url: str, method: str, path: str, *, token: Optional[str] = Non
         return conn.request(method, path, body)
     finally:
         conn.close()
+
+
+def _note_answer(errors: Optional[ErrorLog], phase: str, request: str, status: int, data: bytes, since: float) -> None:
+    """Record an answer that was not a success."""
+    if errors is not None and not 200 <= status < 300:
+        errors.record(phase, request, category_for(status, None), message_from_body(data), time.perf_counter() - since)
+
+
+def _note_exception(errors: Optional[ErrorLog], phase: str, request: str, error: BaseException, since: float) -> None:
+    if errors is not None:
+        errors.record(phase, request, category_for(None, error), str(error), time.perf_counter() - since)
 
 
 class BenchServer:
@@ -153,14 +165,16 @@ def _query_body(probe: Probe) -> dict:
     return {"query": probe.query, "k": _QUERY_K}
 
 
-def quality_probes(base_url: str, token: str, probes: list[Probe]) -> dict:
+def quality_probes(base_url: str, token: str, probes: list[Probe], *, errors: Optional[ErrorLog] = None,
+                   phase: str = "quality") -> dict:
     """hit@1, hit@10 and mean reciprocal rank over the needle probes (synthetic text)."""
-    conn, ranks = _Conn(base_url, token), []
+    conn, ranks, since = _Conn(base_url, token), [], time.perf_counter()
     try:
         for probe in probes:
             if not probe.marker:
                 continue
             status, data, _ms = conn.request("POST", "/api/v1/query", _query_body(probe))
+            _note_answer(errors, phase, "query", status, data, since)
             rank = None
             if status == 200:
                 for position, item in enumerate(json.loads(data).get("results", []), start=1):
@@ -188,18 +202,21 @@ def _small_document() -> dict:
     }
 
 
-def latency_probe(base_url: str, token: str, probes: list[Probe], n: int, post_docs: int = 5) -> dict:
+def latency_probe(base_url: str, token: str, probes: list[Probe], n: int, post_docs: int = 5, *,
+                  errors: Optional[ErrorLog] = None, phase: str = "latency") -> dict:
     """One client, one request at a time: the cold first query, n warm queries, node reads and small ingests.
 
     The small ingests add `post_docs` one-paragraph documents to the throwaway store.
     """
-    conn = _Conn(base_url, token)
+    conn, since = _Conn(base_url, token), time.perf_counter()
     doc_ids: list[str] = []
     try:
         status, data, cold_ms = conn.request("POST", "/api/v1/query", _query_body(probes[0]))
+        _note_answer(errors, phase, "query", status, data, since)
         queries = []
         for i in range(n):
             status, data, ms = conn.request("POST", "/api/v1/query", _query_body(probes[i % len(probes)]))
+            _note_answer(errors, phase, "query", status, data, since)
             if status == 200:
                 queries.append(ms)
                 for item in json.loads(data).get("results", []):
@@ -208,12 +225,14 @@ def latency_probe(base_url: str, token: str, probes: list[Probe], n: int, post_d
                         doc_ids.append(doc_id)
         node_text = []
         for doc_id in doc_ids[:20]:
-            status, _data, ms = conn.request("GET", f"/api/v1/nodes/{doc_id}/text")
+            status, data, ms = conn.request("GET", f"/api/v1/nodes/{doc_id}/text")
+            _note_answer(errors, phase, "node text", status, data, since)
             if status == 200:
                 node_text.append(ms)
         post_doc = []
         for _ in range(post_docs):
-            status, _data, ms = conn.request("POST", "/api/v1/documents", _small_document())
+            status, data, ms = conn.request("POST", "/api/v1/documents", _small_document())
+            _note_answer(errors, phase, "document ingest", status, data, since)
             if status == 200:
                 post_doc.append(ms)
     finally:
@@ -223,7 +242,8 @@ def latency_probe(base_url: str, token: str, probes: list[Probe], n: int, post_d
 
 
 def _load(base_url: str, token: str, clients: int, seconds: float, probes: list[Probe],
-          cpu_time: Callable[[], float], background: Optional[Callable[[threading.Event], None]] = None) -> dict:
+          cpu_time: Callable[[], float], background: Optional[Callable[[threading.Event], None]] = None, *,
+          errors: Optional[ErrorLog] = None, phase: str = "") -> dict:
     stop = threading.Event()
     results: list[list[tuple[float, bool]]] = [[] for _ in range(clients)]
 
@@ -234,10 +254,12 @@ def _load(base_url: str, token: str, clients: int, seconds: float, probes: list[
                 probe = probes[i % len(probes)]
                 i += clients
                 try:
-                    status, _data, ms = conn.request("POST", "/api/v1/query", _query_body(probe))
+                    status, data, ms = conn.request("POST", "/api/v1/query", _query_body(probe))
                     results[slot].append((ms, 200 <= status < 300))
-                except Exception:
+                    _note_answer(errors, phase, "query", status, data, started)
+                except Exception as exc:  # noqa: BLE001 - a failed request is a measurement, not a crash
                     results[slot].append((_TIMEOUT_S * 1000, False))
+                    _note_exception(errors, phase, "query", exc, started)
         finally:
             conn.close()
 
@@ -265,33 +287,39 @@ def _load(base_url: str, token: str, clients: int, seconds: float, probes: list[
 
 
 def run_step(base_url: str, token: str, clients: int, seconds: float, probes: list[Probe],
-             cpu_time: Callable[[], float] = time.process_time) -> dict:
+             cpu_time: Callable[[], float] = time.process_time, *, errors: Optional[ErrorLog] = None,
+             phase: Optional[str] = None) -> dict:
     """`clients` parallel clients querying for `seconds`; requests/s, latency percentiles, errors, client CPU share."""
-    return _load(base_url, token, clients, seconds, probes, cpu_time)
+    return _load(base_url, token, clients, seconds, probes, cpu_time, errors=errors,
+                 phase=phase if phase is not None else f"{clients} clients")
 
 
 def mixed_step(base_url: str, token: str, clients: int, seconds: float, probes: list[Probe],
-               builder: CorpusBuilder, cpu_time: Callable[[], float] = time.process_time) -> dict:
+               builder: CorpusBuilder, cpu_time: Callable[[], float] = time.process_time, *,
+               errors: Optional[ErrorLog] = None) -> dict:
     """The same read load twice: alone, then while one writer keeps ingesting new corpus documents."""
-    alone = _load(base_url, token, clients, seconds, probes, cpu_time)
+    alone = _load(base_url, token, clients, seconds, probes, cpu_time, errors=errors, phase="mixed: reads alone")
     written = {"docs": 0, "errors": 0}
 
     def writer(stop: threading.Event) -> None:
-        conn = _Conn(base_url, token)
+        conn, since = _Conn(base_url, token), time.perf_counter()
         try:
             while not stop.is_set():
                 for doc in builder.next_documents(builder.issued_segments + 20):
                     if stop.is_set():
                         return
                     try:
-                        status, _data, _ms = conn.request("POST", "/api/v1/documents", doc)
+                        status, data, _ms = conn.request("POST", "/api/v1/documents", doc)
                         written["docs" if status == 200 else "errors"] += 1
-                    except Exception:
+                        _note_answer(errors, "mixed: writer", "document ingest", status, data, since)
+                    except Exception as exc:  # noqa: BLE001
                         written["errors"] += 1
+                        _note_exception(errors, "mixed: writer", "document ingest", exc, since)
         finally:
             conn.close()
 
-    with_writer = _load(base_url, token, clients, seconds, probes, cpu_time, background=writer)
+    with_writer = _load(base_url, token, clients, seconds, probes, cpu_time, background=writer, errors=errors,
+                        phase="mixed: reads with writer")
     return {
         "clients": clients, "read_p95_alone_ms": alone["p95_ms"], "read_p95_with_writer_ms": with_writer["p95_ms"],
         "read_rps_alone": alone["rps"], "read_rps_with_writer": with_writer["rps"],

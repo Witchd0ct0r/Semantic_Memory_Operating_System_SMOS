@@ -9,11 +9,14 @@ import pytest
 
 from smos.bench import httpload
 from smos.bench.corpus import CorpusBuilder, Probe
+from smos.bench.errorlog import ErrorLog
 
 
 class _Stub(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     posted_docs = 0
+    fail_documents = False
+    fail_nodes = False
 
     def log_message(self, *args) -> None:  # silence
         pass
@@ -27,15 +30,22 @@ class _Stub(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:
+        if type(self).fail_nodes:
+            return self._send(500, {"detail": "node boom"})
         self._send(200, {"text": "x", "complete": True})
 
     def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
         if self.path == "/api/v1/documents":
+            if type(self).fail_documents:
+                return self._send(500, {"detail": "ingest boom"})
             type(self).posted_docs += 1
             return self._send(200, {"status": "stored", "doc_id": "d-new"})
         query = body.get("query", "")
+        if "DROP" in query:
+            self.close_connection = True
+            return  # no answer at all: the client sees the connection close
         if "FAIL" in query:
             return self._send(500, {"detail": "boom"})
         hit = f"found REQ-000005 here" if "REQ-000005" in query else "nothing relevant"
@@ -47,6 +57,8 @@ class _Stub(BaseHTTPRequestHandler):
 def stub():
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Stub)
     _Stub.posted_docs = 0
+    _Stub.fail_documents = False
+    _Stub.fail_nodes = False
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_address[1]}"
@@ -108,3 +120,48 @@ def test_bench_server_start_returns_after_health_and_stop_kills_tree(tmp_path) -
         pid = server.pid
         server.stop()
     assert not psutil.pid_exists(pid)
+
+
+def test_run_step_records_failures_in_the_error_log(stub) -> None:
+    log = ErrorLog()
+    step = httpload.run_step(stub, "tok", clients=2, seconds=0.6, probes=[GOOD, Probe("FAIL this request please")],
+                             errors=log)
+    summary = log.summary()
+    group = summary["groups"][0]
+    assert (group["phase"], group["request"], group["category"], group["example"]) == ("2 clients", "query", "http 500", "boom")
+    assert summary["total"] == step["errors"] > 0
+
+
+def test_dropped_connections_are_recorded_with_the_exception_class(stub) -> None:
+    log = ErrorLog()
+    httpload.run_step(stub, "tok", clients=1, seconds=0.4, probes=[Probe("DROP the connection now")], errors=log)
+    groups = log.summary()["groups"]
+    assert groups and all(g["category"] and g["category"] != "http 200" for g in groups)
+    assert any("Disconnected" in g["category"] or "Error" in g["category"] or g["category"] == "timeout" for g in groups)
+
+
+def test_mixed_step_records_writer_failures(stub) -> None:
+    _Stub.fail_documents = True
+    log = ErrorLog()
+    result = httpload.mixed_step(stub, "tok", clients=1, seconds=0.4, probes=[GOOD], builder=CorpusBuilder(1), errors=log)
+    assert result["writer_errors"] > 0
+    writer = [g for g in log.summary()["groups"] if g["phase"] == "mixed: writer"]
+    assert writer and writer[0]["request"] == "document ingest" and writer[0]["category"] == "http 500"
+    assert writer[0]["count"] == result["writer_errors"] and writer[0]["example"] == "ingest boom"
+
+
+def test_latency_probe_records_non_200_answers(stub) -> None:
+    _Stub.fail_nodes = True
+    log = ErrorLog()
+    result = httpload.latency_probe(stub, "tok", [GOOD], n=5, post_docs=2, errors=log, phase="100 segments: latency")
+    groups = log.summary()["groups"]
+    assert result["node_text"]["n"] == 0
+    assert any(g["request"] == "node text" and g["phase"] == "100 segments: latency" and g["category"] == "http 500"
+               for g in groups)
+
+
+def test_quality_probes_record_non_200_answers(stub) -> None:
+    log = ErrorLog()
+    httpload.quality_probes(stub, "tok", [Probe("FAIL needle query", "REQ-000005", 5)], errors=log,
+                            phase="100 segments: quality")
+    assert log.summary()["groups"][0]["phase"] == "100 segments: quality"
