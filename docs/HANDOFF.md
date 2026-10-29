@@ -8,7 +8,8 @@ history log; git history is the log.
 
 ## Where things stand (2026-10-29, session 8, evening)
 
-> **Latest handoff (read first):** `docs/handoffs/2026-10-29-1530-project-5-documentation-done.md`.
+> **Latest handoff (read first):** `docs/handoffs/2026-10-29-1700-next-dashboard-page-and-benchmarking.md` (next session: a new dashboard
+> page and automated benchmarking; brainstorm first). Previous: `docs/handoffs/2026-10-29-1530-project-5-documentation-done.md`.
 > Projects 1-5 are implemented. v0.3.1 is the latest real release; Debian runs 0.3.2 (the update drill's overlay), so the next real
 > release must be 0.3.3 or higher. Project 5 added `docs/guide/`, a tested example parser (`docs/examples/`) and guard tests; it
 > recorded seven behaviors as technical debt (see the handoff). Codex review 6 is resolved
