@@ -3,12 +3,13 @@ import sqlite3
 import pytest
 
 from smos.memory.graph_store import GraphStore
+from tests.helpers import migrated_graph
 
 
 @pytest.fixture
 def graph() -> GraphStore:
     conn = sqlite3.connect(":memory:", check_same_thread=False)
-    return GraphStore(conn)
+    return migrated_graph(conn)
 
 
 def test_add_node_and_get_node(graph: GraphStore) -> None:
@@ -156,7 +157,7 @@ def test_migrates_legacy_graph_edges_check_constraint(tmp_path) -> None:
     )
     conn.commit()
 
-    store = GraphStore(conn)
+    store = migrated_graph(conn)
 
     assert store.edge_count() == 1
     store.add_edge("mem1", "req1", "satisfies")
@@ -180,7 +181,7 @@ def test_migrates_legacy_graph_nodes_check_constraint(tmp_path) -> None:
     )
     conn.commit()
 
-    store = GraphStore(conn)
+    store = migrated_graph(conn)
 
     old_node = store.get_node("mem1")
     assert old_node is not None
@@ -219,7 +220,7 @@ def test_migrates_5_1_schema_graph_nodes_check_constraint(tmp_path) -> None:
     )
     conn.commit()
 
-    store = GraphStore(conn)
+    store = migrated_graph(conn)
 
     old_node = store.get_node("doc1")
     assert old_node is not None

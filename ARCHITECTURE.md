@@ -217,8 +217,9 @@ These were identified during self-analysis and are tracked for future releases.
 1. **`embed()` called while holding `_lock`**  
    Moving `embed()` outside the lock (compute embedding, then acquire lock to insert) would allow concurrent embedding and significantly improve throughput under load.
 
-2. **N SQLite round-trips per query result**  
-   `_query_internal()` issues one `SELECT` per result row. Replace with `WHERE row_id IN (...)` to batch all lookups into one query.
+2. ~~**N SQLite round-trips per query result**~~ — **Resolved in 0.3.1**: `_query_internal()` reads all hits
+   with one `WHERE row_id IN (...)` SELECT (chunked below SQLite's variable limit), and the hybrid
+   retrievers hydrate BM25-only hits through `VectorStore.get_many()` instead of one `get_by_uuid()` each.
 
 3. ~~**No input size guard before LLM calls**~~ — **Gone in 0.2**: SMOS no longer calls a model.
 

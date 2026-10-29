@@ -128,7 +128,77 @@ def _memories_type_index(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_type ON memories (type)")
 
 
+def _graph_tables(conn: sqlite3.Connection) -> None:
+    """Version 3: the graph tables, previously created by GraphStore itself.
+
+    Databases written by earlier builds already have them. Two even older shapes are rebuilt in place:
+    a `graph_nodes` CHECK that predates the 'section' type (Phase 5.2; the guard keys off 'section', not
+    'document', so a 5.1-era table is not mistaken for migrated) and a `graph_edges` CHECK that restricted
+    `edge_type` to a fixed vocabulary (Phase 5 made it open text, validated in application code).
+    """
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='graph_nodes'").fetchone()
+    if row is not None and row[0] is not None and "'section'" not in row[0]:
+        conn.execute("ALTER TABLE graph_nodes RENAME TO graph_nodes_legacy")
+        conn.execute("""
+        CREATE TABLE graph_nodes (
+            id         TEXT PRIMARY KEY,
+            type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document','section')),
+            name       TEXT NOT NULL,
+            metadata   TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+        conn.execute(
+            "INSERT INTO graph_nodes (id, type, name, metadata, created_at) "
+            "SELECT id, type, name, metadata, created_at FROM graph_nodes_legacy"
+        )
+        conn.execute("DROP TABLE graph_nodes_legacy")
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='graph_edges'").fetchone()
+    if row is not None and row[0] is not None and "CHECK(edge_type" in row[0]:
+        conn.execute("ALTER TABLE graph_edges RENAME TO graph_edges_legacy")
+        conn.execute("""
+        CREATE TABLE graph_edges (
+            id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+            source_id  TEXT NOT NULL,
+            target_id  TEXT NOT NULL,
+            edge_type  TEXT NOT NULL,
+            weight     REAL DEFAULT 1.0,
+            metadata   TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(source_id, target_id, edge_type)
+        )
+    """)
+        conn.execute(
+            "INSERT INTO graph_edges (id, source_id, target_id, edge_type, weight, metadata, created_at) "
+            "SELECT id, source_id, target_id, edge_type, weight, metadata, created_at FROM graph_edges_legacy"
+        )
+        conn.execute("DROP TABLE graph_edges_legacy")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS graph_nodes (
+            id         TEXT PRIMARY KEY,
+            type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document','section')),
+            name       TEXT NOT NULL,
+            metadata   TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS graph_edges (
+            id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+            source_id  TEXT NOT NULL,
+            target_id  TEXT NOT NULL,
+            edge_type  TEXT NOT NULL,
+            weight     REAL DEFAULT 1.0,
+            metadata   TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(source_id, target_id, edge_type)
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes (type)")
+
+
 STORE_MIGRATIONS: list[Migration] = [
     (1, "baseline", _baseline),
     (2, "memories_type_index", _memories_type_index),
+    (3, "graph_tables", _graph_tables),
 ]

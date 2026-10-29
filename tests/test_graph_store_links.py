@@ -5,10 +5,11 @@ import sqlite3
 import pytest
 
 from smos.memory.graph_store import GraphStore
+from tests.helpers import migrated_graph
 
 
 def _graph() -> GraphStore:
-    return GraphStore(sqlite3.connect(":memory:", check_same_thread=False))
+    return migrated_graph(sqlite3.connect(":memory:", check_same_thread=False))
 
 
 def test_upsert_node_inserts_then_overwrites_name_and_metadata():

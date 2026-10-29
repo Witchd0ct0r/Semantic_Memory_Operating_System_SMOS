@@ -114,3 +114,23 @@ def test_store_reopen_is_idempotent(tmp_path: Path) -> None:
     store = VectorStore(persist_path=tmp_path / "data")
     assert _version(store._db) == STORE_MIGRATIONS[-1][0]
     store.close()
+
+
+def test_graph_tables_migration_adopts_existing_current_tables(tmp_path: Path) -> None:
+    """A data directory written by 0.3.x (graph tables created by GraphStore, store schema at 2)
+    keeps its graph rows when it moves to version 3."""
+    from smos.memory.graph_store import GraphStore
+
+    path = tmp_path / "metadata.db"
+    conn = sqlite3.connect(str(path), check_same_thread=False)
+    run_migrations(conn, STORE_MIGRATIONS[:2], path)
+    for _v, _n, apply in STORE_MIGRATIONS[2:]:
+        apply(conn)  # what GraphStore used to do on open, with the same current schema
+    graph = GraphStore(conn)
+    graph.add_node("a", "memory", "a")
+    graph.add_edge("a", "a", "references")
+    conn.commit()
+
+    assert run_migrations(conn, STORE_MIGRATIONS, path) == STORE_MIGRATIONS[-1][0]
+    assert graph.get_node("a") is not None and graph.edge_count() == 1
+    conn.close()
