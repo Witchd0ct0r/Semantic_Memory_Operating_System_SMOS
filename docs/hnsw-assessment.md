@@ -66,6 +66,14 @@ Already recorded as technical debt; they matter more than search time up to seve
    default), and a rebuild path that reuses `_rebuild_index_if_stale`. IVF-flat is the alternative if memory, not latency, is the
    limit (it supports `remove_ids` but needs training data).
 
+## Measured update (2026-10-29)
+
+The admin **Benchmark** page now measures exactly the comparison this document asks for (HNSW built from the store's own vectors
+over generated requirements text, recall@10 and recall@50 against exact search, per-stage query time, projection to a latency budget)
+on the installed device. A first Quick run on the dev PC (up to 5,157 segments) gave HNSW recall@10 of 1.000, exact search of 0.04-0.38
+ms against HNSW 0.04-0.10 ms, and showed BM25 (1.8 -> 21.5 ms) rather than vector search (2-3 ms) as the part of a query that grows.
+That supports "not yet": see `docs/benchmark-verification.md` for the numbers and what is still to be measured on the Debian host.
+
 ## Decision needed from the Governor
 
 None now. Ask again if a store passes ~300,000 segments, Debian query p95 exceeds an agreed budget, or ingest throughput (not

@@ -206,6 +206,13 @@ All exceptions in `_run_cycle()` are swallowed (`except Exception: pass`). The `
 
 **The benchmarks (14ms P95 at 100K) reflect SIMD-accelerated hardware. On CPU-only hardware the ceiling is closer to 10K–20K before query latency becomes noticeable.**
 
+**Measured with the admin Benchmark page (dev PC, 12 cores, one Quick run on generated text, 2026-10-29; see
+`docs/benchmark-verification.md`):** query p95 went from 30 ms at 516 segments to 60 ms at 5,157. Vector search stayed at 2-3 ms; BM25
+grew from 1.8 ms to 21.5 ms and is already over half of a query's retrieval time, while embedding the question took about 12 ms.
+So the 100-1000 ms estimate for 5K-50K above was not observed at 5K on this machine, and the first thing that grows is the BM25 scan,
+not FAISS. Peak throughput was about 23 requests/s with one server process (CPU-bound: more parallel clients only add latency). These
+are single-run numbers from the dev PC, not from the target hardware; run the Benchmark page on the installed device for its own figures.
+
 ---
 
 ## 5. Known Design Issues

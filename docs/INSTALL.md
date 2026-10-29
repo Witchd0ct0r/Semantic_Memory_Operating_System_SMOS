@@ -110,6 +110,25 @@ default), so it survives restarts.
 Hardware figures are the container's own: if you limit it (for example `mem_limit` or `cpus` in
 `compose.yaml`), the charts show usage against that limit.
 
+## The benchmark page
+
+*Benchmark* in the admin menu (`/admin/benchmark`) measures what this machine can do: requests per second, latency as more
+clients ask at once, how query and ingest speed change as the database grows, and whether exact search is still the right choice
+(the report ends with an HNSW verdict and the numbers behind it). Pick a size (Quick takes a few minutes, Standard about 20, Full an
+hour or more), set the latency budget, and press *Start*.
+
+Things to know before you press it:
+
+- **The API is unavailable while it runs.** Every `/api/v1` request answers 503 (the health check stays up, so Docker does not
+  restart the container); the admin pages keep working. *Cancel* ends it within seconds.
+- It runs on **generated text in a temporary store** under `bench-tmp/` in the data volume. Your documents are never read or changed,
+  and everything temporary is deleted when the run ends, is cancelled or SMOS restarts.
+- It needs free disk (a few hundred MB for Quick, about 1.4 GB for Full) and about 1.5-2 GB of free memory, because it loads a second
+  copy of the embedding model. The page shows what each size needs and refuses to start if it is not available.
+- It starts **only from this page**. There is no API or command-line way to start one, and updates are refused while one runs.
+- Each report is kept (the newest 50) with the SMOS version and hardware, is compared with the previous run of the same size, can be
+  downloaded as JSON, and has an **Export PDF** button (it opens the browser's print dialog; choose *Save as PDF*).
+
 ## Everyday commands
 
 | Task | Command |
