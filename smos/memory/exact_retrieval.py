@@ -20,14 +20,12 @@ def _fetch_ranked_candidates(query_text: str, k: int, store: VectorStore) -> lis
     merged = _rrf_merge(vector_results, bm25_results, top_k=k)
 
     vector_by_id = {r["id"]: r for r in vector_results}
+    fetched = store.get_many([uid for uid, _ in merged if uid not in vector_by_id])
     candidates: list[dict] = []
     for uid, _ in merged:
-        if uid in vector_by_id:
-            candidates.append(vector_by_id[uid])
-        else:
-            record = store.get_by_uuid(uid)
-            if record is not None:
-                candidates.append(record)
+        record = vector_by_id.get(uid) or fetched.get(uid)
+        if record is not None:
+            candidates.append(record)
     return candidates
 
 
@@ -100,7 +98,8 @@ def reconstruct(store: VectorStore, node_id: str) -> dict:
         section_children = store.graph.traverse(section["id"], max_hops=1, edge_types=["contains"])
         segment_ids.extend(n["id"] for n in section_children if n["type"] == "memory")
 
-    records = [store.get_by_uuid(sid) for sid in segment_ids]
+    fetched = store.get_many(segment_ids)
+    records = [fetched.get(sid) for sid in segment_ids]
     records = [r for r in records if r is not None and r["metadata"].get("ordinal") is not None]
     records.sort(key=lambda r: r["metadata"]["ordinal"])
 

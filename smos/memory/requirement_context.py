@@ -128,11 +128,12 @@ def _hybrid_candidates(text: str, k: int, store: VectorStore) -> list[dict]:
         return []
     merged = _rrf_merge(vector_results, bm25_results, top_k=candidate_k)
     by_id = {r["id"]: r for r in vector_results}
+    fetched_by_id = store.get_many([uid for uid, _ in merged if uid not in by_id])
     candidates: list[dict] = []
     for uid, _ in merged:
         record = by_id.get(uid)
         if record is None:
-            fetched = store.get_by_uuid(uid)
+            fetched = fetched_by_id.get(uid)
             if fetched is None:
                 continue
             record = {**fetched, "score": None}

@@ -8,7 +8,7 @@ def _make_store_with_memories(memories: list[dict], extra_bm25_docs: list[dict] 
     extra_bm25_docs: memories indexed into BM25 but NOT included in the
     query_domain() return value — simulates a memory that only BM25 finds
     (never surfaced by vector search). Each dict should match the real
-    store.get_by_uuid() return shape: {"id", "content", "metadata"} —
+    store.get_many() record shape: {"id", "content", "metadata"} —
     notably no top-level "distance" or "tags" keys, unlike vector-sourced
     memory dicts.
     """
@@ -22,9 +22,7 @@ def _make_store_with_memories(memories: list[dict], extra_bm25_docs: list[dict] 
     store.graph.traverse.return_value = []
     store.get_summaries.return_value = {}
     all_records = memories + extra_bm25_docs
-    store.get_by_uuid.side_effect = lambda uid: next(
-        (m for m in all_records if m["id"] == uid), None
-    )
+    store.get_many.side_effect = lambda uids: {m["id"]: m for m in all_records if m["id"] in uids}
     return store
 
 
@@ -57,10 +55,10 @@ def test_hybrid_returns_retrieved_context():
     assert isinstance(result, RetrievedContext)
 
 
-def test_bm25_only_hit_is_hydrated_via_get_by_uuid():
+def test_bm25_only_hit_is_hydrated_via_get_many():
     """A memory found only by BM25 (absent from vector_results) must be
-    hydrated via store.get_by_uuid() and survive missing "distance"/"tags"
-    keys — get_by_uuid() results don't carry a FAISS distance the way
+    hydrated via store.get_many() and survive missing "distance"/"tags"
+    keys — get_many() results don't carry a FAISS distance the way
     vector-sourced dicts do. Without the `.get("distance", 1.0)` default in
     build_context(), this crashes with KeyError on bare
     `c["distance"]` access.
@@ -72,7 +70,7 @@ def test_bm25_only_hit_is_hydrated_via_get_by_uuid():
     ]
     # This record is indexed into BM25 but deliberately excluded from the
     # query_domain() mock return — it is only discoverable via BM25.
-    # Shape matches the real get_by_uuid() return: no "distance" key.
+    # Shape matches the real get_many() record: no "distance" key.
     bm25_only_record = {
         "id": "bm25-only-id",
         "content": "JWTValidator token authentication middleware",
@@ -92,7 +90,7 @@ def test_bm25_only_hit_is_hydrated_via_get_by_uuid():
 
     result = build_context("JWTValidator", k=2, store=store)
 
-    # The hydration branch (store.get_by_uuid) must actually have been
+    # The hydration branch (store.get_many) must actually have been
     # exercised — this is what the previous tests failed to cover.
-    assert store.get_by_uuid.call_count >= 1
+    assert store.get_many.call_count >= 1
     assert "bm25-only-id" in result.sources

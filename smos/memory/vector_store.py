@@ -211,19 +211,15 @@ class VectorStore:
             n = min(k, total)
             scores, ids = self._index.search(vector, n)
 
+            hits = [(float(score), int(row_id)) for score, row_id in zip(scores[0], ids[0]) if row_id != -1]
+            rows = self._rows_by_row_id([row_id for _score, row_id in hits])
+
             results: list[dict] = []
-            for score, row_id in zip(scores[0], ids[0]):
-                if row_id == -1:
-                    continue
-                row = self._db.execute(
-                    "SELECT uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
-                    "doc_id, ordinal, char_start, char_end "
-                    "FROM memories WHERE row_id = ?",
-                    (int(row_id),),
-                ).fetchone()
+            for score, row_id in hits:
+                row = rows.get(row_id)
                 if row is None:
                     continue
-                (uuid_, type_, content, timestamp, tags, tier, source_ids, confidence,
+                (_row_id, uuid_, type_, content, timestamp, tags, tier, source_ids, confidence,
                  doc_id, ordinal, char_start, char_end) = row
 
                 if domain_tags:
@@ -250,6 +246,23 @@ class VectorStore:
                     "score": float(score),
                 })
         return results
+
+    _SQL_VARIABLE_CHUNK = 500  # well under SQLite's default limit of 999 host parameters
+
+    def _rows_by_row_id(self, row_ids: list[int]) -> dict[int, tuple]:
+        """One SELECT per chunk instead of one per hit; the caller holds `_lock`."""
+        rows: dict[int, tuple] = {}
+        for start in range(0, len(row_ids), self._SQL_VARIABLE_CHUNK):
+            chunk = row_ids[start:start + self._SQL_VARIABLE_CHUNK]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in self._db.execute(
+                "SELECT row_id, uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
+                "doc_id, ordinal, char_start, char_end "
+                f"FROM memories WHERE row_id IN ({placeholders})",
+                chunk,
+            ).fetchall():
+                rows[int(row[0])] = row
+        return rows
 
     def delete(self, uuid: str) -> bool:
         with self._lock:
@@ -343,16 +356,13 @@ class VectorStore:
             ).fetchall()
         return [r[0] for r in rows]
 
-    def get_by_uuid(self, uuid: str) -> Optional[dict]:
-        with self._lock:
-            row = self._db.execute(
-                "SELECT uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
-                "doc_id, ordinal, char_start, char_end "
-                "FROM memories WHERE uuid = ?",
-                (uuid,),
-            ).fetchone()
-        if row is None:
-            return None
+    _RECORD_COLUMNS = (
+        "uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
+        "doc_id, ordinal, char_start, char_end"
+    )
+
+    @staticmethod
+    def _record_from_row(row: tuple) -> dict:
         (uuid_, type_, content, timestamp, tags, tier, source_ids, confidence,
          doc_id, ordinal, char_start, char_end) = row
         return {
@@ -371,6 +381,23 @@ class VectorStore:
                 "char_end": char_end,
             },
         }
+
+    def get_by_uuid(self, uuid: str) -> Optional[dict]:
+        return self.get_many([uuid]).get(uuid)
+
+    def get_many(self, uuids: list[str]) -> dict[str, dict]:
+        """Records for the given ids (missing ids are absent from the result), one SELECT per chunk."""
+        wanted = list(dict.fromkeys(uuids))
+        records: dict[str, dict] = {}
+        with self._lock:
+            for start in range(0, len(wanted), self._SQL_VARIABLE_CHUNK):
+                chunk = wanted[start:start + self._SQL_VARIABLE_CHUNK]
+                placeholders = ",".join("?" for _ in chunk)
+                for row in self._db.execute(
+                    f"SELECT {self._RECORD_COLUMNS} FROM memories WHERE uuid IN ({placeholders})", chunk
+                ).fetchall():
+                    records[row[0]] = self._record_from_row(row)
+        return records
 
     @contextmanager
     def document_lock(self, doc_id: str):

@@ -131,14 +131,12 @@ def build_context(
     # Hydrate merged results: prefer the vector hit (already carries FAISS
     # distance); fall back to the store for BM25-only hits.
     vector_by_id = {r["id"]: r for r in vector_results}
+    fetched = store.get_many([uid for uid, _ in merged if uid not in vector_by_id])
     candidates = []
     for uid, _ in merged:
-        if uid in vector_by_id:
-            candidates.append(vector_by_id[uid])
-        else:
-            record = store.get_by_uuid(uid)
-            if record:
-                candidates.append(record)
+        record = vector_by_id.get(uid) or fetched.get(uid)
+        if record:
+            candidates.append(record)
 
     # Final rerank: RRF fused score is the primary ranking signal; term
     # overlap only breaks ties between candidates with equal (or very close)
