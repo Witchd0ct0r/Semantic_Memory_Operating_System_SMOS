@@ -17,10 +17,13 @@ class GraphStore:
     `_lock` anyway (see Task 4).
     """
 
-    def __init__(self, db: sqlite3.Connection) -> None:
-        """The tables are created by the store migrations (`smos.storage.migrations`, version 3)."""
+    def __init__(self, db: sqlite3.Connection, lock: Optional[threading.RLock] = None) -> None:
+        """The tables are created by the store migrations (`smos.storage.migrations`, version 3).
+
+        `lock` must be the lock that guards every other use of `db`: a SQLite connection has one implicit transaction,
+        so two locks over one connection let one thread's commit end another thread's half-finished transaction."""
         self._db = db
-        self._lock = threading.Lock()
+        self._lock = lock if lock is not None else threading.RLock()
 
     def add_node(
         self, node_id: str, type: str, name: str, metadata: Optional[dict] = None

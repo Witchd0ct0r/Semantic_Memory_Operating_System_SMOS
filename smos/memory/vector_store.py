@@ -6,7 +6,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from threading import Lock
+from threading import Lock, RLock
 from typing import Callable, Optional
 
 import faiss
@@ -37,7 +37,7 @@ class VectorStore:
         self._path.mkdir(parents=True, exist_ok=True)
         self._index_file = self._path / "faiss.index"
         self._db_file = self._path / "metadata.db"
-        self._lock = Lock()
+        self._lock = RLock()  # guards self._db and the FAISS index; GraphStore uses it too (same connection)
         self._new_ids_lock = Lock()
         self._lifecycle_callback = lifecycle_callback
         self._insert_count = 0
@@ -53,7 +53,7 @@ class VectorStore:
         self._rebuild_index_if_stale()
         self.bm25 = BM25Index()
         self._seed_bm25()
-        self.graph = GraphStore(self._db)
+        self.graph = GraphStore(self._db, lock=self._lock)
         atexit.register(self._atexit_save)
 
     # ------------------------------------------------------------------
