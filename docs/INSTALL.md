@@ -39,6 +39,9 @@ Set:
   Invitation links are built from it. If you leave it unset, links use whatever host name the
   admin's browser used, which may not work for other people.
 
+Optional: `SMOS_TORCH_THREADS` (a whole number, 1 or more) sets how many threads torch uses for each embedding; leave it unset
+unless you are tuning a small server (see `docs/runbooks/benchmark.md`).
+
 `.env` is private to your machine and is never committed to git.
 
 ## 3. If your network inspects HTTPS (do this before building)
@@ -129,7 +132,7 @@ Things to know before you press it:
   start if it is not available.
 - It starts **only from this page**. There is no API or command-line way to start one, and updates are refused while one runs.
 - Each report is kept (the newest 50) with the SMOS version and hardware, is compared with the previous run of the same size, can be
-  downloaded as JSON, and has an **Export PDF** button (it opens the browser's print dialog; choose *Save as PDF*).
+  downloaded as JSON (a failed request is listed in a *Request errors* section), and has an **Export PDF** button (it opens the browser's print dialog; choose *Save as PDF*).
 
 ## Everyday commands
 

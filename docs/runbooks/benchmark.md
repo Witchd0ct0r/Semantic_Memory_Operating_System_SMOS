@@ -9,6 +9,23 @@
 4. Afterwards confirm nothing is left: `ls <data volume>/bench-tmp` is empty and `docker top smos` shows no `smos.bench` process.
 5. Run **Standard** twice (about 20 minutes each) and keep both JSON files; the second report shows the comparison table.
 
+## Reading the "Request errors" section (0.3.4+)
+
+A report lists every request that failed during the run (a non-2xx answer, a dropped connection, a timeout), grouped by where it
+happened (a load step, the mixed read/write test, a latency probe), what was requested, and what went wrong, with the first message
+seen and when (seconds since that step started). When anything failed, the server's own log is digested too: the root exception line
+of each traceback and how many log lines mention a locked database or a timeout. Request bodies, headers and tokens are never kept.
+A run with no failures says so in one line; reports from older runs have no such section. The same data is in *Download JSON*
+under `errors`.
+
+## Comparing `SMOS_TORCH_THREADS` (0.3.4+)
+
+By default torch picks its own thread count per embedding, which can oversubscribe a small server when several queries run at
+once. To compare settings: set `SMOS_TORCH_THREADS=1` in `.env`, `docker compose up -d` (no rebuild), run **Standard** twice, then
+repeat with `SMOS_TORCH_THREADS=2`, and finally with the line removed. The report's run details show the value in effect
+(`torch threads`). Compare *Peak throughput* and *Query p95*; keep the setting that is better and tell the maintainer so the default
+can be changed in a later release.
+
 If a run fails, the report says why (`error`). If SMOS was restarted during a run the row is `interrupted` and the leftovers are removed
 at the next start.
 

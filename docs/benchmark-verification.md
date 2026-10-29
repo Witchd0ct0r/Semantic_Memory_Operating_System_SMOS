@@ -91,6 +91,8 @@ make a test fail.
   provisional until more run pairs exist. The HNSW verdict thresholds (3x headroom, 25% vector share) were checked against the same
   runs and left unchanged. The measured results are company data and are deliberately not recorded in this repository; the runs'
   JSON exports are kept by the Governor. Full and Quick-on-other-hardware runs are still unmeasured.
+  From 0.3.4 the result also carries an `errors` section (failed requests grouped by step and kind, plus a digest of the throwaway
+  server's log), shown on the report page; see `docs/runbooks/benchmark.md`.
 - Only one real run has a report, so the comparison table was exercised by tests only (a "no earlier run" page was seen for real).
 - Windows-only evidence for process-tree and orphan handling; the Linux/Docker behaviour (process groups, `docker stop`) is covered by
   the same code paths and by tests that run on any OS, but has not been run on the Debian host.
