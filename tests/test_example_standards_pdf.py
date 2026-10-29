@@ -255,3 +255,28 @@ def test_query_tags_are_a_preference_not_a_filter(api) -> None:
     results = client.post("/api/v1/query", json={"query": "gaskets replaced every two years", "k": 3,
                                                  "tags": ["alpha"]}, headers=headers).json()["results"]
     assert results and "Gaskets" in results[0]["content"]
+
+
+def _doc_ids_around(client, headers, doc_id):
+    nodes = client.post("/api/v1/graph/query", json={"term": doc_id, "max_hops": 1}, headers=headers).json()["nodes"]
+    return {n["id"] for n in nodes if n["type"] == "document"}
+
+
+def test_link_to_a_document_ingested_later_uses_a_placeholder_node(api) -> None:
+    """Pins documented behavior: a link to a not-yet-ingested document creates a placeholder document node
+    with the target's deterministic id; ingesting the target later fills that same node."""
+    from smos.ingest.contract import derive_doc_id
+
+    client, headers, _app = api
+    source = {"external_handle": {"system": "t", "native_id": "A"},
+              "blocks": [{"block_type": "paragraph", "text": "Clause text that points to document B.\n"}],
+              "source_links": [{"target_native_id": "B", "edge_type": "references"}]}
+    target = {"external_handle": {"system": "t", "native_id": "B"}, "doc_name": "Document B",
+              "blocks": [{"block_type": "paragraph", "text": "The referenced document body text.\n"}]}
+    a_id, b_id = derive_doc_id("t", "A"), derive_doc_id("t", "B")
+    client.post("/api/v1/documents", json=source, headers=headers)
+    assert b_id in _doc_ids_around(client, headers, a_id)
+    client.post("/api/v1/documents", json=target, headers=headers)
+    assert b_id in _doc_ids_around(client, headers, a_id)
+    nodes = client.post("/api/v1/graph/query", json={"term": a_id, "max_hops": 1}, headers=headers).json()["nodes"]
+    assert [n["name"] for n in nodes if n["id"] == b_id] == ["Document B"]   # the placeholder was filled
