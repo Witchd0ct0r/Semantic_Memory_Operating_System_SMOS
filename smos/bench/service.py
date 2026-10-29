@@ -162,6 +162,12 @@ class BenchmarkService:
         return {"state": "finishing" if active.finishing else "running", "run_id": active.run_id,
                 "preset": active.preset, "progress": progress, "started_at": active.started_at}
 
+    def describe_requirements(self, preset: Preset) -> dict:
+        """What a run of `preset` needs and what is free now, for the Run panel."""
+        need_disk, need_ram = requirements(preset)
+        return {"need_disk": need_disk, "need_ram": need_ram,
+                "free_disk": self._free_disk(self.data_dir), "free_ram": self._available_ram()}
+
     def wait_idle(self, timeout: float) -> bool:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:

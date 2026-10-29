@@ -1,12 +1,15 @@
 """Turns a stored benchmark run into what the Benchmark pages show: tiles, verdict, charts, comparison and details."""
 from __future__ import annotations
 
-from typing import Optional
+import logging
+from typing import Callable, Optional, TypeVar
 
 from smos.admin.charts import Series, _fmt_tick, bar_chart, data_table, stacked_bar, xy_chart
 from smos.bench.analysis import METRIC_DEFINITIONS, compare_runs, hnsw_verdict, key_metrics
 from smos.bench.stats import find_knee, peak_throughput, sustainable_step
 
+log = logging.getLogger("smos.bench")
+T = TypeVar("T")
 SCHEMA = 1
 _STAGE_NAMES = (("embed_ms", "embedding"), ("vector_ms", "vector search"), ("bm25_ms", "BM25"),
                 ("graph_ms", "graph expansion"), ("sqlite_ms", "SQLite"), ("fusion_ms", "fusion"))
@@ -191,6 +194,26 @@ def _load_charts(charts: _Charts, sweep: list[dict], budget: float) -> None:
               reference=("budget", budget), headers=headers, rows=rows, **common)
 
 
+def _clean(result: dict) -> dict:
+    """The structure the builders walk: lists of dicts and a dict, whatever junk was stored."""
+    cleaned = dict(result)
+    for key in ("scaling", "sweep"):
+        value = result.get(key)
+        cleaned[key] = [e for e in value if isinstance(e, dict)] if isinstance(value, list) else []
+    cleaned["mixed"] = result.get("mixed") if isinstance(result.get("mixed"), dict) else {}
+    return cleaned
+
+
+def _guard(build: Callable[[], T], default: T, problems: list[str]) -> T:
+    """Stored numbers can be odd (a future format, a damaged row): a part that cannot be drawn is left out."""
+    try:
+        return build()
+    except Exception:  # noqa: BLE001 - any failure here must degrade the report, never break the page
+        log.exception("benchmark report part could not be built")
+        problems.append("part")
+        return default
+
+
 def _tiles(result: dict, comparison: list[dict]) -> list[dict]:
     change = {r["key"]: r for r in comparison}
     sweep = result.get("sweep") or []
@@ -235,53 +258,72 @@ def _message(run: dict, result: Optional[dict], complete: bool) -> str:
 
 
 def build_report(run: dict, previous: Optional[dict]) -> dict:
-    result = run.get("result") if isinstance(run.get("result"), dict) else None
-    known = result is not None and result.get("schema") == SCHEMA
-    budget = float(run.get("budget_ms") or 200.0)
-    has_data = known and bool(result.get("scaling"))
-    complete = bool(known and run.get("status") == "completed" and has_data and result.get("sweep"))
-    previous_result = previous.get("result") if previous and isinstance(previous.get("result"), dict) else None
-    comparison = []
-    if has_data:
-        for row in compare_runs(result, previous_result):
-            comparison.append({**row, "change_text": _change_text(row)})
-    started, finished = run.get("started_at"), run.get("finished_at")
-    hardware = (result or {}).get("hardware") or run.get("hardware") or {}
+    raw = run.get("result") if isinstance(run.get("result"), dict) else None
+    known = raw is not None and raw.get("schema") == SCHEMA
+    result = _clean(raw) if known else raw
+    budget = _number(run.get("budget_ms"), 200.0)
+    has_data = bool(known and result["scaling"])
+    complete = bool(has_data and run.get("status") == "completed" and result["sweep"])
+    previous_raw = previous.get("result") if previous and isinstance(previous.get("result"), dict) else None
+    previous_result = _clean(previous_raw) if previous_raw and previous_raw.get("schema") == SCHEMA else None
+    problems: list[str] = []
+
+    def comparison_rows() -> list[dict]:
+        return [{**row, "change_text": _change_text(row)} for row in compare_runs(result, previous_result)]
+
+    comparison = _guard(comparison_rows, [], problems) if has_data else []
+    tiles = _guard(lambda: _tiles(result, comparison), [], problems) if has_data else []
+    verdict = _guard(lambda: hnsw_verdict(result, budget), None, problems) if has_data else None
+    charts = _guard(lambda: _build_charts(result, budget), [], problems) if has_data else []
+
+    message = _message(run, raw, complete)
+    if problems:
+        message = (message + " " if message else "") + "Some numbers in this report could not be read and were left out."
+    hardware = (raw or {}).get("hardware") or run.get("hardware") or {}
     details = {
         "id": run.get("id"), "status": run.get("status"), "version": run.get("smos_version"),
-        "preset": run.get("preset"), "budget_ms": budget, "started_at": started, "finished_at": finished,
-        "seed": (result or {}).get("seed"), "corpus_fingerprint": (result or {}).get("corpus_fingerprint"),
-        "cleanup": (result or {}).get("cleanup"), "hardware": hardware if isinstance(hardware, dict) else {},
-        "resources": (result or {}).get("resources") or {}, "error": run.get("error") or "",
+        "preset": run.get("preset"), "budget_ms": budget, "started_at": run.get("started_at"),
+        "finished_at": run.get("finished_at"), "seed": (raw or {}).get("seed"),
+        "corpus_fingerprint": (raw or {}).get("corpus_fingerprint"), "cleanup": (raw or {}).get("cleanup"),
+        "hardware": hardware if isinstance(hardware, dict) else {},
+        "resources": (raw or {}).get("resources") if isinstance((raw or {}).get("resources"), dict) else {},
+        "error": run.get("error") or "",
     }
+    warnings = (raw or {}).get("warnings")
     return {
-        "run": run,
-        "complete": complete,
-        "message": _message(run, result, complete),
-        "tiles": _tiles(result, comparison) if has_data else [],
-        "verdict": hnsw_verdict(result, budget) if has_data else None,
-        "charts": _build_charts(result, budget) if has_data else [],
-        "comparison": comparison,
-        "details": details,
-        "warnings": [str(w) for w in (result or {}).get("warnings") or []],
+        "run": run, "complete": complete and not problems, "message": message, "tiles": tiles, "verdict": verdict,
+        "charts": charts, "comparison": comparison, "details": details,
+        "warnings": [str(w) for w in warnings] if isinstance(warnings, list) else [],
         "definitions": METRIC_DEFINITIONS,
     }
+
+
+def _number(value, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number == number and number > 0 else default
 
 
 def history_rows(runs: list[dict]) -> list[dict]:
     """One table row per run (newest first). 'vs previous' compares with the next older completed run of the same preset."""
     rows = []
     for position, run in enumerate(runs):
-        result = run.get("result") if isinstance(run.get("result"), dict) and run["result"].get("scaling") else None
-        metrics = key_metrics(result) if result else {}
-        verdict = hnsw_verdict(result, float(run.get("budget_ms") or 200.0))["level"] if result else None
+        raw = run.get("result") if isinstance(run.get("result"), dict) and run["result"].get("schema") == SCHEMA else None
+        result = _clean(raw) if raw and raw.get("scaling") else None
+        problems: list[str] = []
+        metrics = _guard(lambda: key_metrics(result), {}, problems) if result else {}
+        verdict = (_guard(lambda: hnsw_verdict(result, _number(run.get("budget_ms"), 200.0))["level"], None, problems)
+                   if result else None)
         flag = "n/a"
         if result and run.get("status") == "completed":
             older = next((r for r in runs[position + 1:] if r.get("preset") == run.get("preset")
                           and r.get("status") == "completed" and isinstance(r.get("result"), dict)
-                          and r["result"].get("scaling")), None)
+                          and r["result"].get("schema") == SCHEMA and r["result"].get("scaling")), None)
             if older:
-                flags = [c["flag"] for c in compare_runs(result, older["result"]) if c["flag"] != "n/a"]
+                rows_ = _guard(lambda: compare_runs(result, _clean(older["result"])), [], problems)
+                flags = [c["flag"] for c in rows_ if c["flag"] != "n/a"]
                 flag = ("regression" if "regression" in flags else "slower" if "slower" in flags
                         else "better" if flags and "better" in flags else "ok" if flags else "n/a")
         rows.append({

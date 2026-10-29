@@ -13,10 +13,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from smos.admin import accounts, invitations, tokens, usage
+from smos.admin import accounts, benchmarks, invitations, tokens, usage
+from smos.admin.benchmark_view import build_report, history_rows
 from smos.admin.dashboard_data import parse_range
 from smos.admin.dashboard_view import build_dashboard
 from smos.admin.tokens import SCOPES
+from smos.bench.presets import PRESETS
+from smos.bench.service import MAX_BUDGET_MS, BenchmarkRefused
 from smos.update.apply import ApplyRefused
 from smos.update.service import describe as describe_update
 
@@ -38,6 +41,8 @@ templates.env.filters["shorttime"] = shorttime
 _FAIL_LIMIT = 5
 _FAIL_WINDOW_S = 60.0
 _NO_STORE = {"Cache-Control": "no-store"}
+_PRESET_INFO = {"quick": ("Quick", "about 3-5 minutes"), "standard": ("Standard", "about 20 minutes"),
+                "full": ("Full", "an hour or more")}
 
 
 class Throttle:
@@ -248,6 +253,77 @@ def register_admin(app: FastAPI) -> APIRouter:
         except ApplyRefused as err:
             return _update_page(request, status=409, error=str(err))
         return RedirectResponse("/admin/update?applying=1", status_code=303)
+
+    # ------------------------------------------------------------ benchmark
+    def _benchmark_page(request: Request, status: int = 200, error: str | None = None):
+        service = request.app.state.bench
+        with request.app.state.admin_lock:
+            runs = benchmarks.list_runs(_db(request))
+        presets = []
+        for name, preset in PRESETS.items():
+            label, eta = _PRESET_INFO[name]
+            presets.append({"name": name, "label": label, "eta": eta, "sizes": preset.sizes,
+                            "needs": service.describe_requirements(preset)})
+        return _page(request, "benchmark.html", status=status, admin=request.session.get("admin"),
+                     presets=presets, run_status=service.status(), history=history_rows(runs), error=error)
+
+    @router.get("/admin/benchmark", response_class=HTMLResponse)
+    def benchmark_page(request: Request, _admin: str = Depends(admin_required)):
+        return _benchmark_page(request)
+
+    @router.post("/admin/benchmark/start")
+    async def benchmark_start(request: Request, admin: str = Depends(admin_required)):
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        try:
+            budget = float(str(form.get("budget_ms", "")).strip())
+        except ValueError:
+            budget = float("nan")
+        if not (0 < budget <= MAX_BUDGET_MS):
+            return await run_in_threadpool(
+                _benchmark_page, request, 400,
+                f"Enter the latency budget as a number of milliseconds between 0 and {MAX_BUDGET_MS:.0f}.")
+        try:
+            await run_in_threadpool(request.app.state.bench.start, admin, str(form.get("preset", "")), budget)
+        except ValueError as err:
+            return await run_in_threadpool(_benchmark_page, request, 400, str(err))
+        except BenchmarkRefused as err:
+            return await run_in_threadpool(_benchmark_page, request, 409, str(err))
+        return RedirectResponse("/admin/benchmark", status_code=303)
+
+    @router.post("/admin/benchmark/cancel")
+    async def benchmark_cancel(request: Request, _admin: str = Depends(admin_required)):
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        request.app.state.bench.cancel()
+        return RedirectResponse("/admin/benchmark", status_code=303)
+
+    @router.get("/admin/benchmark/status")
+    def benchmark_status(request: Request, _admin: str = Depends(admin_required)):
+        info = request.app.state.bench.status()
+        return JSONResponse({"state": info["state"], "run_id": info["run_id"], "preset": info["preset"],
+                             "progress": info["progress"]}, headers=_NO_STORE)
+
+    def _stored_run(request: Request, run_id: int):
+        with request.app.state.admin_lock:
+            run = benchmarks.get_run(_db(request), run_id)
+            previous = (benchmarks.previous_completed(_db(request), run["preset"], run["id"])
+                        if run and run["status"] == "completed" else None)
+        if run is None:
+            raise HTTPException(404, "No such benchmark run")
+        return run, previous
+
+    @router.get("/admin/benchmark/{run_id:int}", response_class=HTMLResponse)
+    def benchmark_report(run_id: int, request: Request, _admin: str = Depends(admin_required)):
+        run, previous = _stored_run(request, run_id)
+        return _page(request, "benchmark_report.html", admin=request.session.get("admin"),
+                     report=build_report(run, previous))
+
+    @router.get("/admin/benchmark/{run_id:int}.json")
+    def benchmark_download(run_id: int, request: Request, _admin: str = Depends(admin_required)):
+        run, _previous = _stored_run(request, run_id)
+        return JSONResponse(run, headers={
+            **_NO_STORE, "Content-Disposition": f'attachment; filename="smos-benchmark-{run_id}.json"'})
 
     @router.get("/admin")
     async def admin_root(_admin: str = Depends(admin_required)):

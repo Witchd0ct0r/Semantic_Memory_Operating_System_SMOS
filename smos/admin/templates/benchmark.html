@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}SMOS benchmark{% endblock %}
+{% block head %}{% if run_status.state != "idle" %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block content %}
+<section>
+  <h1>Benchmark</h1>
+  <p class="muted">Measures what this machine can do: requests per second, latency under traffic, speed against database size,
+  and whether exact search is still the right choice. It runs on generated text in a throwaway store; your data is not read or changed.</p>
+  {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+  {% if run_status.state != "idle" %}
+  <h2>Run in progress</h2>
+  {% set progress = run_status.progress %}
+  <div style="background:var(--line);border-radius:6px;height:14px;max-width:520px" role="progressbar"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ progress.percent if progress else 0 }}">
+    <div style="background:var(--accent);width:{{ progress.percent if progress else 0 }}%;height:14px;border-radius:6px"></div>
+  </div>
+  <p>{% if progress %}Step {{ progress.step }} of {{ progress.steps }}: {{ progress.label }}{% else %}Starting...{% endif %}
+     <span class="muted">({{ run_status.preset }}{% if run_status.state == "finishing" %}, cleaning up{% endif %})</span></p>
+  <p class="muted">The SMOS API answers 503 to everyone until the run ends. This page refreshes itself.</p>
+  <form method="post" action="/admin/benchmark/cancel">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" class="danger">Cancel (ends maintenance right away)</button>
+  </form>
+  {% else %}
+  <h2>Run a benchmark</h2>
+  <p>While it runs, <strong>the API is unavailable</strong>: every <code>/api/v1</code> request answers 503 (the health check stays up).
+  The admin pages keep working. When the run ends, or is cancelled, the temporary data is deleted and normal service resumes.</p>
+  <form method="post" action="/admin/benchmark/start"
+        onsubmit="return confirm('The SMOS API will be unavailable until the benchmark finishes. Start it?');">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <table>
+      {% for p in presets %}
+      <tr>
+        <td><label><input type="radio" name="preset" value="{{ p.name }}"{% if p.name == "quick" %} checked{% endif %}> <strong>{{ p.label }}</strong></label></td>
+        <td>up to {{ "{:,}".format(p.sizes[-1]) }} segments, {{ p.eta }}</td>
+        <td class="muted">needs about {{ (p.needs.need_disk / 1048576)|round|int }} MB disk (free {{ (p.needs.free_disk / 1048576)|round|int }} MB)
+          and {{ (p.needs.need_ram / 1048576)|round|int }} MB memory (free {{ (p.needs.free_ram / 1048576)|round|int }} MB)</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p>
+      <label>Latency budget, 95th percentile (ms):
+        <input type="text" name="budget_ms" value="200" size="6" inputmode="decimal"></label>
+      <span class="muted">used for the &ldquo;sustainable&rdquo; figure and the HNSW verdict</span>
+    </p>
+    <button type="submit">Start benchmark (puts the API in maintenance)</button>
+    <p class="muted">Times are approximate. A longer preset reaches larger database sizes, which makes the HNSW verdict more reliable.</p>
+  </form>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Past runs</h2>
+  {% if history %}
+  <table>
+    <tr><th>Started (UTC)</th><th>Version</th><th>Preset</th><th>Status</th><th>Peak req/s</th><th>Query p95</th><th>HNSW verdict</th><th>vs previous</th><th></th></tr>
+    {% for r in history %}
+    <tr>
+      <td>{{ r.started_at|shorttime }}</td><td>{{ r.version }}</td><td>{{ r.preset }}</td>
+      <td>{{ r.status }}{% if r.error %} <span class="muted" title="{{ r.error }}">(details in report)</span>{% endif %}</td>
+      <td>{% if r.peak_rps is not none %}{{ "%.0f"|format(r.peak_rps) }}{% else %}&ndash;{% endif %}</td>
+      <td>{% if r.query_p95_ms is not none %}{{ "%.0f"|format(r.query_p95_ms) }} ms{% else %}&ndash;{% endif %}</td>
+      <td>{{ r.verdict.replace("_", " ") if r.verdict else "–" }}</td>
+      <td{% if r.vs_previous == "regression" %} class="error"{% endif %}>{{ r.vs_previous }}</td>
+      <td><a href="/admin/benchmark/{{ r.id }}">Open report</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No benchmark has been run yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}SMOS benchmark report {{ report.details.id }}{% endblock %}
+{% block head %}
+<style>
+  .verdict { border:2px solid var(--c2); border-radius:8px; padding:10px 14px; margin-bottom:16px; }
+  .verdict.watch, .verdict.consider { border-color:var(--c3); }
+  .verdict.not_hnsw, .verdict.insufficient { border-color:var(--muted); }
+  .verdict ul { margin:6px 0 0 18px; padding:0; }
+  .tile .change { font-size:12px; } .change.regression, .change.slower { color:var(--bad); } .change.better { color:var(--c2); }
+  .chart-block h2 { margin-top:0; }
+  details.data-table summary { cursor:pointer; color:var(--accent); font-size:13px; }
+  .print-only { display:none; }
+  dl.details { display:grid; grid-template-columns:max-content 1fr; gap:2px 16px; margin:0; }
+  dl.details dt { color:var(--muted); }
+  @media print {
+    header, button, nav, .no-print, a.button { display: none !important; }
+    body { background:#fff; color:#000; font-size:11pt; }
+    main { max-width:none; padding:0; }
+    section { border:0; padding:0; margin-bottom:14pt; overflow:visible; break-inside:avoid; }
+    .chart-block, .tile, .verdict, table { break-inside:avoid; }
+    details > *:not(summary) { display:block !important; }
+    details summary { display:none; }
+    .print-only { display:block; position:fixed; top:0; left:0; right:0; font-size:9pt; border-bottom:1px solid #999; padding-bottom:2pt; }
+    main { padding-top:22pt; }
+    :root { --bg:#fff; --fg:#000; --card:#fff; --line:#bbb; --muted:#444; --accent:#1f5fbf; --bad:#b3261e;
+      --c0:#1f5fbf; --c1:#b3261e; --c2:#2e7d32; --c3:#b26a00; --c4:#7b3fa0; --c5:#00798c; }
+  }
+</style>
+<script>
+  (function () {
+    function setDetails(open) {
+      document.querySelectorAll("details.data-table").forEach(function (d) {
+        if (open) { d.setAttribute("data-was-open", d.open ? "1" : "0"); d.open = true; }
+        else { d.open = d.getAttribute("data-was-open") === "1"; }
+      });
+    }
+    window.addEventListener("beforeprint", function () { setDetails(true); });
+    window.addEventListener("afterprint", function () { setDetails(false); });
+  })();
+</script>
+{% endblock %}
+{% block content %}
+{% set d = report.details %}
+<div class="print-only">SMOS benchmark report #{{ d.id }} &middot; {{ d.started_at|shorttime }} UTC &middot; SMOS {{ d.version }} &middot; {{ d.preset }}</div>
+
+<section>
+  <h1>Benchmark report #{{ d.id }}</h1>
+  <p class="muted">SMOS {{ d.version }} &middot; {{ d.preset }} preset &middot; started {{ d.started_at|shorttime }} UTC
+    {% if d.finished_at %}&middot; finished {{ d.finished_at|shorttime }} UTC{% endif %} &middot; status <strong>{{ d.status }}</strong>
+    &middot; latency budget {{ "%.0f"|format(d.budget_ms) }} ms</p>
+  <p class="no-print">
+    <button type="button" onclick="window.print()">Export PDF</button>
+    <a href="/admin/benchmark/{{ d.id }}.json">Download JSON</a> &middot; <a href="/admin/benchmark">All runs</a>
+  </p>
+  {% if report.message %}<p class="{{ 'error' if d.status == 'failed' else 'muted' }}" role="status">{{ report.message }}</p>{% endif %}
+  {% if report.warnings %}<ul>{% for w in report.warnings %}<li class="muted">{{ w }}</li>{% endfor %}</ul>{% endif %}
+</section>
+
+{% if report.tiles %}
+<section>
+  <div class="tiles">
+    {% for t in report.tiles %}
+    <div class="tile" data-tile="{{ t.key }}"><span class="label">{{ t.label }}</span><span class="value">{{ t.value }}</span>
+      <span class="hint">{{ t.hint }}</span><span class="change {{ t.flag }}">vs previous run: {{ t.change }}</span></div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if report.verdict %}
+{% set v = report.verdict %}
+<section class="verdict {{ v.level }}" data-verdict="{{ v.level }}">
+  <h2>HNSW verdict: {{ {"not_needed": "not needed", "watch": "keep an eye on it", "consider": "consider it", "not_hnsw": "would not help", "insufficient": "not enough data"}[v.level] }}</h2>
+  <p>{{ v.headline }}</p>
+  {% if v.facts.p95_ms is defined %}
+  <ul>
+    <li>Query p95 at {{ "{:,}".format(v.facts.segments) }} segments: {{ "%.0f"|format(v.facts.p95_ms) }} ms (budget {{ "%.0f"|format(v.facts.budget_ms) }} ms)</li>
+    <li>Vector search is {{ "%.0f"|format(v.facts.vector_share * 100) }}% of a query; the largest share is {{ v.facts.dominant_stage }} ({{ "%.0f"|format(v.facts.dominant_share * 100) }}%)</li>
+    <li>{% if v.facts.projected_segments %}Straight-line projection reaches the budget at about {{ "{:,}".format(v.facts.projected_segments|round|int) }} segments (an extrapolation){% else %}No growth trend to project from{% endif %}</li>
+    <li>HNSW found {% if v.facts.recall10 is not none %}{{ "%.1f"|format(v.facts.recall10 * 100) }}%{% else %}n/a{% endif %} of the exact top 10; build time {{ "%.1f"|format(v.facts.hnsw_build_s) if v.facts.hnsw_build_s is not none else "n/a" }} s, size {{ ((v.facts.hnsw_mem_bytes or 0) / 1048576)|round|int }} MB</li>
+  </ul>
+  {% endif %}
+  <p class="muted">{{ v.facts.caveat }}</p>
+</section>
+{% endif %}
+
+{% for c in report.charts %}
+<section class="chart-block" data-chart="{{ c.key }}">
+  <h2>{{ c.title }}</h2>
+  {{ c.svg|safe }}
+  <p class="muted">{{ c.definition }}</p>
+  <details class="data-table"><summary>Show the numbers</summary>{{ c.table|safe }}</details>
+</section>
+{% endfor %}
+
+{% if report.comparison %}
+<section>
+  <h2>Compared with the previous run of this preset</h2>
+  <table>
+    <tr><th>Metric</th><th>Previous</th><th>This run</th><th>Change</th><th></th></tr>
+    {% for r in report.comparison %}
+    <tr><td>{{ r.label }}</td>
+      <td>{{ "%.1f"|format(r.previous) if r.previous is not none else "–" }}</td>
+      <td>{{ "%.1f"|format(r.current) if r.current is not none else "–" }}</td>
+      <td>{{ r.change_text }}</td>
+      <td class="{{ 'error' if r.flag in ('regression', 'slower') else 'muted' }}">{{ {"regression": "regression", "slower": "slower", "better": "better", "ok": "within normal variation", "n/a": "no earlier run"}[r.flag] }}</td></tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
+<section>
+  <h2>Run details</h2>
+  <dl class="details">
+    <dt>Seed</dt><dd>{{ d.seed if d.seed is not none else "–" }}</dd>
+    <dt>Corpus fingerprint</dt><dd><code>{{ d.corpus_fingerprint or "–" }}</code></dd>
+    <dt>Cleanup</dt><dd>{{ d.cleanup or "–" }}</dd>
+    {% for key, value in d.hardware.items() %}<dt>{{ key.replace("_", " ") }}</dt><dd>{{ value }}</dd>{% endfor %}
+    {% for key, value in d.resources.items() %}<dt>{{ key.replace("_", " ") }}</dt><dd>{{ value }}</dd>{% endfor %}
+    {% if d.error %}<dt>Error</dt><dd>{{ d.error }}</dd>{% endif %}
+  </dl>
+  <p class="muted">All text in this benchmark is generated, so quality figures describe the trend with size, not SMOS on your documents.
+  &ldquo;% of one core&rdquo; CPU figures can exceed 100 when several cores are busy.</p>
+</section>
+{% endblock %}
