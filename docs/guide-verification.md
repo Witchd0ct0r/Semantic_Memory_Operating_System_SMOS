@@ -88,15 +88,13 @@ Request body:
       "text": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n"
     },
     {
-      "block_type": "heading",
-      "heading_level": 1,
-      "text": "2 Limits\n"
+      "block_type": "paragraph",
+      "text": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n"
     },
     {
       "block_type": "paragraph",
-      "text": "2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n"
-    },
-    "..."
+      "text": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n"
+    }
   ],
   "doc_type": "standard",
   "domain_tags": [
@@ -110,7 +108,7 @@ Request body:
         "target_system": "std-pdf"
       }
     }
-  ],
+  ]
 }
 ```
 
@@ -121,9 +119,9 @@ Response **200**:
   "doc_id": "67e53410c17a5649",
   "segment_count": 3,
   "segment_ids": [
-    "dcf8fb45-28db-4db4-bb74-b7ad218fb2dd",
-    "8abeb1fa-2c1b-445e-9556-23b1e08ddee3",
-    "f7353d80-f2ae-45d6-9f80-67884bc6108c"
+    "25753d3c-a1e7-40f6-aef3-8ed2850fdd1a",
+    "fc0af62f-e227-419c-a3a6-7dfbb19684df",
+    "601bbfe1-75fa-43b0-9cc1-ce7d9c72aebc"
   ],
   "section_count": 0,
   "reference_count": 0,
@@ -154,7 +152,7 @@ Request body:
   "domain_tags": [
     "widgets"
   ],
-  "source_links": [],
+  "source_links": []
 }
 ```
 
@@ -165,7 +163,7 @@ Response **200**:
   "doc_id": "d0d490309ffeb4fc",
   "segment_count": 1,
   "segment_ids": [
-    "eabf7fa8-47ea-4bbd-9652-6930a8d89661"
+    "cb775ce7-fcea-4fe2-afed-2a83c4bba794"
   ],
   "section_count": 0,
   "reference_count": 0,
@@ -192,15 +190,13 @@ Request body:
       "text": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n"
     },
     {
-      "block_type": "heading",
-      "heading_level": 1,
-      "text": "2 Limits\n"
+      "block_type": "paragraph",
+      "text": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n"
     },
     {
       "block_type": "paragraph",
-      "text": "2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n"
-    },
-    "..."
+      "text": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n"
+    }
   ],
   "doc_type": "standard",
   "domain_tags": [
@@ -225,9 +221,9 @@ Response **200**:
   "doc_id": "67e53410c17a5649",
   "segment_count": 3,
   "segment_ids": [
-    "95c39aa2-391f-442c-a43c-390dcaf46f7e",
-    "4ddeded0-763a-49dc-812e-42ab4be180c9",
-    "96754d5b-db84-496a-b88f-4c415c58c585"
+    "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411",
+    "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+    "0a14090d-5245-4798-89d0-ca2a54e757ef"
   ],
   "section_count": 0,
   "reference_count": 0,
@@ -260,7 +256,7 @@ Response **200**:
 ```json
 {
   "status": "quarantined",
-  "quarantine_key": "464a1af5-991b-4fb9-84c4-6d0b943158a3",
+  "quarantine_key": "5a72a398-5b9a-4784-9da0-6b4cdb6b5d30",
   "errors": [
     "blocks[0]: text must not be empty"
   ]
@@ -291,7 +287,7 @@ Response **200**:
 ```json
 {
   "status": "quarantined",
-  "quarantine_key": "7bbacd86-634d-475f-ac5b-13c99553ae7c",
+  "quarantine_key": "d75f8366-78da-48f5-91b9-622db70c1f0c",
   "errors": [
     "blocks[0]: heading blocks require heading_level in 1..6"
   ]
@@ -328,7 +324,7 @@ Response **200**:
 ```json
 {
   "status": "quarantined",
-  "quarantine_key": "a277d471-5497-49b3-8a76-842d0ef6a7e5",
+  "quarantine_key": "60b749ca-f5ed-493c-8fb0-c35037f27e62",
   "errors": [
     "source_links[0]: unknown edge_type 'bogus'"
   ]
@@ -365,7 +361,7 @@ Response **200**:
 ```json
 {
   "status": "quarantined",
-  "quarantine_key": "1cec24e9-bd3c-4718-9c05-c2a1a6cecabd",
+  "quarantine_key": "b5a90bce-3c40-41f0-8e73-13a781ed81b9",
   "errors": [
     "source_links[0]: link targets its own item"
   ]
@@ -399,7 +395,7 @@ Response **200**:
 ```json
 {
   "status": "quarantined",
-  "quarantine_key": "41fa57d0-e03d-4172-8043-9bbadb713a1c",
+  "quarantine_key": "c13cef32-20b8-49b8-946d-600c641e26a0",
   "errors": [
     "domain_tags[0]: must not contain ','"
   ]
@@ -486,33 +482,20 @@ Response **200**:
 {
   "results": [
     {
-      "id": "4ddeded0-763a-49dc-812e-42ab4be180c9",
-      "content": "2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
-      "score": 0.7521909475326538,
+      "id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+      "content": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
+      "score": 0.8095625638961792,
       "metadata": {
         "type": "segment",
         "tags": "widgets,doctype:standard",
         "doc_id": "67e53410c17a5649",
         "ordinal": 1,
-        "char_start": 65,
+        "char_start": 56,
         "char_end": 154
       }
     },
     {
-      "id": "95c39aa2-391f-442c-a43c-390dcaf46f7e",
-      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n2 Limits\n",
-      "score": 0.6077289581298828,
-      "metadata": {
-        "type": "segment",
-        "tags": "widgets,doctype:standard",
-        "doc_id": "67e53410c17a5649",
-        "ordinal": 0,
-        "char_start": 0,
-        "char_end": 65
-      }
-    },
-    {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "content": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n",
       "score": 0.4906913638114929,
       "metadata": {
@@ -523,14 +506,27 @@ Response **200**:
         "char_start": 154,
         "char_end": 218
       }
+    },
+    {
+      "id": "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411",
+      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n",
+      "score": 0.48766398429870605,
+      "metadata": {
+        "type": "segment",
+        "tags": "widgets,doctype:standard",
+        "doc_id": "67e53410c17a5649",
+        "ordinal": 0,
+        "char_start": 0,
+        "char_end": 56
+      }
     }
   ],
   "sources": [
-    "4ddeded0-763a-49dc-812e-42ab4be180c9",
-    "95c39aa2-391f-442c-a43c-390dcaf46f7e",
-    "96754d5b-db84-496a-b88f-4c415c58c585"
+    "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+    "0a14090d-5245-4798-89d0-ca2a54e757ef",
+    "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411"
   ],
-  "confidence": 0.8084352115790049,
+  "confidence": 0.7979863186677297,
   "mode": "extractive"
 }
 ```
@@ -555,33 +551,20 @@ Response **200**:
 {
   "results": [
     {
-      "id": "4ddeded0-763a-49dc-812e-42ab4be180c9",
-      "content": "2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
-      "score": 0.7521909475326538,
+      "id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+      "content": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
+      "score": 0.8095625638961792,
       "metadata": {
         "type": "segment",
         "tags": "widgets,doctype:standard",
         "doc_id": "67e53410c17a5649",
         "ordinal": 1,
-        "char_start": 65,
+        "char_start": 56,
         "char_end": 154
       }
     },
     {
-      "id": "95c39aa2-391f-442c-a43c-390dcaf46f7e",
-      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n2 Limits\n",
-      "score": 0.6077289581298828,
-      "metadata": {
-        "type": "segment",
-        "tags": "widgets,doctype:standard",
-        "doc_id": "67e53410c17a5649",
-        "ordinal": 0,
-        "char_start": 0,
-        "char_end": 65
-      }
-    },
-    {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "content": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n",
       "score": 0.4906913638114929,
       "metadata": {
@@ -592,14 +575,27 @@ Response **200**:
         "char_start": 154,
         "char_end": 218
       }
+    },
+    {
+      "id": "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411",
+      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n",
+      "score": 0.48766398429870605,
+      "metadata": {
+        "type": "segment",
+        "tags": "widgets,doctype:standard",
+        "doc_id": "67e53410c17a5649",
+        "ordinal": 0,
+        "char_start": 0,
+        "char_end": 56
+      }
     }
   ],
   "sources": [
-    "4ddeded0-763a-49dc-812e-42ab4be180c9",
-    "95c39aa2-391f-442c-a43c-390dcaf46f7e",
-    "96754d5b-db84-496a-b88f-4c415c58c585"
+    "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+    "0a14090d-5245-4798-89d0-ca2a54e757ef",
+    "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411"
   ],
-  "confidence": 0.8084352115790049,
+  "confidence": 0.7979863186677297,
   "mode": "extractive"
 }
 ```
@@ -675,7 +671,7 @@ Response **200**:
 {
   "results": [
     {
-      "id": "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
+      "id": "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
       "content": "1 Quality\nAn organisation shall control documented information.\n",
       "document_summary": "Example standard for the guide.",
       "score": 0.17755083739757538,
@@ -689,7 +685,20 @@ Response **200**:
       }
     },
     {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+      "content": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
+      "score": 0.030170125886797905,
+      "metadata": {
+        "type": "segment",
+        "tags": "widgets,doctype:standard",
+        "doc_id": "67e53410c17a5649",
+        "ordinal": 1,
+        "char_start": 56,
+        "char_end": 154
+      }
+    },
+    {
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "content": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n",
       "score": 0.02785409428179264,
       "metadata": {
@@ -700,27 +709,14 @@ Response **200**:
         "char_start": 154,
         "char_end": 218
       }
-    },
-    {
-      "id": "95c39aa2-391f-442c-a43c-390dcaf46f7e",
-      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n2 Limits\n",
-      "score": 0.022969665005803108,
-      "metadata": {
-        "type": "segment",
-        "tags": "widgets,doctype:standard",
-        "doc_id": "67e53410c17a5649",
-        "ordinal": 0,
-        "char_start": 0,
-        "char_end": 65
-      }
     }
   ],
   "sources": [
-    "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
-    "96754d5b-db84-496a-b88f-4c415c58c585",
-    "95c39aa2-391f-442c-a43c-390dcaf46f7e"
+    "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
+    "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+    "0a14090d-5245-4798-89d0-ca2a54e757ef"
   ],
-  "confidence": 0.5380624327808619,
+  "confidence": 0.5392625095943611,
   "mode": "extractive"
 }
 ```
@@ -743,7 +739,7 @@ Response **200**:
 {
   "segments": [
     {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "content": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n",
       "metadata": {
         "type": "segment",
@@ -757,7 +753,7 @@ Response **200**:
       "score": 0.5859723091125488
     },
     {
-      "id": "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
+      "id": "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
       "content": "1 Quality\nAn organisation shall control documented information.\n",
       "metadata": {
         "type": "segment",
@@ -771,38 +767,38 @@ Response **200**:
       "score": 0.20718365907669067
     },
     {
-      "id": "95c39aa2-391f-442c-a43c-390dcaf46f7e",
-      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n2 Limits\n",
+      "id": "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411",
+      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n",
       "metadata": {
         "type": "segment",
         "tags": "widgets,doctype:standard",
         "doc_id": "67e53410c17a5649",
         "ordinal": 0,
         "char_start": 0,
-        "char_end": 65
+        "char_end": 56
       },
-      "distance": 0.8600390553474426,
-      "score": 0.13996094465255737
+      "distance": 0.8324563801288605,
+      "score": 0.16754361987113953
     }
   ],
   "context": [
     {
-      "id": "4ddeded0-763a-49dc-812e-42ab4be180c9",
-      "content": "2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
+      "id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+      "content": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
       "metadata": {
         "type": "segment",
         "tags": "widgets,doctype:standard",
         "doc_id": "67e53410c17a5649",
         "ordinal": 1,
-        "char_start": 65,
+        "char_start": 56,
         "char_end": 154
       }
     }
   ],
   "sources": [
-    "96754d5b-db84-496a-b88f-4c415c58c585",
-    "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
-    "95c39aa2-391f-442c-a43c-390dcaf46f7e"
+    "0a14090d-5245-4798-89d0-ca2a54e757ef",
+    "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
+    "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411"
   ],
   "mode": "extractive"
 }
@@ -826,7 +822,7 @@ Response **200**:
 {
   "results": [
     {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "content": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n",
       "score": 0.5859723091125488,
       "metadata": {
@@ -839,7 +835,7 @@ Response **200**:
       }
     },
     {
-      "id": "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
+      "id": "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
       "content": "1 Quality\nAn organisation shall control documented information.\n",
       "document_summary": "Example standard for the guide.",
       "score": 0.20718365907669067,
@@ -853,25 +849,25 @@ Response **200**:
       }
     },
     {
-      "id": "95c39aa2-391f-442c-a43c-390dcaf46f7e",
-      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n2 Limits\n",
-      "score": 0.13996094465255737,
+      "id": "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411",
+      "content": "1 Scope\nThis standard applies to widgets. See ISO 9001.\n",
+      "score": 0.16754361987113953,
       "metadata": {
         "type": "segment",
         "tags": "widgets,doctype:standard",
         "doc_id": "67e53410c17a5649",
         "ordinal": 0,
         "char_start": 0,
-        "char_end": 65
+        "char_end": 56
       }
     }
   ],
   "sources": [
-    "96754d5b-db84-496a-b88f-4c415c58c585",
-    "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
-    "95c39aa2-391f-442c-a43c-390dcaf46f7e"
+    "0a14090d-5245-4798-89d0-ca2a54e757ef",
+    "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
+    "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411"
   ],
-  "confidence": 0.6555194854736328,
+  "confidence": 0.6601165980100632,
   "mode": "extractive"
 }
 ```
@@ -894,32 +890,32 @@ Response **200**:
 {
   "results": [
     {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "content": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n",
       "score": 0.05754334479570389,
       "metadata": {}
     },
     {
-      "id": "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
+      "id": "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
       "content": "1 Quality\nAn organisation shall control documented information.\n",
       "score": 0.04188030958175659,
       "metadata": {}
     },
     {
-      "id": "4ddeded0-763a-49dc-812e-42ab4be180c9",
-      "content": "2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
-      "score": 0.026286033913493156,
+      "id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+      "content": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
+      "score": 0.024116432294249535,
       "metadata": {}
     },
     "..."
   ],
   "sources": [
-    "96754d5b-db84-496a-b88f-4c415c58c585",
-    "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
-    "4ddeded0-763a-49dc-812e-42ab4be180c9",
+    "0a14090d-5245-4798-89d0-ca2a54e757ef",
+    "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
+    "6e263a94-5eed-4462-bfaa-d46ccb3da296",
     "..."
   ],
-  "confidence": 0.5144011974334717,
+  "confidence": 0.5151076689362526,
   "mode": "extractive"
 }
 ```
@@ -941,7 +937,7 @@ Response **200**:
 {
   "results": [
     {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "content": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n",
       "score": 0.05754334479570389,
       "metadata": {
@@ -954,7 +950,7 @@ Response **200**:
       }
     },
     {
-      "id": "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
+      "id": "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
       "content": "1 Quality\nAn organisation shall control documented information.\n",
       "document_summary": "Example standard for the guide.",
       "score": 0.04188030958175659,
@@ -968,27 +964,27 @@ Response **200**:
       }
     },
     {
-      "id": "4ddeded0-763a-49dc-812e-42ab4be180c9",
-      "content": "2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
-      "score": 0.026286093518137932,
+      "id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
+      "content": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
+      "score": 0.024116486310958862,
       "metadata": {
         "type": "segment",
         "tags": "widgets,doctype:standard",
         "doc_id": "67e53410c17a5649",
         "ordinal": 1,
-        "char_start": 65,
+        "char_start": 56,
         "char_end": 154
       }
     },
     "..."
   ],
   "sources": [
-    "96754d5b-db84-496a-b88f-4c415c58c585",
-    "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
-    "4ddeded0-763a-49dc-812e-42ab4be180c9",
+    "0a14090d-5245-4798-89d0-ca2a54e757ef",
+    "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
+    "6e263a94-5eed-4462-bfaa-d46ccb3da296",
     "..."
   ],
-  "confidence": 0.5144012146629393,
+  "confidence": 0.5151076761540025,
   "mode": "extractive"
 }
 ```
@@ -1046,23 +1042,23 @@ Response **200**:
   "start_id": "67e53410c17a5649",
   "nodes": [
     {
-      "id": "4ddeded0-763a-49dc-812e-42ab4be180c9",
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "type": "memory",
-      "name": "4ddeded0",
+      "name": "0a14090d",
       "metadata": {},
       "hop": 1
     },
     {
-      "id": "95c39aa2-391f-442c-a43c-390dcaf46f7e",
+      "id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
       "type": "memory",
-      "name": "95c39aa2",
+      "name": "6e263a94",
       "metadata": {},
       "hop": 1
     },
     {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411",
       "type": "memory",
-      "name": "96754d5b",
+      "name": "cefc286c",
       "metadata": {},
       "hop": 1
     },
@@ -1097,9 +1093,9 @@ Response **200**:
       "hop": 2
     },
     {
-      "id": "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
+      "id": "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
       "type": "memory",
-      "name": "eabf7fa8",
+      "name": "cb775ce7",
       "metadata": {},
       "hop": 2
     }
@@ -1127,23 +1123,23 @@ Response **200**:
   "start_id": "67e53410c17a5649",
   "nodes": [
     {
-      "id": "4ddeded0-763a-49dc-812e-42ab4be180c9",
+      "id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "type": "memory",
-      "name": "4ddeded0",
+      "name": "0a14090d",
       "metadata": {},
       "hop": 1
     },
     {
-      "id": "95c39aa2-391f-442c-a43c-390dcaf46f7e",
+      "id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
       "type": "memory",
-      "name": "95c39aa2",
+      "name": "6e263a94",
       "metadata": {},
       "hop": 1
     },
     {
-      "id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "id": "cefc286c-9d1b-4bd8-a7fa-9e3fa5230411",
       "type": "memory",
-      "name": "96754d5b",
+      "name": "cefc286c",
       "metadata": {},
       "hop": 1
     },
@@ -1225,7 +1221,7 @@ Request body:
 Response **200**:
 ```json
 {
-  "id": "7ebe1081-278c-49f0-8436-b50345d3f547"
+  "id": "0de32bd7-82b5-4866-bbe3-3755af0a5b7a"
 }
 ```
 
@@ -1239,7 +1235,7 @@ Request body:
   "kind": "reflection",
   "text": "Laser etching satisfies the marking clause.",
   "source_ids": [
-    "7ebe1081-278c-49f0-8436-b50345d3f547"
+    "0de32bd7-82b5-4866-bbe3-3755af0a5b7a"
   ]
 }
 ```
@@ -1247,7 +1243,7 @@ Request body:
 Response **200**:
 ```json
 {
-  "id": "c333a9bf-c860-45ec-9efb-351efc178291"
+  "id": "27092c3f-ab7c-4d85-9844-39fe7c00d327"
 }
 ```
 
@@ -1259,7 +1255,7 @@ Request body:
 ```json
 {
   "strategy": "chain",
-  "seed_id": "7ebe1081-278c-49f0-8436-b50345d3f547",
+  "seed_id": "0de32bd7-82b5-4866-bbe3-3755af0a5b7a",
   "k": 2
 }
 ```
@@ -1280,7 +1276,7 @@ Response **200**:
 Request body:
 ```json
 {
-  "id_a": "7ebe1081-278c-49f0-8436-b50345d3f547",
+  "id_a": "0de32bd7-82b5-4866-bbe3-3755af0a5b7a",
   "id_b": "67e53410c17a5649",
   "edge_type": "references"
 }
@@ -1301,7 +1297,7 @@ Response **200**:
 Request body:
 ```json
 {
-  "id_a": "7ebe1081-278c-49f0-8436-b50345d3f547",
+  "id_a": "0de32bd7-82b5-4866-bbe3-3755af0a5b7a",
   "id_b": "67e53410c17a5649",
   "edge_type": "bogus"
 }
@@ -1316,18 +1312,18 @@ Response **400**:
 
 #### Delete a memory
 
-`DELETE /api/v1/memories/7ebe1081-278c-49f0-8436-b50345d3f547`
+`DELETE /api/v1/memories/0de32bd7-82b5-4866-bbe3-3755af0a5b7a`
 
 Response **200**:
 ```json
 {
-  "deleted": "7ebe1081-278c-49f0-8436-b50345d3f547"
+  "deleted": "0de32bd7-82b5-4866-bbe3-3755af0a5b7a"
 }
 ```
 
 #### Delete again
 
-`DELETE /api/v1/memories/7ebe1081-278c-49f0-8436-b50345d3f547`
+`DELETE /api/v1/memories/0de32bd7-82b5-4866-bbe3-3755af0a5b7a`
 
 Response **404**:
 ```json
@@ -1351,7 +1347,7 @@ Request body:
 Response **200**:
 ```json
 {
-  "key": "1f2f94df-f211-4c34-ad50-398e7f28a8e6"
+  "key": "2d052d68-7b42-4070-98ba-a18848b1984a"
 }
 ```
 
@@ -1384,10 +1380,10 @@ Response **200**:
     {
       "id": "67e53410c17a5649",
       "doc_id": "67e53410c17a5649",
-      "segment_id": "4ddeded0-763a-49dc-812e-42ab4be180c9",
+      "segment_id": "6e263a94-5eed-4462-bfaa-d46ccb3da296",
       "doc_name": "ACME 1000 (example)",
-      "text": "2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
-      "score": 0.7893006205558777,
+      "text": "2 Limits\n2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n",
+      "score": 0.7893373966217041,
       "reason": "standard match",
       "clause": null,
       "source_kind": "standard",
@@ -1398,7 +1394,7 @@ Response **200**:
     {
       "id": "67e53410c17a5649",
       "doc_id": "67e53410c17a5649",
-      "segment_id": "96754d5b-db84-496a-b88f-4c415c58c585",
+      "segment_id": "0a14090d-5245-4798-89d0-ca2a54e757ef",
       "doc_name": "ACME 1000 (example)",
       "text": "2.2 Marking\nEach widget shall carry a permanent serial marking.\n",
       "score": 0.48249390721321106,
@@ -1412,7 +1408,7 @@ Response **200**:
     {
       "id": "d0d490309ffeb4fc",
       "doc_id": "d0d490309ffeb4fc",
-      "segment_id": "eabf7fa8-47ea-4bbd-9652-6930a8d89661",
+      "segment_id": "cb775ce7-fcea-4fe2-afed-2a83c4bba794",
       "doc_name": "ISO 9001 (example)",
       "text": "1 Quality\nAn organisation shall control documented information.\n",
       "score": 0.10441797971725464,

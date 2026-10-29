@@ -42,6 +42,15 @@ def test_to_blocks_keeps_each_heading_with_its_first_paragraph(parser) -> None:
     assert all(b["text"].endswith("\n") and b["text"].strip() for b in blocks)
 
 
+def test_a_heading_with_only_a_subheading_is_carried_into_the_next_block(parser) -> None:
+    blocks = parser.to_blocks(["2 Limits", "2.1 Deflection", "The maximum is two millimetres.", "", "3 End"])
+    assert [b["text"] for b in blocks] == [
+        "2 Limits\n2.1 Deflection\nThe maximum is two millimetres.\n",
+        "3 End\n",
+    ]
+    assert blocks[1] == {"block_type": "heading", "heading_level": 1, "text": "3 End\n"}
+
+
 def test_strip_furniture_removes_repeating_header_and_page_numbers(parser) -> None:
     pages = [["ACME STD 1000", f"body line {n}", f"Page {n} of 4"] for n in range(1, 5)]
     assert parser.strip_furniture(pages) == [f"body line {n}" for n in range(1, 5)]

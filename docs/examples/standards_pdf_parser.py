@@ -65,7 +65,9 @@ def to_blocks(lines: list[str]) -> list[dict]:
     SMOS cuts segments at block boundaries and by size only; it does not use block types, and a block
     shorter than 20 characters is merged into the PREVIOUS segment. A short heading in a block of its own
     would therefore end up glued to the end of the previous clause. Keeping each heading with its body
-    makes a retrieved segment start at its clause. A heading with no body stays a heading block.
+    makes a retrieved segment start at its clause. A heading with no body of its own moves on to the next
+    block (so "2 Limits" followed by "2.1 Deflection" travel together); only a heading at the very end
+    stays a heading block.
     SMOS joins block texts with nothing in between, so every block ends with its own newline."""
     blocks: list[dict] = []
     heading: Optional[str] = None
@@ -82,7 +84,7 @@ def to_blocks(lines: list[str]) -> list[dict]:
     def emit_bare_heading() -> None:
         nonlocal heading
         if heading and not paragraph:
-            level = min(heading.split()[0].count(".") + 1, 6)
+            level = min(heading.split("\n")[-1].split()[0].count(".") + 1, 6)
             blocks.append({"block_type": "heading", "heading_level": level, "text": heading + "\n"})
             heading = None
 
@@ -94,8 +96,7 @@ def to_blocks(lines: list[str]) -> list[dict]:
         match = _HEADING.match(line)
         if match and not line.endswith("."):
             emit_paragraph()
-            emit_bare_heading()
-            heading = line
+            heading = heading + "\n" + line if heading else line  # a heading with no body moves on to the next block
         else:
             paragraph.append(line)
     emit_paragraph()
