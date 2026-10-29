@@ -50,7 +50,7 @@ text) and apply your own threshold; quote text only when it answers the question
 
 ## Segments follow blocks and size, not headings
 
-**Today:** blocks under 20 characters merge into the previous segment, blocks over 800 characters are split, and `block_type` /
+**Today:** blocks under 20 characters merge into the previous segment (a tiny FIRST block merges into the next one), blocks over 800 characters are split, and `block_type` /
 `heading_level` are not used for cutting. Sections exist only for split blocks. *Pinned.*
 **Do now:** one block per clause with its heading ([parser-author-guide.md](parser-author-guide.md#how-blocks-become-segments)).
 **Status:** by design; **future:** use headings to build sections and to keep a heading with its body automatically.

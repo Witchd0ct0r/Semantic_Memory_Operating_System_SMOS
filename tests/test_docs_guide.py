@@ -8,7 +8,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _GUIDE = sorted((_ROOT / "docs" / "guide").glob("*.md"))
 _CHECKED = _GUIDE + [_ROOT / "README.md", _ROOT / "docs" / "API.md"]
 _LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
-_OPERATION = re.compile(r"\b(GET|POST|PUT|DELETE)\s+(/api/v1/[A-Za-z0-9_/{}.\-]*[A-Za-z0-9_}])")
+_OPERATION = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/api/v1/[A-Za-z0-9_/{}.\-]*[A-Za-z0-9_}])")
 _NOT_OPERATIONS = {"/api/v1/docs"}
 
 
@@ -73,3 +73,8 @@ def test_every_endpoint_is_documented_in_the_guide(api) -> None:
     mentioned = {(m, _normalise(p)) for page in _GUIDE
                  for m, p in _OPERATION.findall(page.read_text(encoding="utf-8"))}
     assert sorted(real - mentioned) == []
+
+
+def test_operation_pattern_knows_every_http_method() -> None:
+    sample = "PATCH /api/v1/a, HEAD /api/v1/b, OPTIONS /api/v1/c, GET /api/v1/d/{id}"
+    assert [m for m, _p in _OPERATION.findall(sample)] == ["PATCH", "HEAD", "OPTIONS", "GET"]

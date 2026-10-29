@@ -164,3 +164,6 @@ What it does, in order:
 Its limits, so you know what to improve for a real corpus: headings are guessed from numbering; tables, figures and footnotes are
 plain text; hyphenated line breaks are not repaired; reference detection knows only four designation prefixes; a heading-like line
 that starts a sentence with a number and a capital ("2 Millimetres is the limit") is taken for a heading.
+
+The example never follows HTTP redirects: it sends your bearer token, and Python would otherwise forward that header to wherever a
+redirect points. If SMOS answers with a redirect (for example http to https at a proxy), use the final `--url` instead.

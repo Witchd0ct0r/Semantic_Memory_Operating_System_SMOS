@@ -289,3 +289,59 @@ def test_link_to_a_document_ingested_later_uses_a_placeholder_node(api) -> None:
     assert b_id in _doc_ids_around(client, headers, a_id)
     nodes = client.post("/api/v1/graph/query", json={"term": a_id, "max_hops": 1}, headers=headers).json()["nodes"]
     assert [n["name"] for n in nodes if n["id"] == b_id] == ["Document B"]   # the placeholder was filled
+
+
+def test_redirect_never_carries_the_bearer_token_to_another_origin(parser) -> None:
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    seen: dict = {}
+
+    class Target(BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen["auth"] = self.headers.get("Authorization")
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        do_POST = do_GET
+
+        def log_message(self, *args):
+            pass
+
+    target = HTTPServer(("127.0.0.1", 0), Target)
+
+    class Redirector(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{target.server_port}/stolen")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    redirector = HTTPServer(("127.0.0.1", 0), Redirector)
+    threads = [threading.Thread(target=s.serve_forever, daemon=True) for s in (target, redirector)]
+    for thread in threads:
+        thread.start()
+    try:
+        with pytest.raises(parser.SmosError, match="302"):
+            parser.post_document(f"http://127.0.0.1:{redirector.server_port}", "synthetic-sentinel", {"a": 1})
+    finally:
+        for server in (target, redirector):
+            server.shutdown()
+            server.server_close()
+    assert "auth" not in seen
+
+
+def test_undersized_first_block_merges_into_the_next_one(api) -> None:
+    """Pins documented behavior: the 'merge into the previous segment' rule has no previous segment for the first block."""
+    client, headers, _app = api
+    payload = {"external_handle": {"system": "t", "native_id": "first-tiny"}, "blocks": [
+        {"block_type": "heading", "heading_level": 1, "text": "Hi\n"},
+        {"block_type": "paragraph", "text": "A normal clause that is certainly long enough to stand on its own.\n"},
+    ]}
+    assert client.post("/api/v1/documents", json=payload, headers=headers).json()["segment_count"] == 1
+    top = client.post("/api/v1/query", json={"query": "A normal clause that is certainly long enough", "k": 1},
+                      headers=headers).json()["results"][0]
+    assert top["content"].startswith("Hi\nA normal clause")

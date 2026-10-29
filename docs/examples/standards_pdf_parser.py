@@ -21,7 +21,18 @@ import urllib.request
 from pathlib import Path
 from typing import Optional, Sequence
 
-OPENER = urllib.request.urlopen
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: the request carries a bearer token, and urllib would forward it to wherever
+    a redirect points. A redirect from SMOS is a configuration problem to fix, not something to follow."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_open = urllib.request.build_opener(_NoRedirects).open
+OPENER = _open
 
 _PAGE_NUMBER = re.compile(r"^\s*(?:page\s+)?\d+(?:\s+of\s+\d+)?\s*$", re.IGNORECASE)
 _HEADING = re.compile(r"^(\d+(?:\.\d+)*)\s+([A-Z].{0,99})$")
@@ -142,7 +153,7 @@ def build_payload(
     return payload
 
 
-def post_document(base_url: str, token: str, payload: dict, opener=urllib.request.urlopen) -> dict:
+def post_document(base_url: str, token: str, payload: dict, opener=_open) -> dict:
     request = urllib.request.Request(
         base_url.rstrip("/") + "/api/v1/documents",
         data=json.dumps(payload).encode("utf-8"),

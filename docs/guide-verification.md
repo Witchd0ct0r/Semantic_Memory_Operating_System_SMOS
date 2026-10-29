@@ -1525,3 +1525,11 @@ Stumbles found and fixed while writing and checking:
 
 Not covered by this pass: a reader who has never seen SMOS (the Governor's review of the pages is the check for that), and Windows
 `curl` quoting (the guide shows POSIX shell quoting).
+
+## 6. Codex review 6 resolution (2026-10-29, `docs/superpowers/review/2026-10-29-6-review.md`)
+
+| # | Severity | Finding | Resolution | Test |
+|---|---|---|---|---|
+| 1 | Important | The example forwarded its bearer token to a cross-origin redirect target | `post_document` now uses an opener that never follows redirects; a 3xx surfaces as `SmosError`; the parser guide says so | `test_redirect_never_carries_the_bearer_token_to_another_origin` (two local servers, RED then GREEN) |
+| 2 | Minor | Known-limits page omitted the first-block exception to the short-block rule | Page states it; behavior pinned | `test_undersized_first_block_merges_into_the_next_one` |
+| 3 | Minor | The endpoint guard could not see PATCH (or HEAD/OPTIONS) | The pattern knows all seven methods | `test_operation_pattern_knows_every_http_method` (RED then GREEN) |
