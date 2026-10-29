@@ -95,7 +95,7 @@ results and the report still render without the new key.
   failed, the runner reads the server log before cleanup and keeps, per distinct exception, the final line of each
   traceback (`ErrorType: message`, truncated, with a count and the first/last time), plus the number of lines mentioning
   a timeout or a locked database. No paths, no full tracebacks. (Builder's call on the exact patterns.)
-- **Result.** `result["errors"] = {"total", "groups": [{phase, request, category, count, first_s, last_s, example}], "server": [{error, count}]}`, groups capped (say 50) with a "more not shown" count. Per-step `errors` counts stay.
+- **Result.** `result["errors"] = {"total", "groups": [{phase, request, category, count, first_s, last_s, example}], "server": {"exceptions": [{error, count}], "locked_lines", "timeout_lines"}}`, groups capped (say 50) with a "more not shown" count. Per-step `errors` counts stay.
 - **Report.** An "Errors" section appears on the report page only when `total > 0` (grouped table: where, what, how
   many, when, example, then the server-side lines); with zero errors the page says so in one line. The JSON export
   contains it unchanged. The comparison table is not affected.
