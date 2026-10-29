@@ -327,3 +327,29 @@ def data_table(headers: list[str], rows: list[list[str]]) -> str:
     head = "".join(f"<th>{escape(str(h))}</th>" for h in headers)
     body = "".join("<tr>" + "".join(f"<td>{escape(str(c))}</td>" for c in row) + "</tr>" for row in rows)
     return f'<table class="data"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>'
+
+
+def bar_chart(values: list[tuple[str, float]], *, title: str, unit: str = "", width: int = 640) -> str:
+    """One horizontal bar per labelled value, all on the same scale, so lengths can be compared."""
+    values = [(label, v) for label, v in values if v is not None]
+    top = max((v for _, v in values), default=0.0)
+    if not values or top <= 0:
+        return _empty(title, width, 80)
+    gutter, value_room = 90, 70
+    plot_w = width - gutter - value_room
+    height = _MARGIN_TOP + _BAR_ROW_H * len(values) + 6
+    safe_title = escape(title, quote=True)
+    out = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" class="chart" '
+        f'role="img" aria-label="{safe_title}">',
+        f"<title>{escape(title)}</title>",
+    ]
+    for i, (label, value) in enumerate(values):
+        y = _MARGIN_TOP + i * _BAR_ROW_H
+        w = max(value / top * plot_w, 1.0)
+        out.append(f'<text class="axis-label" x="{gutter - 6}" y="{y + 14}" text-anchor="end">{escape(label)}</text>')
+        out.append(f'<rect class="bar s{i % 6}" x="{gutter}" y="{y}" width="{w:.1f}" height="{_BAR_THICKNESS}">'
+                   f"<title>{escape(label)}: {_fmt_value(value, unit)}</title></rect>")
+        out.append(f'<text class="axis-label" x="{gutter + w + 6:.1f}" y="{y + 14}">{escape(_fmt_value(value, unit))}</text>')
+    out.append("</svg>")
+    return "".join(out)

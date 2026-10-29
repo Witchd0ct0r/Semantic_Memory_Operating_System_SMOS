@@ -70,3 +70,19 @@ def test_data_table_escapes_cells() -> None:
     html = data_table(["a<b", "c"], [["<img src=x>", "2"]])
     assert "<img" not in html and "&lt;img" in html and "a&lt;b" in html
     assert html.count("<tr") == 2
+
+
+def test_bar_chart_bars_are_proportional_and_labelled() -> None:
+    from smos.admin.charts import bar_chart
+
+    svg = bar_chart([("alone", 120.0), ("with writer", 180.0)], title="Read p95", unit="ms", width=640)
+    widths = [float(w) for w in re.findall(r'<rect class="bar s\d" x="[\d.]+" y="[\d.]+" width="([\d.]+)"', svg)]
+    assert len(widths) == 2 and widths[1] / widths[0] == pytest.approx(1.5, rel=0.01)
+    assert "alone" in svg and "with writer" in svg and "180" in svg
+
+
+def test_bar_chart_empty_and_escaped() -> None:
+    from smos.admin.charts import bar_chart
+
+    assert "No data yet" in bar_chart([], title="t")
+    assert "<b>" not in bar_chart([("<b>x</b>", 1.0)], title="<i>t</i>")
