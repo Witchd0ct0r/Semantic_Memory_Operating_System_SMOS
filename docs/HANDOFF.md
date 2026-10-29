@@ -26,6 +26,7 @@ history log; git history is the log.
 > Dev-PC micro-benchmark `tests/bench_bm25.py`: roughly 80x faster per query at 5,000 segments and 230x at 25,000 (old vs new), 100,000
 > segments about 1 ms; the Debian effect on throughput (GIL, both cores) is still unmeasured.
 
+> **Latest handoff (read first):** `docs/handoffs/2026-10-29-2000-v0-3-4-published-next-both-cores.md`.
 > **Previous handoff:** `docs/handoffs/2026-10-29-1359-benchmark-codex-7-resolved-pushed.md` (benchmark page, Codex 7 resolved).
 > Projects 1-6 are implemented. Open: the two Debian checks (`docs/guide-verification.md` section 4), choosing the next project from the
 > debt list in `docs/guide/known-limits-and-roadmap.md`.
