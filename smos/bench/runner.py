@@ -60,8 +60,21 @@ def hardware_info() -> dict:
     return {
         "cpu_model": _cpu_model(), "cpu_cores": psutil.cpu_count() or 1, "cpu_cores_allocated": live["cpu_cores"],
         "mem_total": live["mem_limit"], "platform": platform.platform(), "faiss": faiss.__version__,
-        "python": platform.python_version(), "embedding_model": _MODEL_NAME,
+        "python": platform.python_version(), "embedding_model": _MODEL_NAME, "torch_threads": _torch_threads(),
     }
+
+
+def _torch_threads() -> int:
+    """Threads torch uses per embedding: SMOS_TORCH_THREADS when set, else torch's own default."""
+    import torch
+
+    from smos.memory.embeddings import configured_threads
+
+    try:
+        configured = configured_threads()
+    except RuntimeError:
+        configured = None
+    return configured if configured is not None else torch.get_num_threads()
 
 
 def release_model() -> None:
