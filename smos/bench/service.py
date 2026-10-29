@@ -191,6 +191,7 @@ class BenchmarkService:
         except Exception:
             log.exception("could not mark interrupted benchmark runs")
         base = self.data_dir / BENCH_DIR
+        self._kill_orphans(base)
         if not base.is_dir():
             return
         for entry in base.iterdir():
@@ -201,6 +202,31 @@ class BenchmarkService:
                 _rmtree(safe_run_dir(self.data_dir, int(entry.name)))
             except (ValueError, OSError):
                 log.exception("could not remove the stale benchmark directory %s", entry)
+
+    @staticmethod
+    def _kill_orphans(base: Path) -> None:
+        """A hard kill of SMOS leaves a run's processes behind (they are separate processes): end them. A process
+        belongs to a run when its command line or its data directory points inside bench-tmp/."""
+        marker = str(base)
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            if proc.pid == os.getpid():
+                continue
+            try:
+                belongs = any(marker in arg for arg in proc.info["cmdline"] or [])
+                if not belongs:
+                    belongs = proc.environ().get("SMOS_DATA_DIR", "").startswith(marker)
+                if not belongs:
+                    continue
+                victims = proc.children(recursive=True) + [proc]
+            except psutil.Error:
+                continue
+            log.warning("ending orphaned benchmark process %d", proc.pid)
+            for victim in victims:
+                try:
+                    victim.kill()
+                except psutil.Error:
+                    pass
+            psutil.wait_procs(victims, timeout=5)
 
     # ------------------------------------------------------------------ starting
     def _check_can_start(self, spec: Preset) -> None:

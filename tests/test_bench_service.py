@@ -291,3 +291,19 @@ def test_launch_secret_in_env_not_in_argv_or_logs(make, monkeypatch, caplog) -> 
     assert launch_hash == hashlib.sha256(b"KNOWN-SECRET-VALUE").hexdigest()
     assert not any("KNOWN-SECRET-VALUE" in a for a in record["argv"])
     assert "KNOWN-SECRET-VALUE" not in caplog.text
+
+
+def test_recover_kills_orphan_processes_of_a_dead_run(make) -> None:
+    """A hard kill of SMOS leaves the runner (a separate process) behind: the next start-up ends it."""
+    base = _bench_tmp(make.app)
+    (base / "7" / "data").mkdir(parents=True)
+    orphan = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", str(base / "7" / "data")])
+    bystander = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", str(make.app.state.data_dir)])
+    try:
+        make.build("ok").recover_on_startup()
+        assert orphan.wait(timeout=10) is not None  # ended by the recovery
+        assert bystander.poll() is None               # a process that merely mentions the data dir is left alone
+    finally:
+        for proc in (orphan, bystander):
+            proc.kill()
+            proc.wait(timeout=10)

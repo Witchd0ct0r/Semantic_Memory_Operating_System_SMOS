@@ -117,3 +117,26 @@ def test_cli_exit_code_and_error_file_on_failure(tmp_path) -> None:
 def test_check_launch_authorisation_accepts_matching_secret(tmp_path) -> None:
     work = _run_dir(tmp_path)
     runner.check_launch_authorisation(work, {"SMOS_BENCH_LAUNCH_SECRET": "s3cret"})  # does not raise
+
+
+def test_parent_watchdog_fires_when_the_parent_dies() -> None:
+    import subprocess
+    import sys
+    import threading
+
+    parent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)"])
+    fired = threading.Event()
+    runner.start_parent_watchdog(parent.pid, fired.set, interval=0.05)
+    assert not fired.wait(0.3)  # the parent is alive: nothing happens
+    parent.kill()
+    parent.wait(timeout=10)
+    assert fired.wait(5)
+
+
+def test_parent_watchdog_ignores_a_live_parent() -> None:
+    import os
+    import threading
+
+    fired = threading.Event()
+    runner.start_parent_watchdog(os.getpid(), fired.set, interval=0.05)
+    assert not fired.wait(0.4)

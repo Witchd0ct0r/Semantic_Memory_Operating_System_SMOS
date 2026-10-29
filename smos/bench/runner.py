@@ -9,14 +9,16 @@ import argparse
 import hashlib
 import json
 import platform
+import os
 import secrets
 import signal
 import sys
+import threading
 import time
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Callable, Mapping, Optional
 
 import faiss
 import psutil
@@ -175,9 +177,35 @@ def check_launch_authorisation(work_dir: Path, environ: Mapping[str, str]) -> No
         raise SystemExit(2)
 
 
-def main(argv: Optional[list[str]] = None, environ: Optional[Mapping[str, str]] = None) -> int:
-    import os
+def start_parent_watchdog(parent_pid: int, on_orphan: Callable[[], None], interval: float = 2.0) -> threading.Thread:
+    """Call `on_orphan` once the process that started us is gone (SMOS killed hard): nobody would stop this run."""
 
+    def alive() -> bool:
+        try:
+            return psutil.pid_exists(parent_pid) and psutil.Process(parent_pid).status() != psutil.STATUS_ZOMBIE
+        except psutil.Error:
+            return False
+
+    def watch() -> None:
+        while alive():
+            time.sleep(interval)
+        on_orphan()
+
+    thread = threading.Thread(target=watch, daemon=True, name="parent-watchdog")
+    thread.start()
+    return thread
+
+
+def _orphaned() -> None:
+    for child in psutil.Process().children(recursive=True):
+        try:
+            child.kill()
+        except psutil.Error:
+            pass
+    os._exit(130)
+
+
+def main(argv: Optional[list[str]] = None, environ: Optional[Mapping[str, str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m smos.bench", description="Started by the SMOS admin page only.")
     parser.add_argument("--work-dir", required=True)
     parser.add_argument("--preset", required=True)
@@ -189,6 +217,8 @@ def main(argv: Optional[list[str]] = None, environ: Optional[Mapping[str, str]] 
         check_launch_authorisation(work_dir, os.environ if environ is None else environ)
     except SystemExit as refused:
         return int(refused.code or 2)
+
+    start_parent_watchdog(os.getppid(), _orphaned)
 
     def interrupted(_signum, _frame) -> None:
         raise KeyboardInterrupt
