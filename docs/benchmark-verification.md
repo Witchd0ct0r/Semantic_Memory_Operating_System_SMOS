@@ -125,3 +125,24 @@ guards were mutation-checked). Tests are in `tests/test_bench_review7.py`; suite
 
 Not re-run for real after these fixes (only the runner's smoke run in the suite, which starts a real server); the Quick run on Debian
 is the next real check. Quick-run numbers in section 2 predate fixes 7 and 8 (ingest rates there include model loading).
+
+## 8. Review 8 (BM25 index, error analytics) and the defect it exposed
+
+Review: `docs/superpowers/review/2026-10-29-8-review-package.md`, `...-8-review.md` (1 Important, 3 Minor). All four fixed test-first.
+
+- **Important - one SQLite connection under two locks.** The benchmark's new error section caught an occasional HTTP 500 on a query
+  during ingest (about 3 smoke runs in 10; the same symptom had shown in the first Quick run on the target host under 0.3.3).
+  Reproduced reliably in-process (`do_ingest_document_schema` against `semantic_query`, three readers, 45 s: 3 of 3 runs failed with
+  `cannot commit - no transaction is active`, `cannot start a transaction within a transaction`, `not an error` and
+  `SystemError: error return without exception set`). Cause: `VectorStore` and `GraphStore` shared one `sqlite3.Connection` but each
+  had its own lock, so one thread's `commit()` ended another thread's half-finished implicit transaction. Fix: `VectorStore._lock` is
+  now an `RLock` and `GraphStore` takes it (`GraphStore(db, lock=...)`). Tests `tests/test_store_connection_sharing.py` (both failed
+  first, with the `SystemError` and `not an error`), the same stress 3 of 3 clean afterwards, and 8 of 8 smoke runs with zero errors.
+  Known follow-up: queries still embed while holding this lock (`VectorStore._query_internal`), which limits parallelism on a
+  multi-core host; moving the embedding out of the lock is a separate change.
+- **Minor - duplicate uuids in `BM25Index.build()`.** Now the first row wins (as `update`/`add_batch` already did); documented, tested
+  against the reference built from the de-duplicated list.
+- **Minor - transport errors in the quality and latency probes** aborted a run before the error summary was saved. They are now
+  recorded and the probe carries on; without an error log they still raise.
+- **Minor - exception-group digests** kept only the last child. Every leaf of (nested) groups is now counted; a flush-left line ends
+  a cut-off group block.

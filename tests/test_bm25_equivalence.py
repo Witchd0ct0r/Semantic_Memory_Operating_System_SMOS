@@ -205,3 +205,24 @@ def test_concurrent_queries_during_batches_see_whole_batches() -> None:
     for t in threads:
         t.join(10)
     assert errors == []
+
+
+def test_build_with_duplicate_uuids_keeps_the_first_row_and_mutates_consistently() -> None:
+    # Codex review 8: the old class kept both rows and removed them inconsistently. The new, documented rule is that
+    # build() skips a uuid that is already present, exactly as update() and add_batch() do.
+    duplicated = [("x", "alpha"), ("x", "beta"), ("y", "alpha beta")]
+    deduped = [("x", "alpha"), ("y", "alpha beta")]
+    new, ref = BM25Index(), ReferenceBM25Index()
+    new.build(duplicated)
+    ref.build(deduped)
+    for text in ("alpha", "beta", "alpha beta"):
+        assert_same_ranking(new.query(text, 10), ref.query(text, 10))
+    new.remove("x")
+    ref.remove("x")
+    for text in ("alpha", "beta", "alpha beta"):
+        assert_same_ranking(new.query(text, 10), ref.query(text, 10))
+    new.build(duplicated)
+    ref.build(deduped)
+    new.remove_batch(["x", "x"])
+    ref.remove_batch(["x"])
+    assert_same_ranking(new.query("alpha beta", 10), ref.query("alpha beta", 10))

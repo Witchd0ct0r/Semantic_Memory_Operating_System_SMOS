@@ -14,7 +14,8 @@ MAX_SERVER_EXCEPTIONS = 20  # distinct server-side exception lines kept
 
 
 _GROUP_BAR = re.compile(r"^\s*\|\s?(.*)$")      # a line inside an exception-group block: "  | text"
-_GROUP_END = re.compile(r"^\s*\+-{10,}\s*$")    # the line that closes one member of a group: "  +------------"
+_GROUP_END = re.compile(r"^\s*\+-{10,}\s*$")    # the line that closes a group: "  +------------"
+_GROUP_MEMBER = re.compile(r"^\s*\+(?:-\+)?-+ (\d+) -+\s*$")  # starts member N of a group: "  +----- 2 -----"
 
 
 def _clean(text: str) -> str:
@@ -71,8 +72,14 @@ class ErrorLog:
         plus how many lines mention a locked database or a timeout. Frames, paths and request lines are not kept."""
         exceptions: dict[str, int] = {}
         locked = timeouts = 0
-        expecting_exception = skip_block = in_group = False
+        expecting_exception = skip_block = False
+        depth = 0  # exception groups can nest; 0 means not inside one
         leaf = ""
+
+        def count(text: str) -> None:
+            key = _clean(text)
+            if key in exceptions or len(exceptions) < MAX_SERVER_EXCEPTIONS:
+                exceptions[key] = exceptions.get(key, 0) + 1
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as handle:
                 for raw in handle:
@@ -80,18 +87,28 @@ class ErrorLog:
                     lowered = line.lower()
                     locked += "database is locked" in lowered
                     timeouts += "timed out" in lowered or "timeout" in lowered
+                    if depth and line and not line[0].isspace():
+                        depth, leaf = 0, ""  # a group block is indented; a flush-left line means it ended (or was cut off)
                     if "Exception Group Traceback (most recent call last):" in line:
-                        in_group, leaf, expecting_exception = not skip_block, "", False
+                        if depth:
+                            depth += 1
+                        elif not skip_block:
+                            depth = 1
                         skip_block = False
-                    elif in_group:
-                        # Python 3.11+ prints grouped errors as "  | ..." blocks; the exception on the last bar line before
-                        # a closing rule is the one that was raised (outer lines name the group that wrapped it)
-                        if _GROUP_END.match(line):
+                        leaf, expecting_exception = "", False
+                    elif depth:
+                        # Python 3.11+ prints grouped errors as "  | ..." blocks. Each member's last bar line is the
+                        # exception that was raised; lines naming a group that wrapped them are dropped.
+                        member = _GROUP_MEMBER.match(line)
+                        if member:
+                            if int(member.group(1)) > 1 and leaf:
+                                count(leaf)
+                            leaf = ""
+                        elif _GROUP_END.match(line):
                             if leaf:
-                                key = _clean(leaf)
-                                if key in exceptions or len(exceptions) < MAX_SERVER_EXCEPTIONS:
-                                    exceptions[key] = exceptions.get(key, 0) + 1
-                            in_group = False
+                                count(leaf)
+                            leaf = ""
+                            depth -= 1
                         else:
                             match = _GROUP_BAR.match(line)
                             text = match.group(1) if match else ""
@@ -111,9 +128,9 @@ class ErrorLog:
             return
         with self._lock:
             merged = self._server["exceptions"]
-            for key, count in exceptions.items():
+            for key, times in exceptions.items():
                 if key in merged or len(merged) < MAX_SERVER_EXCEPTIONS:
-                    merged[key] = merged.get(key, 0) + count
+                    merged[key] = merged.get(key, 0) + times
             self._server["locked_lines"] += locked
             self._server["timeout_lines"] += timeouts
 

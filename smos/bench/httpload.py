@@ -87,6 +87,21 @@ def _note_exception(errors: Optional[ErrorLog], phase: str, request: str, error:
         errors.record(phase, request, category_for(None, error), str(error), time.perf_counter() - since)
 
 
+def _call(conn: "_Conn", errors: Optional[ErrorLog], phase: str, request: str, since: float, method: str,
+          path: str, body: Optional[dict] = None) -> Optional[tuple[int, bytes, float]]:
+    """One probe request. A non-success answer or a transport error is recorded; a transport error then gives None
+    so the probe carries on. Without an error log nothing is swallowed (the caller sees the exception)."""
+    try:
+        status, data, ms = conn.request(method, path, body)
+    except Exception as exc:  # noqa: BLE001
+        if errors is None:
+            raise
+        _note_exception(errors, phase, request, exc, since)
+        return None
+    _note_answer(errors, phase, request, status, data, since)
+    return status, data, ms
+
+
 class BenchServer:
     """A real `python -m smos.api.main` on 127.0.0.1 over a throwaway data directory, with its own admin and token."""
 
@@ -177,8 +192,10 @@ def quality_probes(base_url: str, token: str, probes: list[Probe], *, errors: Op
         for probe in probes:
             if not probe.marker:
                 continue
-            status, data, _ms = conn.request("POST", "/api/v1/query", _query_body(probe))
-            _note_answer(errors, phase, "query", status, data, since)
+            answer = _call(conn, errors, phase, "query", since, "POST", "/api/v1/query", _query_body(probe))
+            if answer is None:
+                continue
+            status, data, _ms = answer
             rank = None
             if status == 200:
                 for position, item in enumerate(json.loads(data).get("results", []), start=1):
@@ -214,13 +231,18 @@ def latency_probe(base_url: str, token: str, probes: list[Probe], n: int, post_d
     """
     conn, since = _Conn(base_url, token), time.perf_counter()
     doc_ids: list[str] = []
+    cold_ms: Optional[float] = None
     try:
-        status, data, cold_ms = conn.request("POST", "/api/v1/query", _query_body(probes[0]))
-        _note_answer(errors, phase, "query", status, data, since)
+        cold = _call(conn, errors, phase, "query", since, "POST", "/api/v1/query", _query_body(probes[0]))
+        if cold is not None:
+            cold_ms = cold[2]
         queries = []
         for i in range(n):
-            status, data, ms = conn.request("POST", "/api/v1/query", _query_body(probes[i % len(probes)]))
-            _note_answer(errors, phase, "query", status, data, since)
+            answer = _call(conn, errors, phase, "query", since, "POST", "/api/v1/query",
+                           _query_body(probes[i % len(probes)]))
+            if answer is None:
+                continue
+            status, data, ms = answer
             if status == 200:
                 queries.append(ms)
                 for item in json.loads(data).get("results", []):
@@ -229,16 +251,15 @@ def latency_probe(base_url: str, token: str, probes: list[Probe], n: int, post_d
                         doc_ids.append(doc_id)
         node_text = []
         for doc_id in doc_ids[:20]:
-            status, data, ms = conn.request("GET", f"/api/v1/nodes/{doc_id}/text")
-            _note_answer(errors, phase, "node text", status, data, since)
-            if status == 200:
-                node_text.append(ms)
+            answer = _call(conn, errors, phase, "node text", since, "GET", f"/api/v1/nodes/{doc_id}/text")
+            if answer is not None and answer[0] == 200:
+                node_text.append(answer[2])
         post_doc = []
         for _ in range(post_docs):
-            status, data, ms = conn.request("POST", "/api/v1/documents", _small_document())
-            _note_answer(errors, phase, "document ingest", status, data, since)
-            if status == 200:
-                post_doc.append(ms)
+            answer = _call(conn, errors, phase, "document ingest", since, "POST", "/api/v1/documents",
+                           _small_document())
+            if answer is not None and answer[0] == 200:
+                post_doc.append(answer[2])
     finally:
         conn.close()
     return {"cold_ms": cold_ms, "query": summarize_latencies(queries),

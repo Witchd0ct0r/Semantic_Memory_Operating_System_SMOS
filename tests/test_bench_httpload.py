@@ -165,3 +165,39 @@ def test_quality_probes_record_non_200_answers(stub) -> None:
     httpload.quality_probes(stub, "tok", [Probe("FAIL needle query", "REQ-000005", 5)], errors=log,
                             phase="100 segments: quality")
     assert log.summary()["groups"][0]["phase"] == "100 segments: quality"
+
+
+class _Dropper(BaseHTTPRequestHandler):
+    """Closes every connection without answering."""
+
+    def log_message(self, *args) -> None:
+        pass
+
+    def do_GET(self) -> None:
+        self.close_connection = True
+
+    do_POST = do_GET
+
+
+@pytest.fixture
+def dropper():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Dropper)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{server.server_address[1]}"
+    server.shutdown()
+    server.server_close()
+
+
+def test_dropped_connections_in_probes_are_recorded_and_do_not_abort(dropper) -> None:
+    log = ErrorLog()
+    quality = httpload.quality_probes(dropper, "tok", [Probe("needle query one", "REQ-000005", 5)], errors=log,
+                                      phase="q")
+    latency = httpload.latency_probe(dropper, "tok", [GOOD], n=3, post_docs=1, errors=log, phase="l")
+    assert quality["n"] == 0 and latency["query"]["n"] == 0
+    phases = {g["phase"] for g in log.summary()["groups"]}
+    assert phases == {"q", "l"}
+
+
+def test_probes_without_an_error_log_still_raise_on_transport_errors(dropper) -> None:
+    with pytest.raises(Exception):
+        httpload.latency_probe(dropper, "tok", [GOOD], n=1, post_docs=0)

@@ -164,3 +164,62 @@ def test_server_log_digest_reads_exception_group_tracebacks(tmp_path) -> None:
     log.add_server_log(path)
     assert log.summary()["server"]["exceptions"] == [
         {"error": "SystemError: error return without exception set", "count": 1}]
+
+
+_MULTI_LOG = """ERROR:    Exception in ASGI application
+  + Exception Group Traceback (most recent call last):
+  |   File "a.py", line 1, in f
+  | ExceptionGroup: two failures (2 sub-exceptions)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "b.py", line 2, in g
+    | ValueError: first
+    +---------------- 2 ----------------
+    | Traceback (most recent call last):
+    |   File "c.py", line 3, in h
+    | KeyError: 'second'
+    +------------------------------------
+"""
+
+_NESTED_LOG = """ERROR:    Exception in ASGI application
+  + Exception Group Traceback (most recent call last):
+  |   File "a.py", line 1, in f
+  | ExceptionGroup: outer (2 sub-exceptions)
+  +-+---------------- 1 ----------------
+    | Exception Group Traceback (most recent call last):
+    |   File "b.py", line 2, in g
+    | ExceptionGroup: inner (2 sub-exceptions)
+    +-+---------------- 1 ----------------
+      | Traceback (most recent call last):
+      |   File "c.py", line 3, in h
+      | ValueError: a
+      +---------------- 2 ----------------
+      | Traceback (most recent call last):
+      |   File "d.py", line 4, in i
+      | TypeError: b
+      +------------------------------------
+    +---------------- 2 ----------------
+    | Traceback (most recent call last):
+    |   File "e.py", line 5, in j
+    | KeyError: 'c'
+    +------------------------------------
+"""
+
+
+def _digest(tmp_path, text: str) -> list[dict]:
+    path = tmp_path / "server.log"
+    path.write_text(text, encoding="utf-8")
+    log = ErrorLog()
+    log.add_server_log(path)
+    return sorted(log.summary()["server"]["exceptions"], key=lambda e: e["error"])
+
+
+def test_every_child_of_an_exception_group_is_counted(tmp_path) -> None:
+    assert _digest(tmp_path, _MULTI_LOG) == [{"error": "KeyError: 'second'", "count": 1},
+                                             {"error": "ValueError: first", "count": 1}]
+
+
+def test_nested_exception_groups_count_every_leaf_and_no_group_line(tmp_path) -> None:
+    assert _digest(tmp_path, _NESTED_LOG) == [{"error": "KeyError: 'c'", "count": 1},
+                                              {"error": "TypeError: b", "count": 1},
+                                              {"error": "ValueError: a", "count": 1}]

@@ -76,8 +76,11 @@ class BM25Index:
     # ------------------------------------------------------------------
 
     def _load(self, entries: list[tuple[str, Counter]]) -> None:
-        """Replace everything with `entries` (uuid, word counts) in insertion order."""
+        """Replace everything with `entries` (uuid, word counts) in insertion order; a repeated uuid keeps its first row,
+        as update() and add_batch() do."""
         self._clear()
+        seen: set[str] = set()
+        entries = [entry for entry in entries if not (entry[0] in seen or seen.add(entry[0]))]
         n = len(entries)
         if n == 0:
             return

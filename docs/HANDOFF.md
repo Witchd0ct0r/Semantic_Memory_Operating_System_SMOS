@@ -18,10 +18,11 @@ history log; git history is the log.
 > **Next:** Governor approves push + `v0.3.4` release (`docs/RELEASING.md`); then on Debian: update, Quick, Standard twice (and the
 > `SMOS_TORCH_THREADS` 1 vs 2 comparison, `docs/runbooks/benchmark.md`), and read the new Errors section (the intermittent writer errors of
 > the mixed test were never explained). Benchmark results from the company host are company data: never put them in the repo.
-> **Found with the new error analytics (pre-existing, UNFIXED):** a real server under mixed read/write load sometimes answers a query with
-> 500 (`SystemError: error return without exception set` at `VectorStore.bump_recall` -> `self._db.commit()`, one sqlite connection shared by
-> `VectorStore` and `GraphStore` under two different locks; about 3 runs in 10 of the benchmark smoke preset). Not reproduced in isolation;
-> see review package 8 item 8. Next: systematic debugging, then a fix and a release.
+> **Found with the new error analytics and FIXED in 0.3.4:** a real server under mixed read/write load sometimes answered a query with 500
+> (`SystemError`/`cannot commit - no transaction is active`): one sqlite connection shared by `VectorStore` and `GraphStore` under two
+> different locks. Both now use one `RLock`; see `docs/benchmark-verification.md` section 8. Codex review 8 (1 Important + 3 Minor) is
+> resolved there. Follow-up idea: queries still embed while holding that lock; moving `embed()` out of `_query_internal`'s lock would
+> let both cores embed in parallel.
 > Dev-PC micro-benchmark `tests/bench_bm25.py`: roughly 80x faster per query at 5,000 segments and 230x at 25,000 (old vs new), 100,000
 > segments about 1 ms; the Debian effect on throughput (GIL, both cores) is still unmeasured.
 
