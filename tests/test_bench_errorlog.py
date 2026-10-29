@@ -70,3 +70,59 @@ def test_message_from_body() -> None:
     assert message_from_body(b"<html>  not   json </html>") == "<html> not json </html>"
     assert message_from_body(b"") == ""
     assert message_from_body(b'{"detail": [{"msg": "bad"}]}').startswith("[")
+
+
+_LOG = """INFO:     127.0.0.1:5000 - "POST /api/v1/documents HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/app/smos/memory/vector_store.py", line 10, in store_batch
+    cursor.execute(sql)
+sqlite3.OperationalError: database is locked
+INFO:     127.0.0.1:5001 - "POST /api/v1/documents HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/app/x.py", line 1, in f
+sqlite3.OperationalError: database is locked
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/app/y.py", line 2, in g
+RuntimeError: secondary failure
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/app/z.py", line 3, in h
+KeyError: 'missing'
+WARNING:  request timed out after 30 s
+"""
+
+
+def test_server_log_digest_counts_root_exceptions_and_marker_lines(tmp_path) -> None:
+    path = tmp_path / "server.log"
+    path.write_text(_LOG, encoding="utf-8")
+    log = ErrorLog()
+    log.add_server_log(path)
+    server = log.summary()["server"]
+    assert server["exceptions"][0] == {"error": "sqlite3.OperationalError: database is locked", "count": 2}
+    assert {"error": "KeyError: 'missing'", "count": 1} in server["exceptions"]
+    assert all("secondary failure" not in e["error"] for e in server["exceptions"])  # chained: only the root counts
+    assert server["locked_lines"] == 2 and server["timeout_lines"] == 1
+
+
+def test_server_log_missing_empty_and_large_files_are_safe(tmp_path) -> None:
+    log = ErrorLog()
+    log.add_server_log(tmp_path / "nothing.log")
+    (tmp_path / "empty.log").write_text("", encoding="utf-8")
+    log.add_server_log(tmp_path / "empty.log")
+    (tmp_path / "big.log").write_text('INFO:     127.0.0.1 - "POST /api/v1/query HTTP/1.1" 200 OK\n' * 20000, encoding="utf-8")
+    log.add_server_log(tmp_path / "big.log")
+    assert log.summary()["server"] == {"exceptions": [], "locked_lines": 0, "timeout_lines": 0}
+
+
+def test_server_log_digests_merge_across_servers_and_cap_distinct_errors(tmp_path) -> None:
+    log = ErrorLog()
+    for i in range(30):
+        path = tmp_path / f"s{i}.log"
+        path.write_text(f"Traceback (most recent call last):\n  File \"a\", line 1\nValueError: distinct {i}\n", encoding="utf-8")
+        log.add_server_log(path)
+    assert len(log.summary()["server"]["exceptions"]) <= 20

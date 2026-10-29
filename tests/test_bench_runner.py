@@ -140,3 +140,27 @@ def test_parent_watchdog_ignores_a_live_parent() -> None:
     fired = threading.Event()
     runner.start_parent_watchdog(os.getpid(), fired.set, interval=0.05)
     assert not fired.wait(0.4)
+
+
+def test_clean_run_has_an_empty_errors_section(smoke_run) -> None:
+    result, _work, _leftover = smoke_run
+    assert result["errors"]["total"] == 0 and result["errors"]["groups"] == []
+    assert not any("request(s) failed" in w for w in result["warnings"])
+
+
+def test_failed_requests_reach_the_result_and_a_warning(monkeypatch, tmp_path) -> None:
+    from smos.bench import httpload
+
+    original = httpload.mixed_step
+
+    def failing(*args, errors=None, **kwargs):
+        errors.record("mixed: writer", "document ingest", "http 500", "synthetic failure", 1.0)
+        return original(*args, errors=errors, **kwargs)
+
+    monkeypatch.setattr(httpload, "mixed_step", failing)
+    work = tmp_path / "bench-tmp" / "1"
+    work.mkdir(parents=True)
+    result = runner.run(work, SMOKE, 200.0, seed=5)
+    assert result["errors"]["total"] >= 1
+    assert result["errors"]["groups"][0]["example"] == "synthetic failure"
+    assert any("request(s) failed" in w for w in result["warnings"])

@@ -26,6 +26,7 @@ import psutil
 
 from smos.admin.metrics import read_hardware
 from smos.bench import httpload, phases
+from smos.bench.errorlog import ErrorLog
 from smos.bench.corpus import CorpusBuilder
 from smos.bench.presets import PRESETS, SMOKE, Preset
 from smos.bench.stats import find_knee
@@ -120,6 +121,7 @@ def run(work_dir: Path, preset: Preset, budget_ms: float, seed: int = 1) -> dict
     builder = CorpusBuilder(seed)
     probes = builder.probes(preset.probe_count, max_index=preset.sizes[0])
     warnings: list[str] = []
+    errors = ErrorLog()
     scaling: list[dict] = []
     sweep: list[dict] = []
     mixed: dict = {}
@@ -149,12 +151,15 @@ def run(work_dir: Path, preset: Preset, budget_ms: float, seed: int = 1) -> dict
 
         progress.update(f"{label}: starting a server")
         server = httpload.BenchServer(data_dir, httpload.free_port())
+        errors_before = errors.total
         entry = {"segments": segments, "ingest": ingest, "stages": stages, "hnsw": hnsw, **footprint}
         try:
             entry["startup_s"] = server.start()
             process = psutil.Process(server.pid)
-            entry["quality"] = httpload.quality_probes(server.base_url, server.token, probes)
-            entry["latency"] = httpload.latency_probe(server.base_url, server.token, probes, _LATENCY_QUERIES)
+            entry["quality"] = httpload.quality_probes(server.base_url, server.token, probes, errors=errors,
+                                                      phase=f"{label}: quality")
+            entry["latency"] = httpload.latency_probe(server.base_url, server.token, probes, _LATENCY_QUERIES, errors=errors,
+                                                      phase=f"{label}: latency")
             entry["rss_bytes"] = process.memory_info().rss
             peak_rss = max(peak_rss, entry["rss_bytes"])
             progress.update(f"{label}: latency measured", advance=True)
@@ -163,7 +168,8 @@ def run(work_dir: Path, preset: Preset, budget_ms: float, seed: int = 1) -> dict
                 for clients in preset.clients:
                     progress.update(f"{label}: {clients} parallel client(s)")
                     process.cpu_percent(None)
-                    step = httpload.run_step(server.base_url, server.token, clients, preset.step_seconds, probes)
+                    step = httpload.run_step(server.base_url, server.token, clients, preset.step_seconds, probes,
+                                         errors=errors)
                     step["server_cpu_percent"] = process.cpu_percent(None)
                     sweep.append(step)
                     if step["client_limited"]:
@@ -171,16 +177,22 @@ def run(work_dir: Path, preset: Preset, budget_ms: float, seed: int = 1) -> dict
                     progress.update(f"{label}: {clients} client(s) done", advance=True)
                 knee = find_knee(sweep) or preset.clients[len(preset.clients) // 2]
                 progress.update(f"{label}: mixed read/write load")
-                mixed = httpload.mixed_step(server.base_url, server.token, knee, preset.step_seconds, probes, builder)
+                mixed = httpload.mixed_step(server.base_url, server.token, knee, preset.step_seconds, probes, builder,
+                                         errors=errors)
                 progress.update("finishing", advance=True)
         finally:
             server.stop()
+            if errors.total > errors_before:
+                errors.add_server_log(server.log_path)  # before the run directory (and the log) is cleaned up
         scaling.append(entry)
 
+    error_summary = errors.summary()
+    if error_summary["total"]:
+        warnings.append(f"{error_summary['total']} request(s) failed during the run; see the Errors section of the report")
     docs = CorpusBuilder(seed).next_documents(preset.sizes[-1])
     result = {
         "schema": 1, "preset": preset.name, "seed": seed, "budget_ms": budget_ms, "sizes": list(preset.sizes),
-        "scaling": scaling, "sweep": sweep, "mixed": mixed, "hardware": hardware_info(),
+        "scaling": scaling, "sweep": sweep, "mixed": mixed, "errors": error_summary, "hardware": hardware_info(),
         "resources": {RSS_KEY: peak_rss, "final_disk_bytes": scaling[-1]["disk_bytes"]},
         "corpus_fingerprint": hashlib.sha1(json.dumps(docs, sort_keys=True).encode()).hexdigest(),
         "warnings": warnings, "started_at": started_at, "finished_at": _now(),

@@ -98,6 +98,10 @@ class BenchServer:
         self._process: Optional[subprocess.Popen] = None
 
     @property
+    def log_path(self) -> Path:
+        return self.data_dir.parent / f"server-{self.port}.log"
+
+    @property
     def pid(self) -> Optional[int]:
         return self._process.pid if self._process else None
 
@@ -115,7 +119,7 @@ class BenchServer:
             "SMOS_SAMPLE_INTERVAL_S": "3600", "SMOS_ADMIN_USER": "bench",
             "SMOS_ADMIN_PASSWORD": self._admin_password,
         })
-        log = open(self.data_dir.parent / f"server-{self.port}.log", "ab")
+        log = open(self.log_path, "ab")
         flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
         started = time.perf_counter()
         self._process = subprocess.Popen([sys.executable, "-m", "smos.api.main"], env=env, stdout=log, stderr=log,

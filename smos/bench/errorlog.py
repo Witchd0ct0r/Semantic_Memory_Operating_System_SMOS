@@ -4,10 +4,12 @@ from __future__ import annotations
 import json
 import socket
 import threading
+from pathlib import Path
 from typing import Optional
 
 MAX_TEXT = 200      # characters kept of any message
 MAX_GROUPS = 50     # groups listed in the summary; the rest are counted
+MAX_SERVER_EXCEPTIONS = 20  # distinct server-side exception lines kept
 
 
 def _clean(text: str) -> str:
@@ -58,6 +60,38 @@ class ErrorLog:
                 group["count"] += 1
                 group["first_s"] = min(group["first_s"], elapsed_s)
                 group["last_s"] = max(group["last_s"], elapsed_s)
+
+    def add_server_log(self, path: Path) -> None:
+        """Merge a digest of a (finished) throwaway server's log: the root exception line of each traceback, counted,
+        plus how many lines mention a locked database or a timeout. Frames, paths and request lines are not kept."""
+        exceptions: dict[str, int] = {}
+        locked = timeouts = 0
+        expecting_exception = skip_block = False
+        try:
+            with open(path, "r", encoding="utf-8", errors="replace") as handle:
+                for raw in handle:
+                    line = raw.rstrip("\r\n")
+                    lowered = line.lower()
+                    locked += "database is locked" in lowered
+                    timeouts += "timed out" in lowered or "timeout" in lowered
+                    if line.startswith("Traceback (most recent call last):"):
+                        expecting_exception, skip_block = not skip_block, False
+                    elif line.startswith(("During handling of the above exception", "The above exception was the direct cause")):
+                        skip_block = True  # the next traceback is a consequence; the root was already counted
+                    elif expecting_exception and line and not line[0].isspace():
+                        key = _clean(line)
+                        if key in exceptions or len(exceptions) < MAX_SERVER_EXCEPTIONS:
+                            exceptions[key] = exceptions.get(key, 0) + 1
+                        expecting_exception = False
+        except OSError:
+            return
+        with self._lock:
+            merged = self._server["exceptions"]
+            for key, count in exceptions.items():
+                if key in merged or len(merged) < MAX_SERVER_EXCEPTIONS:
+                    merged[key] = merged.get(key, 0) + count
+            self._server["locked_lines"] += locked
+            self._server["timeout_lines"] += timeouts
 
     @property
     def total(self) -> int:
