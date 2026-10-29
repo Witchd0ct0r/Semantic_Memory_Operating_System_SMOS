@@ -1499,6 +1499,29 @@ Run on the Debian host in the install folder, one command at a time.
    test document is harmless; it can be left or ignored).
    The same refusal is also asserted automatically (`test_read_only_token_cannot_ingest`).
 
-## 5. Readability pass
+## 5. Readability pass (2026-10-29)
 
-(Filled in at the end of the project.)
+Followed `docs/guide/README.md` from a clean state against a freshly started real server (script kept outside the repo; the steps are
+the ones in the guide's quick start):
+
+1. Health: `{"status":"ok","version":"0.3.1"}`.
+2. `python docs/examples/standards_pdf_parser.py --pdf acme1000.pdf ... --url ...` with a read/write token on a 3-page generated PDF
+   whose running header repeats on every page: `4 block(s), 1 link(s)` then
+   `status=success doc_id=67e53410c17a5649 segments=4` (the repeated header was stripped, exit code 0).
+3. The same command with a read-only token: `error: HTTP 403: {"detail":"this token is read-only"}`, exit code 1.
+4. The guide's `/query` request for "maximum permitted widget deflection": the top hit was
+   `"2.1 Deflection\nThe maximum permitted widget deflection shall not exceed two millimetres.\n"` at score 0.752; the clause starts
+   with its own heading, as the parser guide promises.
+5. `GET /api/v1/nodes/{doc_id}/text` returned the four clause blocks joined exactly.
+
+Stumbles found and fixed while writing and checking:
+
+- The parser guide linked to `query-guide.md#tags`, a heading that did not exist; the link guard test failed and a "Tags" section
+  was added.
+- The first version of the example emitted heading blocks on their own; the real run showed short headings glued to the previous
+  clause. The example now emits one block per clause and carries a bare parent heading into the next block; the guide explains why.
+- Two behaviors that contradicted the written API description (`tags` as a filter, a "restrict" wording) were recorded as technical
+  debt in `known-limits-and-roadmap.md` instead of being hidden.
+
+Not covered by this pass: a reader who has never seen SMOS (the Governor's review of the pages is the check for that), and Windows
+`curl` quoting (the guide shows POSIX shell quoting).
