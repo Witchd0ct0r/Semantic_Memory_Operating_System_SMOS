@@ -27,6 +27,21 @@ def test_rebuild_files_carry_no_version_number() -> None:
         assert smos.__version__ not in path.read_text(encoding="utf-8"), name
 
 
+def test_compose_image_tag_is_not_versioned() -> None:
+    lines = [l.strip() for l in (_ROOT / "compose.yaml").read_text(encoding="utf-8").splitlines()]
+    assert "image: smos:${SMOS_IMAGE_TAG:-latest}" in lines
+
+
+def test_rebuild_files_name_no_stale_smos_version() -> None:
+    """Catches a version left behind from an earlier release, not only today's."""
+    import re
+
+    pattern = re.compile(r"smos[:\- ]v?\d+\.\d+(\.\d+)?", re.I)
+    for name in ("Dockerfile", "compose.yaml", "smos/launcher.py"):
+        found = pattern.search((_ROOT / name).read_text(encoding="utf-8"))
+        assert found is None, (name, found and found.group(0))
+
+
 def test_release_that_only_bumps_the_version_needs_no_rebuild(tmp_path) -> None:
     from smos.update import manifest
 

@@ -116,21 +116,48 @@ def test_store_reopen_is_idempotent(tmp_path: Path) -> None:
     store.close()
 
 
-def test_graph_tables_migration_adopts_existing_current_tables(tmp_path: Path) -> None:
-    """A data directory written by 0.3.x (graph tables created by GraphStore, store schema at 2)
-    keeps its graph rows when it moves to version 3."""
-    from smos.memory.graph_store import GraphStore
+# The DDL GraphStore itself executed on every open before migration 3 (0.3.0), copied verbatim.
+_GRAPH_DDL_0_3_0 = [
+    """
+    CREATE TABLE IF NOT EXISTS graph_nodes (
+        id         TEXT PRIMARY KEY,
+        type       TEXT NOT NULL CHECK(type IN ('entity','concept','memory','repo_component','snapshot','agent','document','section')),
+        name       TEXT NOT NULL,
+        metadata   TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS graph_edges (
+        id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        source_id  TEXT NOT NULL,
+        target_id  TEXT NOT NULL,
+        edge_type  TEXT NOT NULL,
+        weight     REAL DEFAULT 1.0,
+        metadata   TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(source_id, target_id, edge_type)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes (type)",
+]
 
+
+def test_graph_tables_migration_adopts_a_0_3_0_database(tmp_path: Path) -> None:
+    """A data directory written by 0.3.0 (store schema 2, graph tables created by the old GraphStore DDL)
+    keeps its rows and gains nothing else when it moves to version 3."""
     path = tmp_path / "metadata.db"
     conn = sqlite3.connect(str(path), check_same_thread=False)
     run_migrations(conn, STORE_MIGRATIONS[:2], path)
-    for _v, _n, apply in STORE_MIGRATIONS[2:]:
-        apply(conn)  # what GraphStore used to do on open, with the same current schema
-    graph = GraphStore(conn)
-    graph.add_node("a", "memory", "a")
-    graph.add_edge("a", "a", "references")
+    for ddl in _GRAPH_DDL_0_3_0:
+        conn.execute(ddl)
+    conn.execute("INSERT INTO graph_nodes (id, type, name, metadata) VALUES ('a','memory','a','{}')")
+    conn.execute("INSERT INTO graph_edges (source_id, target_id, edge_type) VALUES ('a','a','references')")
     conn.commit()
+    schema_before = sorted(conn.execute("SELECT name, sql FROM sqlite_master WHERE name LIKE '%graph%'").fetchall())
 
     assert run_migrations(conn, STORE_MIGRATIONS, path) == STORE_MIGRATIONS[-1][0]
-    assert graph.get_node("a") is not None and graph.edge_count() == 1
+    assert conn.execute("SELECT id, type FROM graph_nodes").fetchall() == [("a", "memory")]
+    assert conn.execute("SELECT source_id, edge_type FROM graph_edges").fetchall() == [("a", "references")]
+    assert sorted(conn.execute("SELECT name, sql FROM sqlite_master WHERE name LIKE '%graph%'").fetchall()) == schema_before
     conn.close()

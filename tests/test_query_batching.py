@@ -45,5 +45,10 @@ def test_get_many_is_one_select_and_skips_missing(store: VectorStore) -> None:
 def test_get_many_chunks_beyond_the_sql_variable_limit(store: VectorStore, monkeypatch) -> None:
     monkeypatch.setattr(VectorStore, "_SQL_VARIABLE_CHUNK", 4)
     ids = store.get_all_uuids()
-    assert set(store.get_many(ids)) == set(ids)
-    assert len(store.query("retention of records", k=12)) == 12
+    assert len(ids) == 12
+    found: dict = {}
+    assert _memory_selects(store, lambda: found.update(store.get_many(ids))) == 3  # ceil(12 / 4)
+    assert set(found) == set(ids)
+    results: list = []
+    assert _memory_selects(store, lambda: results.extend(store.query("retention of records", k=12))) == 3
+    assert len(results) == 12

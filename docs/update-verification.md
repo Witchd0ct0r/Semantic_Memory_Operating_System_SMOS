@@ -67,3 +67,17 @@ then fixed (commit `c042d4c`); suite 743 passed, and the real end-to-end run was
 
 Noted, not changed: a rejected concurrent `Updater.begin` call (second click while one is running) writes no audit row.
 It is not an update attempt, and the running attempt is recorded; deferred as a minor.
+
+## 5. Codex review 5 resolution (2026-10-29, `docs/superpowers/review/2026-10-29-5-review.md`)
+
+Three Minor findings, all about tests giving false comfort; no production change and no release needed. 752 tests pass.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 1 | Version-literal test only searched for the current version | Added `test_compose_image_tag_is_not_versioned` (exact image expression) and `test_rebuild_files_name_no_stale_smos_version` (regex for any `smos:X.Y[.Z]` in Dockerfile, compose, launcher). Mutation check: `image: smos:0.2.0` makes both fail. |
+| 2 | Chunking test did not prove chunks are used | `tests/test_query_batching.py` now asserts `ceil(12/4) = 3` SELECTs for `get_many` and for `query`. |
+| 3 | "Existing graph" migration test built its fixture with the migration | `tests/test_migrations.py` carries the exact 0.3.0 GraphStore DDL, builds a store-schema-2 database from it, migrates, and asserts rows and the graph schema are unchanged. |
+
+Not a numbered finding, left open on purpose: a database at schema version 3 whose graph tables were dropped fails on the first
+graph request rather than at startup. That is a corrupt schema, not an upgrade shape; a startup table check is a possible later
+hardening.
