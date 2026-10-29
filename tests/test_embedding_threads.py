@@ -63,3 +63,12 @@ def test_hardware_info_records_torch_threads(monkeypatch) -> None:
     assert runner.hardware_info()["torch_threads"] == 2
     monkeypatch.delenv("SMOS_TORCH_THREADS")
     assert runner.hardware_info()["torch_threads"] == torch.get_num_threads()
+
+
+def test_warm_up_rejects_a_bad_thread_setting_at_startup(monkeypatch) -> None:
+    monkeypatch.setattr(embeddings, "_get_model", lambda: object())
+    monkeypatch.setenv("SMOS_TORCH_THREADS", "lots")
+    with pytest.raises(RuntimeError, match="SMOS_TORCH_THREADS"):
+        embeddings.warm_up()
+    monkeypatch.setenv("SMOS_TORCH_THREADS", "2")
+    embeddings.warm_up()  # a valid value does not raise

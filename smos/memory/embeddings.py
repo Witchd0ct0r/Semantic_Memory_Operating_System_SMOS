@@ -44,7 +44,8 @@ def _get_model() -> SentenceTransformer:
 
 
 def warm_up() -> None:
-    """Load the model now so a broken model folder stops startup instead of the first query."""
+    """Load the model now so a broken model folder or thread setting stops startup instead of the first query."""
+    configured_threads()
     _get_model()
 
 
