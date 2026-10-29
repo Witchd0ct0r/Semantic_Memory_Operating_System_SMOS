@@ -144,7 +144,7 @@ def test_parent_watchdog_ignores_a_live_parent() -> None:
 
 def test_clean_run_has_an_empty_errors_section(smoke_run) -> None:
     result, _work, _leftover = smoke_run
-    assert result["errors"]["total"] == 0 and result["errors"]["groups"] == []
+    assert result["errors"]["total"] == 0 and result["errors"]["groups"] == [], result["errors"]
     assert not any("request(s) failed" in w for w in result["warnings"])
 
 

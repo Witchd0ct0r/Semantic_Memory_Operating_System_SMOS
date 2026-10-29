@@ -126,3 +126,41 @@ def test_server_log_digests_merge_across_servers_and_cap_distinct_errors(tmp_pat
         path.write_text(f"Traceback (most recent call last):\n  File \"a\", line 1\nValueError: distinct {i}\n", encoding="utf-8")
         log.add_server_log(path)
     assert len(log.summary()["server"]["exceptions"]) <= 20
+
+
+_GROUP_LOG = """INFO:     127.0.0.1:51574 - "POST /api/v1/query HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+  + Exception Group Traceback (most recent call last):
+  |   File "C:/x/uvicorn/protocols/http/httptools_impl.py", line 421, in run_asgi
+  |     result = await app(
+  |   File "C:/x/starlette/middleware/base.py", line 191, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |   File "C:/x/anyio/_backends/_asyncio.py", line 794, in __aexit__
+  |     raise BaseExceptionGroup(
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:/Private/semantic_memory/smos/memory/vector_store.py", line 333, in bump_recall
+    |     self._db.commit()
+    |     ~~~~~~~~~~~~~~~^^
+    | SystemError: error return without exception set
+    +------------------------------------
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:/x/uvicorn/protocols/http/httptools_impl.py", line 421, in run_asgi
+    result = await app(
+  File "C:/x/starlette/middleware/base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+"""
+
+
+def test_server_log_digest_reads_exception_group_tracebacks(tmp_path) -> None:
+    path = tmp_path / "server.log"
+    path.write_text(_GROUP_LOG, encoding="utf-8")
+    log = ErrorLog()
+    log.add_server_log(path)
+    assert log.summary()["server"]["exceptions"] == [
+        {"error": "SystemError: error return without exception set", "count": 1}]

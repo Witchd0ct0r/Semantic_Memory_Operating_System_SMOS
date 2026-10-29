@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 import threading
 from pathlib import Path
@@ -10,6 +11,10 @@ from typing import Optional
 MAX_TEXT = 200      # characters kept of any message
 MAX_GROUPS = 50     # groups listed in the summary; the rest are counted
 MAX_SERVER_EXCEPTIONS = 20  # distinct server-side exception lines kept
+
+
+_GROUP_BAR = re.compile(r"^\s*\|\s?(.*)$")      # a line inside an exception-group block: "  | text"
+_GROUP_END = re.compile(r"^\s*\+-{10,}\s*$")    # the line that closes one member of a group: "  +------------"
 
 
 def _clean(text: str) -> str:
@@ -66,7 +71,8 @@ class ErrorLog:
         plus how many lines mention a locked database or a timeout. Frames, paths and request lines are not kept."""
         exceptions: dict[str, int] = {}
         locked = timeouts = 0
-        expecting_exception = skip_block = False
+        expecting_exception = skip_block = in_group = False
+        leaf = ""
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as handle:
                 for raw in handle:
@@ -74,7 +80,25 @@ class ErrorLog:
                     lowered = line.lower()
                     locked += "database is locked" in lowered
                     timeouts += "timed out" in lowered or "timeout" in lowered
-                    if line.startswith("Traceback (most recent call last):"):
+                    if "Exception Group Traceback (most recent call last):" in line:
+                        in_group, leaf, expecting_exception = not skip_block, "", False
+                        skip_block = False
+                    elif in_group:
+                        # Python 3.11+ prints grouped errors as "  | ..." blocks; the exception on the last bar line before
+                        # a closing rule is the one that was raised (outer lines name the group that wrapped it)
+                        if _GROUP_END.match(line):
+                            if leaf:
+                                key = _clean(leaf)
+                                if key in exceptions or len(exceptions) < MAX_SERVER_EXCEPTIONS:
+                                    exceptions[key] = exceptions.get(key, 0) + 1
+                            in_group = False
+                        else:
+                            match = _GROUP_BAR.match(line)
+                            text = match.group(1) if match else ""
+                            if text and not text[0].isspace() and not text.startswith(("Traceback", "During handling",
+                                                                                       "The above exception")):
+                                leaf = text
+                    elif line.startswith("Traceback (most recent call last):"):
                         expecting_exception, skip_block = not skip_block, False
                     elif line.startswith(("During handling of the above exception", "The above exception was the direct cause")):
                         skip_block = True  # the next traceback is a consequence; the root was already counted
