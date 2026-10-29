@@ -6,13 +6,14 @@ history log; git history is the log.
 
 ---
 
-## Where things stand (2026-10-28, session 7)
+## Where things stand (2026-10-29, session 8)
 
-> **Latest handoff (read first):** `docs/handoffs/2026-10-28-1830-debian-updated-to-0-3-0.md` (v0.3.0 released and installed on Debian; **open defect: every release would be shown as needing a rebuild**, fix first).
-> Previous: `docs/handoffs/2026-10-28-1700-project-4-self-update-done.md`.
-> Projects 1-4 are implemented and Codex-reviewed (Project 4: review 4 fixed in `c042d4c`, see
-> `docs/update-verification.md` §4). The Debian installation runs the Project 1-2 code and is
-> deliberately NOT updated until all projects are finished. Pushed to origin and tagged `v0.3.0` on 2026-10-28 (no GitHub Release page created yet). Next: verify inside the Docker image, then Project 5 (documentation).
+> **Latest handoff (read first):** `docs/handoffs/2026-10-29-0900-v0-3-1-released-review-5-ready.md`.
+> v0.3.1 is released (tag + GitHub Release): it fixes the defect that made every release look like it needed a rebuild.
+> Debian still runs 0.3.0 and needs ONE rebuild (recipe in `docs/runbooks/debian-deploy.md`), then the update drill
+> (`docs/runbooks/update-drill.md`). Review package 5 for Codex: `docs/superpowers/review/2026-10-29-5-review-package.md`.
+> HNSW: assessed, recommendation "not yet" (`docs/hnsw-assessment.md`). Next after the drill and review: Project 5
+> (documentation).
 
 **Direction change: SMOS is becoming a standalone, self-hosted product** the Governor will
 install in Docker inside their company for trial runs. A local agent and third-party parsers
@@ -52,8 +53,8 @@ Plan: `docs/superpowers/plans/2026-10-28-standalone-core.md`.
   bodies) in `admin.db`; per-token view at `/admin/usage`.
 - **Migrations:** `smos/storage/migrations.py`; forward-only, one transaction, backup file
   before upgrading; `SchemaTooNewError` if the data is newer than the code. Store DB and
-  `admin.db` each have their own list. GraphStore still creates its own tables (move under
-  migrations when it next changes).
+  `admin.db` each have their own list. The graph tables are store migration 3 since 0.3.1 (were created by GraphStore; moved under
+  the migration runner).
 - **Packaging:** distribution `smos` 0.2.0, console script `smos-server`; admin templates are
   package data.
 - **Removed with it:** the `smos-doc-sync` skill and its test, `docs/runbooks/scripts/ingest_code.py`,
@@ -109,13 +110,12 @@ ingestion contract, segmentation, exact retrieval, markdown/legal adapters), Tra
 ## Standing technical debt
 
 - `embed()` is called while holding `VectorStore._lock`.
-- N individual SQLite SELECTs per query result (no `WHERE ... IN` batching).
 - Tier labels are computed but don't drive eviction or search.
 - `BM25Index.update()/remove()` rebuild fully per call.
-- `GraphStore` has no corpus backfill; its DDL is outside the migration runner.
+- `GraphStore` has no corpus backfill (its tables are created by store migration 3 since 0.3.1).
 - `GraphStore.traverse()` is undirected: a `contains` query from a section returns its parent too;
   consumers filter by node type.
-- `do_ingest_document_schema()` is not atomic across its separate lock acquisitions.
+- `do_ingest_document_schema()` is chunked and checkpointed (resumable), not atomic: readers can see a half-ingested document while it runs. By design.
 - The admin DB shares one SQLite connection behind a lock; fine for a trial, revisit under load.
 
 ## Test commands

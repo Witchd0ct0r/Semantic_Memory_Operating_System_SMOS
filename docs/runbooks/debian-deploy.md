@@ -70,4 +70,7 @@ curl -s http://localhost:8080/api/v1/health           # version
   date", which also proves outbound HTTPS to GitHub with the CA bundle works inside the container).
 - **Not yet exercised on this machine:** an actual in-place update (no release newer than 0.3.0 exists), rollback in the
   container, and the real SIGTERM path. Do that with a harmless patch release (see the newest handoff).
+- **0.3.1 (released 2026-10-29) is the next rebuild**: it fixes the "every release needs a rebuild" defect. Rebuild with the
+  recipe above; the image is now tagged `smos:latest` (compose uses `smos:${SMOS_IMAGE_TAG:-latest}`), so the old `smos:0.3.0`
+  stays on disk until removed (`docker rmi smos:0.3.0`). Afterwards run `update-drill.md` to prove in-place update and rollback.
 - Older images (`smos:0.2.0`, base images) are still on disk; `docker image prune` / `docker rmi smos:0.2.0` when happy.
