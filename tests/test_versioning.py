@@ -8,9 +8,44 @@ import smos
 _ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_pyproject_version_equals_package_version() -> None:
+def test_pyproject_takes_its_version_from_the_package() -> None:
     data = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert data["project"]["version"] == smos.__version__
+    assert "version" not in data["project"]
+    assert "version" in data["project"]["dynamic"]
+    assert data["tool"]["setuptools"]["dynamic"]["version"] == {"attr": "smos.__version__"}
+
+
+def test_rebuild_files_carry_no_version_number() -> None:
+    """The rebuild fingerprint covers these files, so a version literal in any of them would make every
+    release look like it needs a rebuilt image (the v0.3.0 defect)."""
+    from smos.update.manifest import REBUILD_PATHS
+
+    for name in REBUILD_PATHS:
+        path = _ROOT / name
+        if path.is_dir():
+            continue
+        assert smos.__version__ not in path.read_text(encoding="utf-8"), name
+
+
+def test_release_that_only_bumps_the_version_needs_no_rebuild(tmp_path) -> None:
+    from smos.update import manifest
+
+    def snapshot(version: str) -> dict[str, str]:
+        root = tmp_path / version
+        (root / "smos").mkdir(parents=True)
+        (root / "smos" / "__init__.py").write_text(f'__version__ = "{version}"\n')
+        entries = {}
+        for name in manifest.REBUILD_PATHS:
+            source = _ROOT / name
+            if source.is_dir():
+                continue
+            target = root / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+            entries[name] = target
+        return manifest.build_manifest(entries)
+
+    assert manifest.differing(snapshot("0.3.1"), snapshot("0.3.2")) == []
 
 
 def test_health_reports_the_loaded_code_version(api, monkeypatch) -> None:

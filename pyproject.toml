@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smos"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Semantic Memory Operating System — a self-hosted store with exact-text retrieval over an authenticated HTTP API"
 readme = "README.md"
 license = {text = "MIT"}
@@ -60,3 +60,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 # a test stuck for 5 minutes prints every thread's stack instead of stalling silently
 faulthandler_timeout = 300
+
+[tool.setuptools.dynamic]
+version = {attr = "smos.__version__"}

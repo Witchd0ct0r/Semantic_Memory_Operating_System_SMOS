@@ -1,4 +1,4 @@
-# SMOS 0.2 container image.
+# SMOS container image.
 # Build:  docker compose build        (needs Docker Hub and PyPI; nothing else)
 # The embedding model is bundled from ./models, so no Hugging Face access is needed
 # at build or run time.

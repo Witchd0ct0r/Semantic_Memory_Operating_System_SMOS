@@ -26,7 +26,6 @@ def test_pyproject_entry_point_and_deps() -> None:
     data = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = data["project"]
     assert project["name"] == "smos"
-    assert project["version"] == "0.3.0"
     assert project["scripts"] == {"smos-server": "smos.launcher:main"}
     deps = " ".join(project["dependencies"]).lower()
     for wanted in ["fastapi", "uvicorn", "jinja2", "python-multipart", "itsdangerous"]:

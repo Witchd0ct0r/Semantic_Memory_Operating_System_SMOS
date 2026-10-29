@@ -3,9 +3,11 @@
 Installed servers update themselves from **GitHub Releases** (see `INSTALL.md`, "Updating from the dashboard").
 A commit on `main` never reaches an installation; only a release does. Follow this list for every release.
 
-1. **Version.** Set the same `X.Y.Z` in `smos/__init__.py` (`__version__`) and `pyproject.toml` (`version`).
-   `tests/test_versioning.py` fails if they differ. The running server compares its `__version__` with the
-   release tag, and an update is refused if the release's code says another version than its tag.
+1. **Version.** Set `X.Y.Z` in `smos/__init__.py` (`__version__`) and nowhere else: `pyproject.toml` reads it
+   (`dynamic = ["version"]`) and `compose.yaml` uses the image tag `smos:${SMOS_IMAGE_TAG:-latest}`. Those files are part of
+   the rebuild fingerprint (step 3), so a version number in any of them would make every release look like it needs a
+   rebuilt image (the v0.3.0 defect); `tests/test_versioning.py` fails if one appears. The running server compares its
+   `__version__` with the release tag, and an update is refused if the release's code says another version than its tag.
 2. **Tests.** `python -m pytest tests/ -q` is green (use `rtk proxy python -m pytest tests/ -q` if it says
    "No tests collected").
 3. **Does it need a rebuild?** If the release changes any of `pyproject.toml`, `Dockerfile`, `compose.yaml`,
