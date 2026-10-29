@@ -28,7 +28,7 @@ def test_migration_4_creates_update_log_and_keeps_rows(tmp_path) -> None:
     old.close()
     upgraded = open_admin_db(tmp_path)
     assert upgraded.execute("SELECT name FROM tokens").fetchone()[0] == "keep"
-    assert upgraded.execute("SELECT version FROM schema_version").fetchone()[0] == 4
+    assert upgraded.execute("SELECT version FROM schema_version").fetchone()[0] == ADMIN_MIGRATIONS[-1][0]
     columns = {r[1] for r in upgraded.execute("PRAGMA table_info(update_log)")}
     assert columns == {"id", "at", "admin_user", "from_version", "to_version", "sha", "outcome", "detail"}
     upgraded.close()

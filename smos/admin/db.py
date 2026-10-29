@@ -112,11 +112,30 @@ def _add_update_log(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _add_benchmark_runs(conn: sqlite3.Connection) -> None:
+    """Version 5: one row per benchmark run (status, preset, the hardware and the full result as JSON)."""
+    conn.execute("""
+        CREATE TABLE benchmark_runs (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at    TEXT NOT NULL,
+            finished_at   TEXT,
+            status        TEXT NOT NULL,
+            preset        TEXT NOT NULL,
+            budget_ms     REAL NOT NULL,
+            smos_version  TEXT NOT NULL,
+            hardware_json TEXT,
+            result_json   TEXT,
+            error         TEXT NOT NULL DEFAULT ''
+        )
+    """)
+
+
 ADMIN_MIGRATIONS: list[Migration] = [
     (1, "baseline", _baseline),
     (2, "token_scope", _add_scope),
     (3, "samples", _add_samples),
     (4, "update_log", _add_update_log),
+    (5, "benchmark_runs", _add_benchmark_runs),
 ]
 
 
