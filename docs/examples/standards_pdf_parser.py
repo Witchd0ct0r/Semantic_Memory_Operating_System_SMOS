@@ -60,29 +60,46 @@ def strip_furniture(pages: list[list[str]]) -> list[str]:
 
 
 def to_blocks(lines: list[str]) -> list[dict]:
-    """Headings and paragraphs. SMOS joins block texts with nothing in between, so every block ends
-    with its own newline."""
+    """One block per clause: a heading line and the paragraph that follows it share a block.
+
+    SMOS cuts segments at block boundaries and by size only; it does not use block types, and a block
+    shorter than 20 characters is merged into the PREVIOUS segment. A short heading in a block of its own
+    would therefore end up glued to the end of the previous clause. Keeping each heading with its body
+    makes a retrieved segment start at its clause. A heading with no body stays a heading block.
+    SMOS joins block texts with nothing in between, so every block ends with its own newline."""
     blocks: list[dict] = []
+    heading: Optional[str] = None
     paragraph: list[str] = []
 
-    def flush() -> None:
+    def emit_paragraph() -> None:
+        nonlocal heading
         if paragraph:
-            blocks.append({"block_type": "paragraph", "text": " ".join(paragraph) + "\n"})
+            head = heading + "\n" if heading else ""
+            blocks.append({"block_type": "paragraph", "text": head + " ".join(paragraph) + "\n"})
             paragraph.clear()
+            heading = None
+
+    def emit_bare_heading() -> None:
+        nonlocal heading
+        if heading and not paragraph:
+            level = min(heading.split()[0].count(".") + 1, 6)
+            blocks.append({"block_type": "heading", "heading_level": level, "text": heading + "\n"})
+            heading = None
 
     for raw in lines:
         line = raw.strip()
         if not line:
-            flush()
+            emit_paragraph()
             continue
         match = _HEADING.match(line)
         if match and not line.endswith("."):
-            flush()
-            level = min(match.group(1).count(".") + 1, 6)
-            blocks.append({"block_type": "heading", "heading_level": level, "text": line + "\n"})
+            emit_paragraph()
+            emit_bare_heading()
+            heading = line
         else:
             paragraph.append(line)
-    flush()
+    emit_paragraph()
+    emit_bare_heading()
     return blocks
 
 
@@ -157,7 +174,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except NoTextError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
-    print(f"{len(payload['blocks'])} blocks, {len(payload['source_links'])} links")
+    print(f"{len(payload['blocks'])} block(s), {len(payload['source_links'])} link(s)")
     if args.dry_run:
         return 0
     token = os.environ.get(args.token_env, "")

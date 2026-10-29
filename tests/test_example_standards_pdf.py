@@ -27,12 +27,18 @@ def parser():
     return _load()
 
 
-def test_to_blocks_headings_and_paragraphs(parser) -> None:
-    lines = ["1 Scope", "This part applies", "to all items.", "", "1.1 Purpose", "Text."]
+def test_to_blocks_keeps_each_heading_with_its_first_paragraph(parser) -> None:
+    lines = ["1 Scope", "This part applies", "to all items.", "", "Second paragraph.", "", "1.1 Purpose", "Text.",
+             "", "1.2 Empty"]
     blocks = parser.to_blocks(lines)
-    assert [b["block_type"] for b in blocks] == ["heading", "paragraph", "heading", "paragraph"]
-    assert blocks[0]["heading_level"] == 1 and blocks[2]["heading_level"] == 2
-    assert blocks[1]["text"] == "This part applies to all items.\n"
+    assert [b["text"] for b in blocks] == [
+        "1 Scope\nThis part applies to all items.\n",
+        "Second paragraph.\n",
+        "1.1 Purpose\nText.\n",
+        "1.2 Empty\n",
+    ]
+    assert [b["block_type"] for b in blocks] == ["paragraph", "paragraph", "paragraph", "heading"]
+    assert blocks[3]["heading_level"] == 2
     assert all(b["text"].endswith("\n") and b["text"].strip() for b in blocks)
 
 
@@ -62,7 +68,8 @@ def test_build_payload_from_pdf(parser, tmp_path) -> None:
                                    domain_tags=["widgets"])
     assert payload["external_handle"] == {"system": "std-pdf", "native_id": "ACME 1000"}
     assert payload["doc_type"] == "standard" and payload["domain_tags"] == ["widgets"]
-    assert [b["block_type"] for b in payload["blocks"]] == ["heading", "paragraph", "heading", "paragraph"]
+    assert [b["text"] for b in payload["blocks"]] == [
+        "1 Scope\nApplies to widgets. See ISO 9001.\n", "2 Terms\nA widget is a thing.\n"]
     assert payload["source_links"] == [
         {"target_native_id": "ISO 9001", "edge_type": "references", "metadata": {"target_system": "std-pdf"}}
     ]
@@ -108,7 +115,7 @@ def test_dry_run_posts_nothing(parser, tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setattr(parser, "OPENER", fail)
     code = parser.main(["--pdf", str(pdf), "--system", "s", "--designation", "D 1", "--name", "D", "--dry-run"])
     assert code == 0
-    assert "2 blocks" in capsys.readouterr().out
+    assert "1 block(s), 0 link(s)" in capsys.readouterr().out
 
 
 # --- against a real SMOS app (the behavior the guide documents) -------------------------------------
@@ -198,3 +205,53 @@ def test_blocks_without_trailing_newline_run_together(api) -> None:
                           {"block_type": "paragraph", "text": "Second line."}]}
     doc_id = client.post("/api/v1/documents", json=payload, headers=headers).json()["doc_id"]
     assert client.get(f"/api/v1/nodes/{doc_id}/text", headers=headers).json()["text"] == "First line.Second line."
+
+
+def test_clause_block_keeps_heading_with_its_body(parser, api, tmp_path) -> None:
+    client, headers, _app = api
+    client.post("/api/v1/documents", json=_payload(parser, tmp_path), headers=headers)
+    top = client.post("/api/v1/query", json={"query": "maximum permitted widget deflection", "k": 3},
+                      headers=headers).json()["results"][0]
+    assert top["content"].startswith("2.1 Widget limits\nThe maximum permitted widget deflection")
+
+
+def test_short_heading_block_is_glued_to_the_previous_segment(api) -> None:
+    """Pins documented behavior: a block under 20 characters is merged into the PREVIOUS segment."""
+    client, headers, _app = api
+    payload = {"external_handle": {"system": "t", "native_id": "glue"}, "blocks": [
+        {"block_type": "paragraph", "text": "The first clause says something quite long enough.\n"},
+        {"block_type": "heading", "heading_level": 1, "text": "2.2 Marking\n"},
+        {"block_type": "paragraph", "text": "Each widget shall carry a permanent serial marking.\n"},
+    ]}
+    assert client.post("/api/v1/documents", json=payload, headers=headers).json()["segment_count"] == 2
+    top = client.post("/api/v1/query", json={"query": "The first clause says something quite long", "k": 1},
+                      headers=headers).json()["results"][0]
+    assert top["content"] == "The first clause says something quite long enough.\n2.2 Marking\n"
+
+
+def test_headings_do_not_create_sections_only_split_blocks_do(api) -> None:
+    client, headers, _app = api
+    sentence = "This sentence is part of a very long clause that SMOS has to split. "
+    payload = {"external_handle": {"system": "t", "native_id": "sections"}, "blocks": [
+        {"block_type": "heading", "heading_level": 1, "text": "1 A clause heading\n"},
+        {"block_type": "paragraph", "text": sentence * 30 + "\n"},
+        {"block_type": "paragraph", "text": "A short clause that fits in one segment.\n"},
+    ]}
+    body = client.post("/api/v1/documents", json=payload, headers=headers).json()
+    assert body["section_count"] == 1 and body["segment_count"] >= 3
+    flat = {"external_handle": {"system": "t", "native_id": "flat"}, "blocks": [
+        {"block_type": "heading", "heading_level": 1, "text": "1 A clause heading\n"},
+        {"block_type": "paragraph", "text": "A short clause that fits in one segment.\n"},
+    ]}
+    assert client.post("/api/v1/documents", json=flat, headers=headers).json()["section_count"] == 0
+
+
+def test_query_tags_are_a_preference_not_a_filter(api) -> None:
+    """Pins documented behavior (technical debt): with no tagged match, /query falls back to an unfiltered search."""
+    client, headers, _app = api
+    payload = {"external_handle": {"system": "t", "native_id": "beta"}, "domain_tags": ["beta"],
+               "blocks": [{"block_type": "paragraph", "text": "Gaskets shall be replaced every two years.\n"}]}
+    client.post("/api/v1/documents", json=payload, headers=headers)
+    results = client.post("/api/v1/query", json={"query": "gaskets replaced every two years", "k": 3,
+                                                 "tags": ["alpha"]}, headers=headers).json()["results"]
+    assert results and "Gaskets" in results[0]["content"]
