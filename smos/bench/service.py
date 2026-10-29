@@ -205,15 +205,28 @@ class BenchmarkService:
 
     @staticmethod
     def _kill_orphans(base: Path) -> None:
-        """A hard kill of SMOS leaves a run's processes behind (they are separate processes): end them. A process
-        belongs to a run when its command line or its data directory points inside bench-tmp/."""
+        """A hard kill of SMOS leaves a run's processes behind (they are separate processes): end them.
+
+        Only a Python process counts, and only one that is plainly a benchmark's: `python -m smos.bench` working inside
+        bench-tmp/, or a SMOS server whose data directory is inside bench-tmp/. A process that merely mentions the path
+        (a shell, an editor) is never touched, and neither is this process or any ancestor of it."""
+        if not base.is_dir() or not any(base.iterdir()):
+            return  # no run left anything behind, so there is nothing to look for (the scan reads every process)
         marker = str(base)
-        for proc in psutil.process_iter(["pid", "cmdline"]):
-            if proc.pid == os.getpid():
+        protected = {os.getpid()}
+        try:
+            protected.update(p.pid for p in psutil.Process().parents())
+        except psutil.Error:
+            pass
+        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            if proc.pid in protected:
                 continue
             try:
-                belongs = any(marker in arg for arg in proc.info["cmdline"] or [])
-                if not belongs:
+                if not (proc.info["name"] or "").lower().startswith("python"):
+                    continue
+                cmd = proc.info["cmdline"] or []
+                belongs = "smos.bench" in cmd and any(arg.startswith(marker) for arg in cmd)
+                if not belongs and "smos.api.main" in cmd:
                     belongs = proc.environ().get("SMOS_DATA_DIR", "").startswith(marker)
                 if not belongs:
                     continue
@@ -222,6 +235,8 @@ class BenchmarkService:
                 continue
             log.warning("ending orphaned benchmark process %d", proc.pid)
             for victim in victims:
+                if victim.pid in protected:
+                    continue
                 try:
                     victim.kill()
                 except psutil.Error:

@@ -297,13 +297,33 @@ def test_recover_kills_orphan_processes_of_a_dead_run(make) -> None:
     """A hard kill of SMOS leaves the runner (a separate process) behind: the next start-up ends it."""
     base = _bench_tmp(make.app)
     (base / "7" / "data").mkdir(parents=True)
-    orphan = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", str(base / "7" / "data")])
-    bystander = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", str(make.app.state.data_dir)])
+    sleeper = "import time; time.sleep(600)"
+    runner_like = subprocess.Popen([sys.executable, "-c", sleeper, "-m", "smos.bench", "--work-dir", str(base / "7")])
+    mentions_only = subprocess.Popen([sys.executable, "-c", sleeper, str(base / "7" / "data")])  # not a benchmark process
+    mentions_data_dir = subprocess.Popen([sys.executable, "-c", sleeper, str(make.app.state.data_dir)])
     try:
         make.build("ok").recover_on_startup()
-        assert orphan.wait(timeout=10) is not None  # ended by the recovery
-        assert bystander.poll() is None               # a process that merely mentions the data dir is left alone
+        assert runner_like.wait(timeout=10) is not None  # ended by the recovery
+        assert mentions_only.poll() is None              # merely naming the path is not enough
+        assert mentions_data_dir.poll() is None
     finally:
-        for proc in (orphan, bystander):
+        for proc in (runner_like, mentions_only, mentions_data_dir):
+            proc.kill()
+            proc.wait(timeout=10)
+
+
+def test_orphan_server_is_recognised_by_its_data_directory_not_its_command_line(make) -> None:
+    base = _bench_tmp(make.app)
+    (base / "8" / "data").mkdir(parents=True)
+    env = dict(os.environ, SMOS_DATA_DIR=str(base / "8" / "data"))
+    server_like = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", "smos.api.main"], env=env)
+    other_env = dict(os.environ, SMOS_DATA_DIR=str(make.app.state.data_dir))
+    live_like = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(600)", "smos.api.main"], env=other_env)
+    try:
+        make.build("ok").recover_on_startup()
+        assert server_like.wait(timeout=10) is not None
+        assert live_like.poll() is None  # the real server (its own data dir) is never touched
+    finally:
+        for proc in (server_like, live_like):
             proc.kill()
             proc.wait(timeout=10)
