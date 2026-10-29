@@ -1,4 +1,6 @@
-# SMOS API reference (0.2)
+# SMOS API reference
+
+How to use it, with worked examples, is in the [guide](guide/README.md); this page is the endpoint summary.
 
 SMOS is a self-hosted store with exact-text retrieval. It never generates text: summaries
 come from the caller and are returned beside the exact stored text.

@@ -47,15 +47,15 @@ curl -s http://localhost:8765/api/v1/query \
 ```
 
 The machine-readable API description is at `/api/v1/openapi.json` (needs a token or an
-admin session). The human summary is [docs/API.md](docs/API.md); the internals are in
-[ARCHITECTURE.md](ARCHITECTURE.md).
+admin session). Start with the [guide](docs/guide/README.md); the endpoint summary is
+[docs/API.md](docs/API.md); the internals are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Status
 
-SMOS 0.2 is the first standalone release: the built-in AI and the MCP server were removed.
-Docker packaging, the full metrics dashboard, self-update and the complete user guide are
-the next projects; see [docs/HANDOFF.md](docs/HANDOFF.md) and
-`docs/superpowers/specs/2026-10-28-standalone-core-design.md`.
+SMOS 0.3 is a standalone service: no built-in AI and no MCP server, Docker packaging, a metrics
+dashboard and self-update from GitHub Releases are done. The guide for parser authors, agents and
+people reporting problems is in [docs/guide/](docs/guide/README.md). Project state and next steps:
+[docs/HANDOFF.md](docs/HANDOFF.md).
 
 ## Tests
 
