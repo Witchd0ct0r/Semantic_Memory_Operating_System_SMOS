@@ -6,7 +6,7 @@ Built test-first, inline, one commit per task (`0900a0e..HEAD`).
 
 ## 1. Automated tests
 
-Full suite `python -m pytest tests -q`: **1139 passed** (1078 before this work), about 4 minutes.
+Full suite `python -m pytest tests -q`: **1145 passed** (1078 before this work; 1139 before the Codex 9 fixes), about 4 minutes.
 New files: `test_token_expiry.py`, `test_admin_rotation.py`, `test_admin_token_pages.py`, `test_storeops.py`,
 `test_pentest.py`, `test_backup.py`, `test_backup_load.py`, `test_admin_settings.py`; changed expectations in
 `test_api_auth.py` (health now has `pentest`) and one test added to `test_update_apply.py`.
@@ -45,3 +45,7 @@ The server was stopped afterwards and its temporary data deleted.
 - Loading a backup is not atomic with respect to a power cut between the file moves; the swap marker plus safety copy make the
   next start restore the previous store (tested by simulation, not by cutting power).
 - The Debian host has not run 0.4.0 yet.
+
+## 5. Codex review 9
+
+1 High and 1 Moderate, both fixed with tests that failed first; see `docs/superpowers/review/2026-10-30-9-review.md`.

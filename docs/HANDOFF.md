@@ -16,7 +16,7 @@ history log; git history is the log.
 > Design `docs/superpowers/specs/2026-10-30-token-lifecycle-and-settings-design.md`, plan `...plans/2026-10-30-token-lifecycle-and-settings.md`,
 > record `docs/token-settings-verification.md` (1139 tests pass; 29/29 checks against a real server), runbook
 > `docs/runbooks/backup-and-pentest.md`. **Review package 9 for Codex:** `docs/superpowers/review/2026-10-30-9-review-package.md`
-> (diff `0900a0e..HEAD`). **Next:** send the package to Codex, fix the findings test-first, then release per `docs/RELEASING.md`
+> (diff `0900a0e..HEAD`); **Codex review 9 is resolved** (1 High + 1 Moderate fixed, `docs/superpowers/review/2026-10-30-9-review.md`, 1145 tests). **Next:** release per `docs/RELEASING.md`
 > (version is already `0.4.0` in `smos/__init__.py`; the Governor decides 0.4.0 vs 0.3.5), update Debian, try the Settings page there.
 > The optimization ideas of session 10 (embedding cache, embed outside the lock) were deliberately put on hold by the Governor.
 

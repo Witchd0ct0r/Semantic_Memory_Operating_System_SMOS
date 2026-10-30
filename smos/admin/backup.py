@@ -148,8 +148,14 @@ def _move_files(source: Path, target: Path) -> None:
 def _restore_safety(data_dir: Path) -> None:
     """Put the safety copy back as the live store, discarding whatever half-loaded files are there."""
     safety = data_dir / SAFETY_DIR
-    for name in _LIVE_FILES:
-        (data_dir / name).unlink(missing_ok=True)
+    # Only files that really reached the safety folder are put back, and only they replace a live file: a
+    # crash before or part-way through the moves must never delete an original that has no copy. Side files
+    # of the half-loaded database are removed together with the database they belong to.
+    if (safety / "metadata.db").exists():
+        for name in ("metadata.db", "metadata.db-wal", "metadata.db-shm"):
+            (data_dir / name).unlink(missing_ok=True)
+    if (safety / "faiss.index").exists():
+        (data_dir / "faiss.index").unlink(missing_ok=True)
     _move_files(safety, data_dir)
     (data_dir / SWAP_MARKER).unlink(missing_ok=True)
     shutil.rmtree(safety, ignore_errors=True)
@@ -191,8 +197,8 @@ def _swap_in(app, data_dir: Path, work: Path, manifest: dict) -> None:
     safety.mkdir()
     marker.write_text(json.dumps({"safety": SAFETY_DIR, "at": datetime.now(timezone.utc).isoformat()}),
                       encoding="utf-8")
-    app.state.store.close()
     try:
+        app.state.store.close()
         _move_files(data_dir, safety)
         for name in MEMBERS[1:]:
             os.replace(work / name, data_dir / name)

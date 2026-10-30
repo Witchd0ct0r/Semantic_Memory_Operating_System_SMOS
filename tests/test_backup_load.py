@@ -182,3 +182,52 @@ def test_a_backup_from_an_older_schema_loads_and_is_migrated(filled, tmp_path: P
     version = app.state.store._db.execute("SELECT version FROM schema_version").fetchone()[0]
     assert version == STORE_MIGRATIONS[-1][0]
     _no_leftovers(app.state.data_dir)
+
+
+def test_crash_right_after_the_marker_never_deletes_the_live_store(filled) -> None:
+    """Codex 9, High: marker and empty safety folder exist, nothing was moved yet."""
+    _c, _h, app = filled
+    data_dir = app.state.data_dir
+    app.state.close()
+    original = _hashes(data_dir)
+    (data_dir / "store-safety").mkdir()
+    (data_dir / "store-swap.json").write_text("{}", encoding="utf-8")
+    recover_interrupted_swap(data_dir)
+    assert _hashes(data_dir) == original
+    _no_leftovers(data_dir)
+
+
+def test_crash_after_moving_only_some_files_restores_the_originals(filled) -> None:
+    _c, _h, app = filled
+    data_dir = app.state.data_dir
+    app.state.close()
+    original = _hashes(data_dir)
+    safety = data_dir / "store-safety"
+    safety.mkdir()
+    (data_dir / "metadata.db").replace(safety / "metadata.db")  # faiss.index never made it into the safety folder
+    (data_dir / "metadata.db").write_bytes(b"half copied new database")
+    (data_dir / "metadata.db-wal").write_bytes(b"stale wal of the half-loaded store")
+    (data_dir / "store-swap.json").write_text("{}", encoding="utf-8")
+    recover_interrupted_swap(data_dir)
+    assert _hashes(data_dir) == original
+    assert not (data_dir / "metadata.db-wal").exists()  # a side file of the new store must not meet the old database
+    _no_leftovers(data_dir)
+
+
+def test_close_failing_at_the_start_of_a_load_keeps_the_original_store(filled, backup, monkeypatch) -> None:
+    _c, _h, app = filled
+    data_dir = app.state.data_dir
+    _add(app, "delta written after the backup")
+    real_close = app.state.store.close
+
+    def failing_close():
+        monkeypatch.undo()
+        real_close()
+        raise RuntimeError("close failed")
+
+    monkeypatch.setattr(app.state.store, "close", failing_close)
+    with pytest.raises(BackupError, match="previous store was restored"):
+        load_backup(app, backup)
+    assert _memories(app) == 4
+    _no_leftovers(data_dir)
+    assert app.state.store_op_active is False
