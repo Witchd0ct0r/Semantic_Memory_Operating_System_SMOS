@@ -47,11 +47,16 @@ admin when creating the invitation (the form defaults to read-only).
 Invitations are single-use, expire after 72 hours (`SMOS_INVITE_TTL_HOURS`) and can be
 revoked while pending. Invalid, used, expired and revoked links all show the same page.
 
+Tokens expire **30 days** after they are created. The admin can extend a token by 30 days in its last
+3 days, or rotate it: the old secret stops working at once and a new single-use link lets the token's
+user create a replacement. A missing, wrong, revoked, expired or rotated-away token all answer the same
+`401`. Details: `docs/runbooks/backup-and-pentest.md`.
+
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/v1/health` | Liveness (unauthenticated, no data) |
+| GET | `/api/v1/health` | Liveness (unauthenticated): `status`, `version`, and `pentest` (true while the admin has pentest mode on) |
 | POST | `/api/v1/memories` | Store text; optional `summary` + `summary_source` |
 | DELETE | `/api/v1/memories/{id}` | Delete a memory, its edges and summary |
 | POST | `/api/v1/memories/derived` | Store text you wrote (`compressed` / `reflection`) linked to `source_ids` |

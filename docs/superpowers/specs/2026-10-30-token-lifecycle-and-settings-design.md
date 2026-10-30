@@ -95,8 +95,9 @@ files. The flag is always cleared in a `finally`.
 - Produces one downloadable file: a zip with `manifest.json`, `metadata.db`, `faiss.index`.
 - `metadata.db` is written with the SQLite backup API (consistent copy, not a raw file
   copy); the FAISS index is saved while the API is paused so the pair matches.
-- Manifest: SMOS version, store schema version, created-at, row counts (documents,
-  segments), SHA-256 of each file.
+- Manifest: format (1), SMOS version, created-at, counts (`memories` and `vectors`; as built,
+  replacing "documents, segments"), SHA-256 of the two data files. The store schema version is
+  read from the database itself during validation, not stored in the manifest.
 - Not available while pentest mode is on (the live store is not the open store).
 
 ### Load backup

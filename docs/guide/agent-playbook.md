@@ -33,7 +33,7 @@ One page for an agent that has a SMOS URL and a token. Details are in [query-gui
 
 | You see | Do |
 |---|---|
-| 401 `valid bearer token required` | The token is missing, wrong or revoked. Ask the admin; do not retry in a loop. |
+| 401 `valid bearer token required` | The token is missing, wrong, revoked, expired (they last 30 days) or rotated away. Ask the admin; do not retry in a loop. |
 | 403 `this token is read-only` | You need a read/write token for this call. |
 | 400 with a `detail` text | Fix the input it names (query shorter than 10 characters, unknown strategy or edge type, unknown source id). |
 | 422 | The JSON does not match the schema; read `detail[].loc` and `msg`. |

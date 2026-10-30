@@ -6,7 +6,7 @@ First find out what is wrong, then write it down so someone else can act on it.
 
 1. **Is it up, and which version?** `GET /api/v1/health` needs no token: `{"status":"ok","version":"0.3.1"}`. No answer means the
    server or the network, not the API.
-2. **Is your token valid?** Any call except health answers 401 for a missing, wrong or revoked token. A read-only token gets 403 on
+2. **Is your token valid?** Any call except health answers 401 for a missing, wrong, revoked, expired or rotated-away token (tokens last 30 days). A read-only token gets 403 on
    writes.
 3. **Is the request what you think?** Print the exact JSON you send and the exact status and body you get back.
 4. **Is it already known?** Read [known-limits-and-roadmap.md](known-limits-and-roadmap.md).
@@ -25,7 +25,7 @@ First find out what is wrong, then write it down so someone else can act on it.
 | References in the text are not linked | SMOS does not detect references over the API | Declare them in `source_links` |
 | `link targets its own item` | A link names the document itself | Remove it; links connect different documents |
 | 422 on ingest | The JSON does not match the schema | Read `detail[].loc` |
-| 401 after it worked | The admin revoked the token | Ask for a new invitation |
+| 401 after it worked | The admin revoked the token, it passed its 30-day expiry, or the admin rotated it | Ask the admin: a rotated or expired token is replaced through a new claim link |
 | 503 on writes | An update is being applied | Wait a minute and retry |
 | Search results changed after re-ingest | Segment ids are new, the old text is gone | Use `doc_id` plus `ordinal` as a stable address |
 

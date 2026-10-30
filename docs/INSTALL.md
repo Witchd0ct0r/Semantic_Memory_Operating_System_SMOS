@@ -97,6 +97,12 @@ You should see `{"status":"ok","version":"0.3.0"}`.
 3. Send that link to the user. It works once and expires in 72 hours.
 4. The user opens it, presses **Create token**, and saves the token shown. You never see it.
 
+Tokens expire **30 days** after they are created. On the Access page the admin sees the expiry of every
+token and can press **Extend 30 days** (offered in the last 3 days), or **Rotate**: the old token stops working at
+once and the admin gets a new single-use link; the token's user opens it and presses the button to get a new secret
+(also valid for 30 days). An expired token can only be recovered by rotating it. Backups, loading a backup and
+pentest mode are on the **Settings** page; see `docs/runbooks/backup-and-pentest.md`.
+
 Your parser or agent then sends `Authorization: Bearer <token>` on every call. The API is
 described at `http://<server>:8765/api/v1/docs` (log in as admin first, or use a token) and in
 `docs/API.md`.
