@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 from pathlib import Path
 
 import pytest
@@ -117,3 +118,10 @@ def test_open_store_helper_attaches_lifecycle(tmp_path: Path) -> None:
         assert store._lifecycle_callback is not None
     finally:
         store.close()
+
+
+def test_closing_a_store_twice_is_harmless(tmp_path: Path) -> None:
+    store = open_store(tmp_path / "s")
+    store.close()
+    shutil.rmtree(tmp_path / "s")  # a second save would have nowhere to write
+    store.close()  # must not try to save the index again

@@ -679,6 +679,8 @@ class VectorStore:
             self._db.commit()
 
     def close(self) -> None:
+        if self._closed:
+            return
         with self._stats_lock:
             if self._stats_conn is not None:
                 self._stats_conn.close()

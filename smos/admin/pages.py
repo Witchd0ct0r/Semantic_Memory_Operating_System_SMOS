@@ -102,6 +102,7 @@ def _db(request: Request):
 
 def _page(request: Request, name: str, status: int = 200, **ctx) -> HTMLResponse:
     ctx.setdefault("csrf", _csrf(request) if "session" in request.scope else "")
+    ctx.setdefault("pentest", bool(getattr(request.app.state, "pentest", False)))
     return templates.TemplateResponse(request, name, ctx, status_code=status)
 
 

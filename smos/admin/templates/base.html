@@ -60,6 +60,7 @@
   <span class="muted">{{ admin }}</span>
   <form class="inline" method="post" action="/admin/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Log out</button></form>
 </header>
+{% if pentest %}<div style="background:var(--bad);color:#fff;padding:8px 16px;font-weight:600">PENTEST MODE ACTIVE: SMOS is using a throwaway empty store. The live data is switched away and untouched. Turn it off in Settings.</div>{% endif %}
 {% endif %}
 <main>
 {% block content %}{% endblock %}

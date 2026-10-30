@@ -49,7 +49,7 @@ def test_health_open_and_minimal(api) -> None:
     client, _h, _app = api
     r = client.get("/api/v1/health")
     assert r.status_code == 200
-    assert set(r.json()) == {"status", "version"}
+    assert set(r.json()) == {"status", "version", "pentest"}
 
 
 def test_openapi_and_docs_require_credentials(api) -> None:

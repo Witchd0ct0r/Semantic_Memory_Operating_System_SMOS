@@ -16,6 +16,7 @@ from smos.admin import accounts, usage
 from smos.admin.db import open_admin_db
 from smos.admin.metrics import Sampler
 from smos.admin.pages import register_admin
+from smos.admin import pentest
 from smos.admin.storeops import open_store
 from smos.api import routes
 from smos.api.deps import require_token, require_token_or_admin_session
@@ -127,7 +128,7 @@ def create_app(
     except Exception:
         log.exception("could not import the last update result")
 
-    app.state.store = open_store(data_dir)
+    app.state.store = open_store(pentest.store_path(data_dir))  # the disposable store if pentest mode was left on
     app.state.admin_db = admin_db
     app.state.admin_lock = threading.RLock()
     app.state.data_dir = data_dir
@@ -137,7 +138,7 @@ def create_app(
     app.state.api_inflight = 0  # /api/v1 requests being served (a benchmark start waits for zero)
     app.state.benchmark_active = False  # set while a benchmark runs: /api/v1 answers 503 except health
     app.state.store_op_active = False  # set while a backup, load or pentest switch swaps the store (same 503)
-    app.state.pentest = False  # pentest mode: an empty disposable store is in use
+    app.state.pentest = pentest.is_active(data_dir)  # pentest mode: an empty disposable store is in use
     app.state.live_dir = data_dir  # where the live store lives, whatever store is open
     app.state.closing = False  # set just before the stores are closed for an update restart
     app.state.unauth_budget = _MinuteBudget(int(os.environ.get("SMOS_UNAUTH_LOG_PER_MIN", "60")))
@@ -232,7 +233,7 @@ def create_app(
     @open_router.get("/health", summary="Liveness check",
                      description="Unauthenticated liveness probe for container healthchecks. Returns no data.")
     def health() -> dict:
-        return {"status": "ok", "version": _version()}
+        return {"status": "ok", "version": _version(), "pentest": bool(app.state.pentest)}
 
     protected = APIRouter(dependencies=[Depends(require_token)])
     protected.include_router(routes.read)
