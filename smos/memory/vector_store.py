@@ -678,6 +678,16 @@ class VectorStore:
             self._db.execute("DELETE FROM ingest_checkpoints WHERE doc_id = ?", (doc_id,))
             self._db.commit()
 
+    def health_check(self) -> None:
+        """Raises RuntimeError unless the database passes its integrity check and the search index
+        holds exactly one vector per stored item."""
+        with self._lock:
+            if self._db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("the store database failed its integrity check")
+            memories = self._db.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+            if self._index.ntotal != memories:
+                raise RuntimeError(f"{memories} stored items but {self._index.ntotal} index entries")
+
     def write_snapshot(self, dest_dir: Path) -> None:
         """A consistent copy of the store for a backup: metadata.db (SQLite backup API, one file) and
         faiss.index, both taken under the store lock so the pair matches."""

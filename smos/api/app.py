@@ -17,6 +17,7 @@ from smos.admin.db import open_admin_db
 from smos.admin.metrics import Sampler
 from smos.admin.pages import register_admin
 from smos.admin import pentest
+from smos.admin.backup import recover_interrupted_swap
 from smos.admin.storeops import open_store
 from smos.api import routes
 from smos.api.deps import require_token, require_token_or_admin_session
@@ -128,6 +129,7 @@ def create_app(
     except Exception:
         log.exception("could not import the last update result")
 
+    recover_interrupted_swap(data_dir)  # a crash in the middle of loading a backup is rolled back first
     app.state.store = open_store(pentest.store_path(data_dir))  # the disposable store if pentest mode was left on
     app.state.admin_db = admin_db
     app.state.admin_lock = threading.RLock()

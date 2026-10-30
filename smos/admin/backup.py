@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
 import secrets
 import shutil
 import sqlite3
@@ -19,8 +21,10 @@ from pathlib import Path
 import faiss
 
 import smos
-from smos.admin.storeops import StoreOpRefused, paused_api
+from smos.admin.storeops import StoreOpRefused, open_store, paused_api
 from smos.storage.migrations import STORE_MIGRATIONS, SchemaTooNewError, run_migrations
+
+log = logging.getLogger(__name__)
 
 FORMAT = 1
 MEMBERS = ("manifest.json", "metadata.db", "faiss.index")
@@ -127,3 +131,87 @@ def validate_backup(zip_path: Path, workdir: Path) -> dict:
     if expected_counts != {"memories": memories, "vectors": vectors}:
         raise BackupError("The backup manifest does not match its contents.")
     return manifest
+
+
+# ---------------------------------------------------------------------- loading a backup
+SAFETY_DIR = "store-safety"
+SWAP_MARKER = "store-swap.json"
+_LIVE_FILES = ("metadata.db", "metadata.db-wal", "metadata.db-shm", "faiss.index")
+
+
+def _move_files(source: Path, target: Path) -> None:
+    for name in _LIVE_FILES:
+        if (source / name).exists():
+            os.replace(source / name, target / name)
+
+
+def _restore_safety(data_dir: Path) -> None:
+    """Put the safety copy back as the live store, discarding whatever half-loaded files are there."""
+    safety = data_dir / SAFETY_DIR
+    for name in _LIVE_FILES:
+        (data_dir / name).unlink(missing_ok=True)
+    _move_files(safety, data_dir)
+    (data_dir / SWAP_MARKER).unlink(missing_ok=True)
+    shutil.rmtree(safety, ignore_errors=True)
+
+
+def recover_interrupted_swap(data_dir: Path) -> None:
+    """Run at startup, before the store is opened. A swap marker means SMOS stopped in the middle of
+    loading a backup: the safety copy, if it exists, becomes the live store again."""
+    data_dir = Path(data_dir)
+    marker = data_dir / SWAP_MARKER
+    if not marker.exists():
+        return
+    if (data_dir / SAFETY_DIR).is_dir():
+        log.warning("an interrupted backup load was found: restoring the previous store")
+        _restore_safety(data_dir)
+    else:
+        marker.unlink(missing_ok=True)
+
+
+def load_backup(app, upload_path: Path) -> dict:
+    """Replace the live store with the backup in `upload_path`. Any problem found before the swap
+    leaves the live store untouched; a problem after it restores the previous store. Returns the manifest."""
+    if app.state.pentest:
+        raise StoreOpRefused("Loading a backup is off while pentest mode is on.")
+    data_dir = Path(app.state.live_dir)
+    work = Path(tempfile.mkdtemp(prefix="load-tmp-", dir=data_dir))
+    try:
+        manifest = validate_backup(upload_path, work)
+        with paused_api(app):
+            _swap_in(app, data_dir, work, manifest)
+        return manifest
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _swap_in(app, data_dir: Path, work: Path, manifest: dict) -> None:
+    safety, marker = data_dir / SAFETY_DIR, data_dir / SWAP_MARKER
+    shutil.rmtree(safety, ignore_errors=True)
+    safety.mkdir()
+    marker.write_text(json.dumps({"safety": SAFETY_DIR, "at": datetime.now(timezone.utc).isoformat()}),
+                      encoding="utf-8")
+    app.state.store.close()
+    try:
+        _move_files(data_dir, safety)
+        for name in MEMBERS[1:]:
+            os.replace(work / name, data_dir / name)
+        loaded = open_store(data_dir)
+        try:
+            loaded.health_check()
+            stats = loaded.stats()
+            if stats["memories"] != manifest["counts"]["memories"]:
+                raise RuntimeError("the loaded store does not hold the number of items the backup lists")
+            loaded.query("backup verification query", k=1)
+        except BaseException:
+            loaded.close()
+            raise
+    except BaseException as err:
+        _restore_safety(data_dir)
+        app.state.store = open_store(data_dir)
+        log.exception("loading a backup failed; the previous store was restored")
+        raise BackupError(f"The backup could not be loaded; the previous store was restored. Reason: {err}") from None
+    app.state.store = loaded
+    marker.unlink(missing_ok=True)  # marker first: a crash now leaves only an orphan safety folder
+    shutil.rmtree(safety, ignore_errors=True)
+    log.warning("backup loaded (%d items); the safety copy was deleted", manifest["counts"]["memories"])
