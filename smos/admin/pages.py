@@ -194,6 +194,31 @@ def register_admin(app: FastAPI) -> APIRouter:
             tokens.revoke_token(_db(request), token_id)
         return RedirectResponse("/admin/tokens", status_code=303)
 
+    @router.post("/admin/tokens/{token_id}/extend")
+    async def extend_token(token_id: int, request: Request, _admin: str = Depends(admin_required)):
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        with request.app.state.admin_lock:
+            extended = tokens.extend_token(_db(request), token_id)
+        if not extended:
+            return _access_page(request, status=409, error=(
+                f"A token can be extended only while it is active and expires within "
+                f"{tokens.EXTEND_WINDOW_DAYS} days. An expired token needs Rotate."))
+        return RedirectResponse("/admin/tokens", status_code=303)
+
+    @router.post("/admin/tokens/{token_id}/rotate", response_class=HTMLResponse)
+    async def rotate_token(token_id: int, request: Request, admin: str = Depends(admin_required)):
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        ttl = int(os.environ.get("SMOS_INVITE_TTL_HOURS", "72"))
+        with request.app.state.admin_lock:
+            created = invitations.create_rotation_invitation(_db(request), token_id, admin, ttl_hours=ttl)
+            label = next((t["name"] for t in tokens.list_tokens(_db(request)) if t["id"] == token_id), "")
+        if created is None:
+            raise HTTPException(404, "No such active token")
+        link = f"{_public_base(request)}/claim/{created[1]}"
+        return _page(request, "rotation_created.html", link=link, label=label, ttl=ttl)
+
     # ------------------------------------------------------------ usage
     @router.get("/admin/usage", response_class=HTMLResponse)
     async def usage_page(request: Request, token: int | None = None, _admin: str = Depends(admin_required)):
@@ -338,10 +363,12 @@ def register_admin(app: FastAPI) -> APIRouter:
             return HTMLResponse("Too many attempts. Try again later.", status_code=429, headers=_NO_STORE)
         with request.app.state.admin_lock:
             scope = invitations.claimable_scope(_db(request), secret)
+            rotation = scope is not None and invitations.is_rotation_invitation(_db(request), secret)
         if scope is None:
             throttle.fail(key)
             return _invalid_claim(request)
-        return templates.TemplateResponse(request, "claim.html", {"scope": scope}, headers=_NO_STORE)
+        return templates.TemplateResponse(request, "claim.html", {"scope": scope, "rotation": rotation},
+                                          headers=_NO_STORE)
 
     @router.post("/claim/{secret}", response_class=HTMLResponse)
     async def claim_submit(secret: str, request: Request):

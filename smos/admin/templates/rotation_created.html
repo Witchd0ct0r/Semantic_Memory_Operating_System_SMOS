@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Rotation link created{% endblock %}
+{% block content %}
+<section>
+  <h1>Rotate token for {{ label }}</h1>
+  <p>The old token <strong>stopped working now</strong> and stays unusable until its user claims the new one.</p>
+  <p>Send this link to the token's user. It works once and expires in {{ ttl }} hours. <strong>It is shown only on this page.</strong> If it expires unclaimed, press Rotate again for a new link.</p>
+  <code class="secret" id="link">{{ link }}</code>
+  <p><button type="button" onclick="navigator.clipboard.writeText(document.getElementById('link').textContent)">Copy link</button>
+     <a href="/admin/tokens">Back to access</a></p>
+</section>
+{% endblock %}

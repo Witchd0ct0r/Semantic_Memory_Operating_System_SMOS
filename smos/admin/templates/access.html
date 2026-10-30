@@ -19,7 +19,7 @@
 <section>
   <h2>Tokens</h2>
   <table>
-    <tr><th>Label</th><th>Access</th><th>Created</th><th>Created by user (claim)</th><th>Last used</th><th>Status</th><th></th></tr>
+    <tr><th>Label</th><th>Access</th><th>Created</th><th>Created by user (claim)</th><th>Last used</th><th>Expires</th><th>Status</th><th></th></tr>
     {% for t in tokens %}
     <tr>
       <td>{{ t.name }}</td>
@@ -27,10 +27,14 @@
       <td>{{ t.created_at }}</td>
       <td>{% if t.claimed_at %}{{ t.claimed_at }}<br><span class="muted">{{ t.claimed_ip }} &middot; {{ t.claimed_user_agent }}</span>{% else %}<span class="muted">n/a</span>{% endif %}</td>
       <td>{{ t.last_used_at or "never" }}</td>
-      <td>{% if t.revoked %}revoked{% else %}active{% endif %}</td>
-      <td>{% if not t.revoked %}<form class="inline" method="post" action="/admin/tokens/{{ t.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Revoke</button></form>{% endif %}</td>
+      <td>{{ t.expires_at|shorttime }}{% if t.state == "active" %}<br><span class="muted">in {{ t.days_left }} day{{ "" if t.days_left == 1 else "s" }}</span>{% endif %}</td>
+      <td>{% if t.state == "revoked" %}revoked{% elif t.state == "rotating" %}rotation pending: unusable until claimed{% elif t.state == "expired" %}expired: rotate needed{% else %}active{% endif %}</td>
+      <td>{% if not t.revoked %}
+        {% if t.can_extend %}<form class="inline" method="post" action="/admin/tokens/{{ t.id }}/extend"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Extend 30 days</button></form>{% endif %}
+        <form class="inline" method="post" action="/admin/tokens/{{ t.id }}/rotate" onsubmit="return confirm('Rotate this token? The old token stops working now.')"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Rotate</button></form>
+        <form class="inline" method="post" action="/admin/tokens/{{ t.id }}/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger" type="submit">Revoke</button></form>{% endif %}</td>
     </tr>
-    {% else %}<tr><td colspan="7" class="muted">No tokens yet.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="8" class="muted">No tokens yet.</td></tr>{% endfor %}
   </table>
 </section>
 
@@ -40,7 +44,7 @@
     <tr><th>Label</th><th>Access</th><th>Created</th><th>Expires</th><th>Status</th><th></th></tr>
     {% for i in invitations %}
     <tr>
-      <td>{{ i.label }}</td>
+      <td>{{ i.label }}{% if i.rotation %} <span class="muted">(rotation)</span>{% endif %}</td>
       <td>{% if i.scope == "rw" %}read and write{% else %}read-only{% endif %}</td>
       <td>{{ i.created_at }}</td>
       <td>{{ i.expires_at }}</td>
