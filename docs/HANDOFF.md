@@ -8,7 +8,7 @@ history log; git history is the log.
 
 ## Where things stand (2026-10-30, session 11)
 
-> **Session 11 built release 0.4.0 (NOT yet tagged, pushed or published; waits for the Codex review).** Token lifecycle: tokens expire
+> **Session 11 built and PUBLISHED release v0.4.0 (2026-10-30, tag on c3bca94, pushed; Debian update and a try of the Settings page pending on the Governor).** Token lifecycle: tokens expire
 > after 30 days (admin migration 6), Extend 30 days in the last 3 days, Rotate (old secret dead at once, one-time claim link, fresh 30 days,
 > same token). New admin page **Settings** (`/admin/settings`): Backup (store only, never `admin.db`), Load backup (validated offline,
 > safety copy, automatic post-load check and rollback, crash recovery at startup), Pentest mode (empty throwaway store in
