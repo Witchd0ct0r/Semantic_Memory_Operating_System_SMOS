@@ -86,6 +86,8 @@ class Updater:
         with getattr(self._app.state, "transition_lock", None) or nullcontext():
             if getattr(self._app.state, "benchmark_active", False):
                 raise ApplyRefused("A benchmark is running; wait for it to finish or cancel it, then update.")
+            if getattr(self._app.state, "store_op_active", False):
+                raise ApplyRefused("A store operation (backup, load or pentest switch) is running; update afterwards.")
             if not self._busy.acquire(blocking=False):
                 raise ApplyRefused("An update is already running or the server is restarting for one.")
             self._state = "staging"

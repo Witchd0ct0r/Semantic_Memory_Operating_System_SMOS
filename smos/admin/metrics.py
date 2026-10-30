@@ -130,6 +130,8 @@ class Sampler:
     def sample_once(self) -> bool:
         try:
             state = self._app.state
+            if getattr(state, "store_op_active", False):  # the store is being swapped: skip this tick quietly
+                return False
             hardware = read_hardware(self._cgroup_root, self._state)
             self._state = hardware["cpu_state"]
             stats = state.store.stats()

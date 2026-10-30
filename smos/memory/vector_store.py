@@ -40,6 +40,7 @@ class VectorStore:
         self._lock = RLock()  # guards self._db and the FAISS index; GraphStore uses it too (same connection)
         self._new_ids_lock = Lock()
         self._lifecycle_callback = lifecycle_callback
+        self._closed = False
         self._insert_count = 0
         self._save_interval = save_interval
         self._new_ids: list[str] = []
@@ -124,6 +125,8 @@ class VectorStore:
         faiss.write_index(self._index, str(self._index_file))
 
     def _atexit_save(self) -> None:
+        if self._closed:  # a closed store must never write over whatever now lives at its path
+            return
         try:
             with self._lock:
                 self._save_index()
@@ -683,3 +686,5 @@ class VectorStore:
         with self._lock:
             self._save_index()
             self._db.close()
+            self._closed = True
+        atexit.unregister(self._atexit_save)

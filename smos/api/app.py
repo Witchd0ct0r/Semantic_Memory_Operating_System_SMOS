@@ -16,13 +16,12 @@ from smos.admin import accounts, usage
 from smos.admin.db import open_admin_db
 from smos.admin.metrics import Sampler
 from smos.admin.pages import register_admin
+from smos.admin.storeops import open_store
 from smos.api import routes
 from smos.api.deps import require_token, require_token_or_admin_session
 from smos.bench.service import BenchmarkService
 from smos.launcher import UpdatePaths
 from smos.memory.embeddings import model_source
-from smos.memory.lifecycle import LifecycleManager
-from smos.memory.vector_store import VectorStore
 from smos.update import audit as update_audit
 from smos.update import service as update_service
 
@@ -128,11 +127,7 @@ def create_app(
     except Exception:
         log.exception("could not import the last update result")
 
-    store = VectorStore(persist_path=data_dir)
-    lifecycle = LifecycleManager(store)
-    store._lifecycle_callback = lifecycle.on_insert
-
-    app.state.store = store
+    app.state.store = open_store(data_dir)
     app.state.admin_db = admin_db
     app.state.admin_lock = threading.RLock()
     app.state.data_dir = data_dir
@@ -141,6 +136,9 @@ def create_app(
     app.state.transition_lock = threading.Lock()  # an update and a benchmark never start together (check + set)
     app.state.api_inflight = 0  # /api/v1 requests being served (a benchmark start waits for zero)
     app.state.benchmark_active = False  # set while a benchmark runs: /api/v1 answers 503 except health
+    app.state.store_op_active = False  # set while a backup, load or pentest switch swaps the store (same 503)
+    app.state.pentest = False  # pentest mode: an empty disposable store is in use
+    app.state.live_dir = data_dir  # where the live store lives, whatever store is open
     app.state.closing = False  # set just before the stores are closed for an update restart
     app.state.unauth_budget = _MinuteBudget(int(os.environ.get("SMOS_UNAUTH_LOG_PER_MIN", "60")))
     app.state.unauth_suppressed = 0
@@ -154,7 +152,7 @@ def create_app(
 
     def close() -> None:
         sampler.stop()
-        store.close()
+        app.state.store.close()  # the current store: it may have been swapped since startup
         admin_db.close()
 
     app.state.close = close
@@ -208,6 +206,11 @@ def create_app(
         try:
             if (api_request and app.state.benchmark_active and request.url.path != "/api/v1/health"):
                 return JSONResponse({"detail": "SMOS is running a benchmark, try again shortly"},
+                                    status_code=503, headers={"Retry-After": "30"})
+            if app.state.store_op_active and (
+                    (api_request and request.url.path != "/api/v1/health")
+                    or request.url.path == "/admin/dashboard"):
+                return JSONResponse({"detail": "SMOS is switching its store, try again shortly"},
                                     status_code=503, headers={"Retry-After": "30"})
             if app.state.closing:  # the stores are about to close: refuse everything, reads too
                 return JSONResponse({"detail": "SMOS is restarting for an update, try again shortly"},

@@ -289,6 +289,8 @@ class BenchmarkService:
             raise BenchmarkRefused("A benchmark is already running.")
         if getattr(state, "maintenance", False) or getattr(state, "closing", False):
             raise BenchmarkRefused("SMOS is restarting for an update; try again afterwards.")
+        if getattr(state, "store_op_active", False):
+            raise BenchmarkRefused("A store operation (backup, load or pentest switch) is running; try again afterwards.")
         updater = getattr(getattr(state, "update", None), "updater", None)
         if updater is not None and updater.state() != "idle":
             raise BenchmarkRefused("An update is in progress; run the benchmark afterwards.")

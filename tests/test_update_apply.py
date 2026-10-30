@@ -313,3 +313,12 @@ def test_exit_stops_admitting_requests_and_waits_for_stragglers(env) -> None:
     env.make(close_fn=close_fn, drain_timeout=10.0).begin("alice", "0.3.0", SHA)
     assert env.done.wait(10)
     assert seen == {"closing": True, "inflight": 0}
+
+
+def test_begin_refused_while_a_store_operation_runs(env) -> None:
+    env.app.state.store_op_active = True
+    try:
+        with pytest.raises(ApplyRefused, match="store operation"):
+            env.make().begin("alice", "0.3.0", SHA)
+    finally:
+        env.app.state.store_op_active = False
