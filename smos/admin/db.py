@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from smos.storage.migrations import Migration, run_migrations
@@ -130,12 +130,23 @@ def _add_benchmark_runs(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _token_lifecycle(conn: sqlite3.Connection) -> None:
+    """Version 6: token expiry and rotation. Tokens that already exist get 30 days from the
+    upgrade, so none locks out the moment this release is installed."""
+    conn.execute("ALTER TABLE tokens ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''")
+    conn.execute("ALTER TABLE tokens ADD COLUMN rotating INTEGER NOT NULL DEFAULT 0")
+    conn.execute("ALTER TABLE invitations ADD COLUMN rotate_token_id INTEGER")
+    conn.execute("UPDATE tokens SET expires_at = ?",
+                 ((datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),))
+
+
 ADMIN_MIGRATIONS: list[Migration] = [
     (1, "baseline", _baseline),
     (2, "token_scope", _add_scope),
     (3, "samples", _add_samples),
     (4, "update_log", _add_update_log),
     (5, "benchmark_runs", _add_benchmark_runs),
+    (6, "token_lifecycle", _token_lifecycle),
 ]
 
 
