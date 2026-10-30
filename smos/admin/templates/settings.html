@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}SMOS settings{% endblock %}
+{% block content %}
+{% if message %}<section><p>{{ message }}</p></section>{% endif %}
+{% if error %}<section><p class="error">{{ error }}</p></section>{% endif %}
+
+<section>
+  <h2>Backup</h2>
+  <p class="muted">Downloads the stored documents and the search index as one file. Tokens, invitations and the usage log are not included.</p>
+  <form method="post" action="/admin/settings/backup">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button type="submit" {% if pentest %}disabled{% endif %}>Download backup</button>
+    {% if pentest %}<span class="muted">Off while pentest mode is on.</span>{% endif %}
+  </form>
+</section>
+
+<section>
+  <h2>Load backup</h2>
+  <p class="muted">Replaces everything in the store with the contents of a backup file. SMOS pauses the API briefly, checks the file first, keeps a safety copy of the current store, and puts it back automatically if the loaded store fails its checks.</p>
+  <form method="post" action="/admin/settings/load" enctype="multipart/form-data"
+        onsubmit="return confirm('Replace ALL data in the store with this backup?')">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="file" name="file" accept=".zip" required {% if pentest %}disabled{% endif %}>
+    <button class="danger" type="submit" {% if pentest %}disabled{% endif %}>Load backup</button>
+    {% if pentest %}<span class="muted">Off while pentest mode is on.</span>{% endif %}
+  </form>
+</section>
+
+<section>
+  <h2>Pentest mode</h2>
+  {% if pentest %}
+  <p>Pentest mode is <strong>on</strong>. SMOS is using an empty throwaway store; the live store is untouched. Turning it off deletes the throwaway data and brings the live store back. Tokens and invitations created during the test stay until you remove them on the Access page.</p>
+  <form method="post" action="/admin/settings/pentest/disable">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="confirm" placeholder="Type PENTEST to confirm" autocomplete="off" required>
+    <button class="danger" type="submit">Disable pentest mode</button>
+  </form>
+  {% else %}
+  <p class="muted">Sets the live store aside and runs SMOS on an empty throwaway store, so API testing cannot touch real data. Existing tokens keep working; create test tokens on the Access page as usual. Turning it off deletes the throwaway store and restores the live one.</p>
+  <form method="post" action="/admin/settings/pentest/enable">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="text" name="confirm" placeholder="Type PENTEST to confirm" autocomplete="off" required>
+    <button class="danger" type="submit">Enable pentest mode</button>
+  </form>
+  {% endif %}
+</section>
+{% endblock %}

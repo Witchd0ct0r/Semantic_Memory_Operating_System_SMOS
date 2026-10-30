@@ -5,15 +5,19 @@ import os
 import secrets
 import time
 from collections import defaultdict, deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
 
 from smos.admin import accounts, benchmarks, invitations, tokens, usage
+from smos.admin import pentest as pentest_mode
+from smos.admin.backup import BackupError, create_backup, load_backup
+from smos.admin.storeops import StoreOpRefused
 from smos.admin.benchmark_view import build_report, history_rows
 from smos.admin.dashboard_data import parse_range
 from smos.admin.dashboard_view import build_dashboard
@@ -350,6 +354,79 @@ def register_admin(app: FastAPI) -> APIRouter:
         run, _previous = _stored_run(request, run_id)
         return JSONResponse(run, headers={
             **_NO_STORE, "Content-Disposition": f'attachment; filename="smos-benchmark-{run_id}.json"'})
+
+    # ------------------------------------------------------------ settings
+    def _settings_page(request: Request, status: int = 200, message: str | None = None, error: str | None = None):
+        return _page(request, "settings.html", status=status, admin=request.session.get("admin"),
+                     message=message, error=error)
+
+    @router.get("/admin/settings", response_class=HTMLResponse)
+    def settings_page(request: Request, _admin: str = Depends(admin_required)):
+        return _settings_page(request)
+
+    @router.post("/admin/settings/backup")
+    async def settings_backup(request: Request, _admin: str = Depends(admin_required)):
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        try:
+            path = await run_in_threadpool(create_backup, request.app)
+        except StoreOpRefused as err:
+            return _settings_page(request, 409, error=str(err))
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        return FileResponse(path, media_type="application/zip", filename=f"smos-backup-{stamp}.zip",
+                            headers=_NO_STORE, background=BackgroundTask(path.unlink, missing_ok=True))
+
+    @router.post("/admin/settings/load", response_class=HTMLResponse)
+    async def settings_load(request: Request, _admin: str = Depends(admin_required)):
+        cap = int(float(os.environ.get("SMOS_MAX_BACKUP_MB", "2048")) * 1024 * 1024)
+        too_big = f"The file is larger than the limit of {cap / 2 ** 20:g} MB (SMOS_MAX_BACKUP_MB)."
+        if int(request.headers.get("content-length") or 0) > cap + 1_000_000:
+            return _settings_page(request, 413, error=too_big)
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        upload = form.get("file")
+        if upload is None or not getattr(upload, "filename", ""):
+            return _settings_page(request, 400, error="Choose a backup file first.")
+        target = Path(request.app.state.live_dir) / f"upload-{secrets.token_hex(8)}.zip"
+        try:
+            size = 0
+            with open(target, "wb") as out:
+                while chunk := await upload.read(1 << 20):
+                    size += len(chunk)
+                    if size > cap:
+                        return _settings_page(request, 413, error=too_big)
+                    out.write(chunk)
+            manifest = await run_in_threadpool(load_backup, request.app, target)
+        except BackupError as err:
+            return _settings_page(request, 400, error=str(err))
+        except StoreOpRefused as err:
+            return _settings_page(request, 409, error=str(err))
+        finally:
+            target.unlink(missing_ok=True)
+        return _settings_page(request, message=(
+            f"Backup loaded: {manifest['counts']['memories']} stored items (made {manifest['created_at'][:19]} UTC "
+            f"by SMOS {manifest['smos_version']})."))
+
+    async def _pentest_switch(request: Request, turn_on: bool):
+        form = await request.form()
+        _check_csrf(request, str(form.get("csrf", "")))
+        if str(form.get("confirm", "")).strip() != "PENTEST":
+            return _settings_page(request, 400, error="Type the word PENTEST in capitals to confirm.")
+        try:
+            await run_in_threadpool(pentest_mode.enable if turn_on else pentest_mode.disable, request.app)
+        except StoreOpRefused as err:
+            return _settings_page(request, 409, error=str(err))
+        return _settings_page(request, message=(
+            "Pentest mode is on: SMOS now uses an empty throwaway store." if turn_on else
+            "Pentest mode is off: the throwaway store was deleted and the live store is back."))
+
+    @router.post("/admin/settings/pentest/enable", response_class=HTMLResponse)
+    async def settings_pentest_enable(request: Request, _admin: str = Depends(admin_required)):
+        return await _pentest_switch(request, True)
+
+    @router.post("/admin/settings/pentest/disable", response_class=HTMLResponse)
+    async def settings_pentest_disable(request: Request, _admin: str = Depends(admin_required)):
+        return await _pentest_switch(request, False)
 
     @router.get("/admin")
     async def admin_root(_admin: str = Depends(admin_required)):
