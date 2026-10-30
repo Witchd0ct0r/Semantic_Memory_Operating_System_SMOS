@@ -678,6 +678,21 @@ class VectorStore:
             self._db.execute("DELETE FROM ingest_checkpoints WHERE doc_id = ?", (doc_id,))
             self._db.commit()
 
+    def write_snapshot(self, dest_dir: Path) -> None:
+        """A consistent copy of the store for a backup: metadata.db (SQLite backup API, one file) and
+        faiss.index, both taken under the store lock so the pair matches."""
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            self._db.commit()
+            target = sqlite3.connect(str(dest_dir / "metadata.db"))
+            try:
+                self._db.backup(target)
+                target.execute("PRAGMA journal_mode=DELETE")
+                target.commit()
+            finally:
+                target.close()
+            faiss.write_index(self._index, str(dest_dir / "faiss.index"))
+
     def close(self) -> None:
         if self._closed:
             return
