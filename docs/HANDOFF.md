@@ -6,7 +6,21 @@ history log; git history is the log.
 
 ---
 
-## Where things stand (2026-10-29, session 10)
+## Where things stand (2026-10-30, session 11)
+
+> **Session 11 built release 0.4.0 (NOT yet tagged, pushed or published; waits for the Codex review).** Token lifecycle: tokens expire
+> after 30 days (admin migration 6), Extend 30 days in the last 3 days, Rotate (old secret dead at once, one-time claim link, fresh 30 days,
+> same token). New admin page **Settings** (`/admin/settings`): Backup (store only, never `admin.db`), Load backup (validated offline,
+> safety copy, automatic post-load check and rollback, crash recovery at startup), Pentest mode (empty throwaway store in
+> `pentest-store/`, live files untouched, banner, `/api/v1/health` reports `pentest`). Shared mechanism `smos/admin/storeops.py`.
+> Design `docs/superpowers/specs/2026-10-30-token-lifecycle-and-settings-design.md`, plan `...plans/2026-10-30-token-lifecycle-and-settings.md`,
+> record `docs/token-settings-verification.md` (1139 tests pass; 29/29 checks against a real server), runbook
+> `docs/runbooks/backup-and-pentest.md`. **Review package 9 for Codex:** `docs/superpowers/review/2026-10-30-9-review-package.md`
+> (diff `0900a0e..HEAD`). **Next:** send the package to Codex, fix the findings test-first, then release per `docs/RELEASING.md`
+> (version is already `0.4.0` in `smos/__init__.py`; the Governor decides 0.4.0 vs 0.3.5), update Debian, try the Settings page there.
+> The optimization ideas of session 10 (embedding cache, embed outside the lock) were deliberately put on hold by the Governor.
+
+## Earlier: session 10 (2026-10-29)
 
 > **Session 10 published release v0.3.4 (2026-10-29; pushed and tagged; Debian update + Quick + Standard x2 pending on the Governor).** Contents: the BM25 keyword search is now a numpy
 > inverted index (`smos/memory/bm25_index.py`, read-write lock in `smos/memory/rwlock.py`, exact same scores/order as the old
