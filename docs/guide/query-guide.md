@@ -30,7 +30,9 @@ curl -s http://localhost:8765/api/v1/query -H "Authorization: Bearer $SMOS_TOKEN
 |---|---|
 | `query` | Required; at least 10 characters (shorter returns HTTP 400 `query must be at least 10 characters`). |
 | `k` | 1 to 100, default 5 (above 100 returns 422). |
-| `tags` | Optional list. A **preference**, not a filter: see [known limits](known-limits-and-roadmap.md#tags-on-query-is-a-preference-not-a-filter). |
+| `tags` | Optional list: keep only items carrying **any** of these tags. A real filter (since 0.5.0): nothing outside the scope is returned. See [Tags](#tags). |
+| `tags_all`, `tags_none` | Optional lists: items must carry **all** of / **none** of these tags. All three tag parameters combine with AND. |
+| `offset` | Skip this many ranked results to page; `offset + k` must not exceed 1000 (otherwise HTTP 400). |
 
 Real answer (trimmed):
 
@@ -67,8 +69,16 @@ number or identifier is found by the keyword part even when the wording differs.
 ## Tags
 
 Every segment carries the `domain_tags` of its document plus `doctype:<doc_type>`, as one comma-joined string in `metadata.tags`.
-Use them to narrow what you accept: after a query, keep results whose `metadata.tags` contain your tag. Passing `tags` in the request
-only nudges the search ([known limit](known-limits-and-roadmap.md#tags-on-query-is-a-preference-not-a-filter)), so do not rely on it to exclude.
+Pass `tags` (any-of), `tags_all` and `tags_none` in the request to scope the search. Matching is exact and case-sensitive
+(`norm:MBST` is not `norm:mbst`). The scope is applied before ranking, so a narrow tag still returns up to `k` hits when that many
+exist, and nothing outside the scope is returned. The response says how complete it is:
+
+- `total`: the number of stored items eligible under the scope (the whole store when unscoped). **`total <= k` means the response
+  holds every eligible item**; otherwise page with `offset`.
+- `unknown_tags`: names in `tags` / `tags_all` that no stored item carries (a typo, or a norm not ingested yet). A scope that matches
+  nothing returns an empty `results`, never an unfiltered search.
+
+Use `GET /api/v1/tags` to see which tags exist ([below](#listing-documents-and-tags)).
 
 ## `POST /api/v1/recall`
 
@@ -82,6 +92,17 @@ Body: `query` (not needed for `temporal`, `chain`, `repo`), `strategy`, `k` (1 t
 - `temporal`: items stored between `since` and `until`. Hit `metadata` is empty for this strategy.
 - `repo`: items whose tags include `component`.
 - `chain`: follows links from `seed_id` for `k` hops; empty when the item has no links.
+
+## Listing documents and tags
+
+- `GET /api/v1/documents?system=&tag=&tag=&limit=100&offset=0` lists ingested documents sorted by id: `id`, `external_handle`
+  (`system`, `native_id`), `doc_type`, `tags` (your `domain_tags` plus `doctype:<doc_type>`), `segment_count`, `updated_at` and
+  `document_hash`. Repeat `tag` to require several (all must be present). `limit` is at most 500; `total` counts every match.
+  Documents that are only link targets not ingested yet are not listed.
+- `GET /api/v1/tags?prefix=norm:&limit=1000&offset=0` lists every tag with the number of stored items carrying it, sorted by tag
+  (`limit` at most 5000; `total` is the number of tags).
+
+Both work with a read-only token.
 
 ## Reading a whole document or section
 
