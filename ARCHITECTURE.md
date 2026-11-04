@@ -45,8 +45,9 @@ Return: memory.id (UUID)
 HTTP client → bearer-token check
   └─ semantic_query() → build_context() [compression/context_builder.py]
        │
-       ├─ store.query_domain(query, k=max(k×4, 20), domain_tags) [falls back to
-       │    store.query() if tags omitted or filter returns no results]
+       ├─ eligible = store.resolve_tag_filter(tags / tags_all / tags_none)   [memory_tags index, 0.5.0;
+       │    no fallback: a scope that matches nothing returns nothing]
+       ├─ store.query_domain(query, k=max((offset+k)×4, 20), eligible)  [FAISS id selector]
        │    └─ VectorStore._query_internal()
        │         acquire _lock
        │         ├─ embed(query) → vector  (CPU-bound, holds _lock)
@@ -54,7 +55,7 @@ HTTP client → bearer-token check
        │         └─ for each id: SELECT ... WHERE row_id=?  (N round-trips)
        │         release _lock
        │
-       ├─ store.bm25.query(query, k=candidate_k) → (uuid, score) pairs
+       ├─ store.bm25.query(query, k=candidate_k, allowed=eligible.uuids) → (uuid, score) pairs
        │    zero-score entries (no term match) filtered out before fusion
        │
        ├─ _rrf_merge(vector_results, bm25_results, top_k=k×2)
