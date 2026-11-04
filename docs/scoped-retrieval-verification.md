@@ -13,7 +13,7 @@ graph expansion were never filtered. The tool user measured 64 of 100 hits in sc
 
 ## 2. Automated tests
 
-Full suite `python -m pytest tests -q`: see section 4 for the final count. New files: `test_memory_tags.py`, `test_tag_scoping.py`,
+Full suite `python -m pytest tests -q`: **1194 passed** (1147 before this work), about 4 minutes. New files: `test_memory_tags.py`, `test_tag_scoping.py`,
 `test_api_scoping.py`, `test_discovery_api.py`, `test_document_blocks.py`, `test_hit_enrichment.py`, `test_block_alignment.py`,
 `test_resend_fast_path.py`; a pre-0.5.0 backup test in `test_backup_load.py`. The SMOS-001 regression is
 `test_scoped_query_never_returns_out_of_scope`. The acceptance test `test_block_alignment.py` was checked to fail when the stored
@@ -41,7 +41,11 @@ and a read-only token. **28 of 28 checks passed** (`docs/runbooks/scripts/e2e_sc
 
 The server was stopped afterwards; its temporary data lives outside the repo.
 
-## 4. Decisions made during the build
+## 4. Decisions made during the build and the final review
+
+- Final review (done inline by the orchestrator): measured the cost of resolving a broad tag scope on a synthetic 100,000-segment store,
+  66 to 109 ms per query for half the store, 1 ms for a narrow tag. A pipeline repeats one scope for dozens of queries, so the resolved
+  scope is now cached until any memory is inserted or deleted (`test_resolve_is_cached_until_the_store_changes`).
 
 - `score` stays cosine similarity for every hit (keyword-only hits get their cosine computed from the stored vector); the design first
   said "fused RRF score", which would have changed the values existing clients threshold on.
