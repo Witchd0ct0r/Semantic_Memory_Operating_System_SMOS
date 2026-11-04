@@ -98,7 +98,7 @@ def timed_context(store: VectorStore, query: str, k: int) -> tuple[list[str], di
     candidates = [r for r in ((by_id.get(uid) or fetched.get(uid)) for uid, _ in merged) if r]
     for c in candidates:
         c["_rrf"], c["_overlap"] = rrf.get(c["id"], 0.0), _term_overlap(query, c.get("content", ""))
-    candidates.sort(key=lambda c: (c["_rrf"], c["_overlap"]), reverse=True)
+    candidates.sort(key=lambda c: (-c["_rrf"], -c["_overlap"], c["id"]))
     top = candidates[:k]
     t["fusion_ms"] += (clock() - mark) * 1000
 

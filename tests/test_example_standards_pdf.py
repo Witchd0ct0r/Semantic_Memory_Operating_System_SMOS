@@ -255,15 +255,19 @@ def test_headings_do_not_create_sections_only_split_blocks_do(api) -> None:
     assert client.post("/api/v1/documents", json=flat, headers=headers).json()["section_count"] == 0
 
 
-def test_query_tags_are_a_preference_not_a_filter(api) -> None:
-    """Pins documented behavior (technical debt): with no tagged match, /query falls back to an unfiltered search."""
+def test_query_tags_are_a_filter_not_a_preference(api) -> None:
+    """Since 0.5.0 a tag scope is a real filter: no tagged match means an empty result naming the unknown tag
+    (it used to fall back to an unfiltered search, which leaked out-of-scope items)."""
     client, headers, _app = api
     payload = {"external_handle": {"system": "t", "native_id": "beta"}, "domain_tags": ["beta"],
                "blocks": [{"block_type": "paragraph", "text": "Gaskets shall be replaced every two years.\n"}]}
     client.post("/api/v1/documents", json=payload, headers=headers)
-    results = client.post("/api/v1/query", json={"query": "gaskets replaced every two years", "k": 3,
-                                                 "tags": ["alpha"]}, headers=headers).json()["results"]
-    assert results and "Gaskets" in results[0]["content"]
+    body = client.post("/api/v1/query", json={"query": "gaskets replaced every two years", "k": 3,
+                                              "tags": ["alpha"]}, headers=headers).json()
+    assert body["results"] == [] and body["unknown_tags"] == ["alpha"] and body["total"] == 0
+    scoped = client.post("/api/v1/query", json={"query": "gaskets replaced every two years", "k": 3,
+                                                "tags": ["beta"]}, headers=headers).json()
+    assert scoped["results"] and "Gaskets" in scoped["results"][0]["content"]
 
 
 def _doc_ids_around(client, headers, doc_id):
