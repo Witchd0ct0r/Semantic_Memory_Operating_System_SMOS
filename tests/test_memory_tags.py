@@ -142,3 +142,19 @@ def test_tag_counts_prefix_and_paging(store: VectorStore) -> None:
     assert total == 2 and rows == [{"tag": "norm:A", "count": 2}, {"tag": "norm:B", "count": 1}]
     total, rows = store.tag_counts(limit=1, offset=1)
     assert total == 3 and rows == [{"tag": "norm:B", "count": 1}]
+
+
+def test_resolve_is_cached_until_the_store_changes(store: VectorStore) -> None:
+    """Final review: a broad scope costs ~100 ms to resolve at 100k segments and a pipeline repeats it per query."""
+    store.store_batch([_mem(f"cached scope memory number {i}", ["norm:A"]) for i in range(3)])
+    scope = TagFilter.make(any=["norm:A"])
+    first = store.resolve_tag_filter(scope)
+    assert store.resolve_tag_filter(scope) is first                       # served from the cache
+    added = store.store(_mem("one more memory in the cached scope", ["norm:A"]))
+    second = store.resolve_tag_filter(scope)
+    assert second is not first and len(second) == len(first) + 1 and added in second.uuids
+    store.delete(added)
+    third = store.resolve_tag_filter(scope)
+    assert third is not second and len(third) == len(first) and added not in third.uuids
+    other = store.resolve_tag_filter(TagFilter.make(any=["norm:A"], none=["x"]))
+    assert other is not third                                             # a different scope is a different entry

@@ -50,6 +50,8 @@ class VectorStore:
         self._stats_conn: Optional[sqlite3.Connection] = None
         self._doc_locks: dict[str, list] = {}  # doc_id -> [lock, holders+waiters]
         self._doc_locks_guard = Lock()
+        self._tag_generation = 0  # bumped by every insert/delete; keys the resolved-scope cache
+        self._eligible_cache: dict[TagFilter, tuple[int, Eligible]] = {}
 
         self._index: faiss.IndexIDMap = self._load_or_create_index()
         self._db: sqlite3.Connection = self._init_db()
@@ -146,6 +148,7 @@ class VectorStore:
             ),
         )
         row_id = int(cursor.lastrowid)
+        self._tag_generation += 1
         tags = {t for t in memory.tags if t.strip()}
         if tags:
             self._db.executemany(
@@ -318,6 +321,7 @@ class VectorStore:
             if row is None:
                 return False
             row_id = int(row[0])
+            self._tag_generation += 1
             self._index.remove_ids(np.array([row_id], dtype=np.int64))
             self._db.execute("DELETE FROM memories WHERE uuid = ?", (uuid,))
             self._db.execute("DELETE FROM summaries WHERE node_id = ?", (uuid,))
@@ -331,6 +335,7 @@ class VectorStore:
         if not uuids:
             return 0
         with self._lock:
+            self._tag_generation += 1
             row_ids: list[int] = []
             for uuid in uuids:
                 row = self._db.execute(
@@ -354,10 +359,18 @@ class VectorStore:
     # Tag scope (memory_tags)
     # ------------------------------------------------------------------
 
+    _ELIGIBLE_CACHE_SIZE = 8
+
     def resolve_tag_filter(self, f: TagFilter) -> Optional[Eligible]:
-        """Memories that pass the filter, resolved by index before any ranking. None = no filter."""
+        """Memories that pass the filter, resolved by index before any ranking. None = no filter.
+        A broad scope costs ~100 ms to resolve at 100k segments and a pipeline repeats the same scope per query,
+        so the result is cached until any memory is inserted or deleted (the entry is read-only, share it)."""
         if f.is_empty:
             return None
+        with self._lock:
+            cached = self._eligible_cache.get(f)
+            if cached is not None and cached[0] == self._tag_generation:
+                return cached[1]
         params: list[str] = []
         terms: list[str] = []
         if f.any:
@@ -376,10 +389,14 @@ class VectorStore:
             rows = self._db.execute(
                 f"SELECT row_id, uuid FROM memories WHERE row_id IN ({compound}) ORDER BY row_id", params
             ).fetchall()
-        return Eligible(
-            row_ids=np.array([r[0] for r in rows], dtype=np.int64),
-            uuids=frozenset(r[1] for r in rows),
-        )
+            eligible = Eligible(
+                row_ids=np.array([r[0] for r in rows], dtype=np.int64),
+                uuids=frozenset(r[1] for r in rows),
+            )
+            if len(self._eligible_cache) >= self._ELIGIBLE_CACHE_SIZE:
+                self._eligible_cache.pop(next(iter(self._eligible_cache)))
+            self._eligible_cache[f] = (self._tag_generation, eligible)
+        return eligible
 
     def unknown_tags(self, tags: list[str]) -> list[str]:
         """Names with no item at all (typo, or not ingested), in input order, without duplicates."""
