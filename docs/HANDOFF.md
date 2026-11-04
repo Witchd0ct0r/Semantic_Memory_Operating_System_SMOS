@@ -8,7 +8,7 @@ history log; git history is the log.
 
 ## Where things stand (2026-11-04, session 12)
 
-> **Session 12 built release 0.5.0 (version bumped, NOT yet tagged or published; the Governor releases per `docs/RELEASING.md`).**
+> **Session 12 built and PUBLISHED release v0.5.0 (2026-11-04, tag on eeeb823, pushed; Debian update and block backfill pending on the Governor).**
 > Trigger: an external parser + query-agent pipeline sent an issue ledger (SMOS-001..012). Done: **tag scoping is a real pre-filter**
 > (the only behaviour change: `tags` used to leak, see `docs/scoped-retrieval-verification.md` section 1), `tags_all`/`tags_none`/`offset`,
 > `total` and `unknown_tags` on `/query` and `/recall`, always-numeric `score`, `GET /documents`, `GET /tags`, store migrations 4
@@ -16,7 +16,7 @@ history log; git history is the log.
 > `/nodes/{id}/text` returns `document_hash`, `char_length` and `?include=blocks`, and an identical re-send keeps segment ids
 > (`segments_kept`). Design `docs/superpowers/specs/2026-11-04-scoped-retrieval-and-discovery-design.md`, plan
 > `...plans/2026-11-04-scoped-retrieval-and-discovery.md`, record `docs/scoped-retrieval-verification.md` (real server on a 0.4.0 store:
-> 28/28), runbook `docs/runbooks/scoped-retrieval.md` (includes release notes). **Next:** release 0.5.0; on Debian time the migration
+> 28/28), runbook `docs/runbooks/scoped-retrieval.md` (includes release notes). **Next:** on Debian time the migration
 > on a copy of the store, update, re-send documents (with `summary`!) to backfill blocks, and let the tool-user agent re-check
 > alignment with its read-only token. Parked from the ledger: multilingual embeddings (SMOS-005, needs evidence), document delete and
 > stable ids (006), batch query (010), Retry-After / quarantine status (007), a `group` key for multi-block clauses.
@@ -55,7 +55,7 @@ history log; git history is the log.
 > Dev-PC micro-benchmark `tests/bench_bm25.py`: roughly 80x faster per query at 5,000 segments and 230x at 25,000 (old vs new), 100,000
 > segments about 1 ms; the Debian effect on throughput (GIL, both cores) is still unmeasured.
 
-> **Latest handoff (read first):** `docs/handoffs/2026-10-29-2000-v0-3-4-published-next-both-cores.md`.
+> **Latest handoff (read first):** `docs/handoffs/2026-11-04-1210-v0-5-0-published-scoped-retrieval.md`.
 > **Previous handoff:** `docs/handoffs/2026-10-29-1359-benchmark-codex-7-resolved-pushed.md` (benchmark page, Codex 7 resolved).
 > Projects 1-6 are implemented. Open: the two Debian checks (`docs/guide-verification.md` section 4), choosing the next project from the
 > debt list in `docs/guide/known-limits-and-roadmap.md`.
