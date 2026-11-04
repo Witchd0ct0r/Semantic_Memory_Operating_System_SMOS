@@ -197,8 +197,43 @@ def _graph_tables(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes (type)")
 
 
+def _memory_tags(conn: sqlite3.Connection) -> None:
+    """Version 4: one row per (tag, memory) so a tag scope is resolved by index before ranking.
+
+    `memories.tags` stays the source text; this table is its index. It is written by
+    `VectorStore._insert_memory_row` and cleaned by the delete trigger below, so it cannot go stale.
+    Existing rows are backfilled here (tags never contain a comma, see `validate_payload`)."""
+    conn.execute("""
+        CREATE TABLE memory_tags (
+            row_id INTEGER NOT NULL,
+            tag    TEXT NOT NULL,
+            PRIMARY KEY (tag, row_id)
+        ) WITHOUT ROWID
+    """)
+    conn.execute("CREATE INDEX idx_memory_tags_row ON memory_tags (row_id)")
+    conn.execute("""
+        CREATE TRIGGER memory_tags_delete AFTER DELETE ON memories
+        BEGIN
+            DELETE FROM memory_tags WHERE row_id = OLD.row_id;
+        END
+    """)
+    batch: list[tuple[int, str]] = []
+    cursor = conn.execute("SELECT row_id, tags FROM memories WHERE tags != ''")
+    for row_id, tags in cursor.fetchall():
+        for tag in tags.split(","):
+            tag = tag.strip()
+            if tag:
+                batch.append((row_id, tag))
+        if len(batch) >= 5000:
+            conn.executemany("INSERT OR IGNORE INTO memory_tags (row_id, tag) VALUES (?,?)", batch)
+            batch = []
+    if batch:
+        conn.executemany("INSERT OR IGNORE INTO memory_tags (row_id, tag) VALUES (?,?)", batch)
+
+
 STORE_MIGRATIONS: list[Migration] = [
     (1, "baseline", _baseline),
     (2, "memories_type_index", _memories_type_index),
     (3, "graph_tables", _graph_tables),
+    (4, "memory_tags", _memory_tags),
 ]
