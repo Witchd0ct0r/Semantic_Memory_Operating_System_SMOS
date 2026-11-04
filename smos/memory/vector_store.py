@@ -363,7 +363,7 @@ class VectorStore:
         """(distinct tag count, [{tag, count}] sorted by tag) for tags starting with `prefix`."""
         where, params = "", []
         if prefix:
-            where, params = "WHERE tag >= ? AND tag < ?", [prefix, prefix + "􏿿"]
+            where, params = "WHERE tag >= ? AND tag < ?", [prefix, prefix + chr(0x10FFFF)]
         with self._lock:
             total = self._db.execute(
                 f"SELECT COUNT(DISTINCT tag) FROM memory_tags {where}", params
