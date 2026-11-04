@@ -17,6 +17,7 @@ from smos.memory.embeddings import embed, embed_batch
 from smos.memory.entity_extractor import extract_entities
 from smos.memory.graph_store import GraphStore
 from smos.memory.schemas import MemoryObject
+from smos.memory.tagfilter import Eligible, TagFilter
 from smos.storage.migrations import STORE_MIGRATIONS, run_migrations
 
 _DEFAULT_DB_PATH = Path.home() / ".smos" / "data"
@@ -121,6 +122,36 @@ class VectorStore:
             self.graph.add_node(entity_id, "entity", entity.name, metadata={"kind": entity.kind})
             self.graph.add_edge(memory_id, entity_id, "references")
 
+    def _insert_memory_row(self, memory: MemoryObject) -> int:
+        """Insert one `memories` row and its `memory_tags` rows; the caller holds `_lock` and commits.
+        The only place a memory row is created, so the tag index cannot miss one."""
+        cursor = self._db.execute(
+            "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
+            "doc_id, ordinal, char_start, char_end) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                memory.id,
+                memory.type,
+                memory.content,
+                memory.timestamp.isoformat(),
+                ",".join(memory.tags),
+                memory.tier,
+                ",".join(memory.source_ids),
+                memory.confidence,
+                memory.doc_id,
+                memory.ordinal,
+                memory.char_start,
+                memory.char_end,
+            ),
+        )
+        row_id = int(cursor.lastrowid)
+        tags = {t for t in memory.tags if t.strip()}
+        if tags:
+            self._db.executemany(
+                "INSERT OR IGNORE INTO memory_tags (row_id, tag) VALUES (?,?)", [(row_id, t) for t in tags]
+            )
+        return row_id
+
     def _save_index(self) -> None:
         faiss.write_index(self._index, str(self._index_file))
 
@@ -142,27 +173,8 @@ class VectorStore:
             vector = np.array([embed(memory.content)], dtype=np.float32)
             faiss.normalize_L2(vector)
 
-            cursor = self._db.execute(
-                "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
-                "doc_id, ordinal, char_start, char_end) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    memory.id,
-                    memory.type,
-                    memory.content,
-                    memory.timestamp.isoformat(),
-                    ",".join(memory.tags),
-                    memory.tier,
-                    ",".join(memory.source_ids),
-                    memory.confidence,
-                    memory.doc_id,
-                    memory.ordinal,
-                    memory.char_start,
-                    memory.char_end,
-                ),
-            )
+            row_id = self._insert_memory_row(memory)
             self._db.commit()
-            row_id = cursor.lastrowid
 
             self._index.add_with_ids(vector, np.array([row_id], dtype=np.int64))
             self.bm25.update(memory.id, memory.content)
@@ -306,6 +318,61 @@ class VectorStore:
                 self._db.commit()
                 self._save_index()
         return len(row_ids)
+
+    # ------------------------------------------------------------------
+    # Tag scope (memory_tags)
+    # ------------------------------------------------------------------
+
+    def resolve_tag_filter(self, f: TagFilter) -> Optional[Eligible]:
+        """Memories that pass the filter, resolved by index before any ranking. None = no filter."""
+        if f.is_empty:
+            return None
+        params: list[str] = []
+        terms: list[str] = []
+        if f.any:
+            terms.append("SELECT row_id FROM memory_tags WHERE tag IN (%s)" % ",".join("?" for _ in f.any))
+            params.extend(f.any)
+        for tag in f.all:
+            terms.append("SELECT row_id FROM memory_tags WHERE tag = ?")
+            params.append(tag)
+        if not terms:
+            terms.append("SELECT row_id FROM memories")
+        compound = " INTERSECT ".join(terms)
+        if f.none:
+            compound += " EXCEPT SELECT row_id FROM memory_tags WHERE tag IN (%s)" % ",".join("?" for _ in f.none)
+            params.extend(f.none)
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT row_id, uuid FROM memories WHERE row_id IN ({compound}) ORDER BY row_id", params
+            ).fetchall()
+        return Eligible(
+            row_ids=np.array([r[0] for r in rows], dtype=np.int64),
+            uuids=frozenset(r[1] for r in rows),
+        )
+
+    def unknown_tags(self, tags: list[str]) -> list[str]:
+        """Names with no item at all (typo, or not ingested), in input order, without duplicates."""
+        unknown: list[str] = []
+        with self._lock:
+            for tag in dict.fromkeys(t for t in tags if t and t.strip()):
+                if self._db.execute("SELECT 1 FROM memory_tags WHERE tag = ? LIMIT 1", (tag,)).fetchone() is None:
+                    unknown.append(tag)
+        return unknown
+
+    def tag_counts(self, prefix: str = "", limit: int = 1000, offset: int = 0) -> tuple[int, list[dict]]:
+        """(distinct tag count, [{tag, count}] sorted by tag) for tags starting with `prefix`."""
+        where, params = "", []
+        if prefix:
+            where, params = "WHERE tag >= ? AND tag < ?", [prefix, prefix + "􏿿"]
+        with self._lock:
+            total = self._db.execute(
+                f"SELECT COUNT(DISTINCT tag) FROM memory_tags {where}", params
+            ).fetchone()[0]
+            rows = self._db.execute(
+                f"SELECT tag, COUNT(*) FROM memory_tags {where} GROUP BY tag ORDER BY tag LIMIT ? OFFSET ?",
+                [*params, limit, offset],
+            ).fetchall()
+        return int(total), [{"tag": t, "count": int(c)} for t, c in rows]
 
     def update_tier(self, uuid: str, tier: str) -> None:
         with self._lock:
@@ -542,26 +609,7 @@ class VectorStore:
             with self._lock:
                 row_ids: list[int] = []
                 for memory in chunk:
-                    cursor = self._db.execute(
-                        "INSERT INTO memories (uuid, type, content, timestamp, tags, tier, source_ids, confidence, "
-                        "doc_id, ordinal, char_start, char_end) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            memory.id,
-                            memory.type,
-                            memory.content,
-                            memory.timestamp.isoformat(),
-                            ",".join(memory.tags),
-                            memory.tier,
-                            ",".join(memory.source_ids),
-                            memory.confidence,
-                            memory.doc_id,
-                            memory.ordinal,
-                            memory.char_start,
-                            memory.char_end,
-                        ),
-                    )
-                    row_ids.append(cursor.lastrowid)
+                    row_ids.append(self._insert_memory_row(memory))
                 self._db.commit()
 
                 id_arr = np.array(row_ids, dtype=np.int64)
