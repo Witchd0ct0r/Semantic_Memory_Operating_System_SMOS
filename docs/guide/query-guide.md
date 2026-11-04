@@ -112,8 +112,30 @@ Both work with a read-only token.
 {"node_id": "67e53410c17a5649", "text": "1 Scope\nThis standard applies...", "segment_count": 3, "complete": true, "error": null}
 ```
 
-`text` is the concatenation of the stored blocks, byte for byte; `complete` is `false` with an `error` if segments are missing.
-404 means an unknown id. Use it after a search to read the surrounding document.
+`text` is the concatenation of the stored blocks, byte for byte; `complete` is `false` with an `error` if segments are missing
+(or if the first segment does not start at 0, which would shift every offset). A document also returns `document_hash` and
+`char_length`; add `?include=blocks` for the parser's stored blocks. 404 means an unknown id. Use it after a search to read the
+surrounding document.
+
+## Where a hit sits in its document
+
+<a id="where-a-hit-sits-in-its-document"></a>
+
+Every segment hit says exactly where it is, so you never have to search for it in the document text:
+
+| Field in `metadata` | Meaning |
+|---|---|
+| `doc_id`, `ordinal` | The document and the segment's position among its segments. |
+| `char_start`, `char_end` | The segment's range in the document text: `text[char_start:char_end]` equals `content`. Offsets are **Unicode code points** (Python string indices), measured on the `text` that `GET /nodes/{doc_id}/text` returns. |
+| `block_ordinal`, `block_char_start`, `block_char_end`, `block_type` | The block **you sent** that contains the start of the segment. The blocks tile the text: ordinals run 0, 1, 2, ... with no gap or overlap, and joining `text[start:end]` over all blocks gives the whole text. |
+| `block_ordinal_end` | The block containing the last character of the segment. It differs from `block_ordinal` only when the segmenter merged a very short block (under 20 characters, typically a heading) into its neighbour; then the segment spans several of your blocks. |
+| `document_hash` | The version of the document these offsets are valid for. After a changed re-send the hash changes; compare it to detect stale offsets. |
+
+`null` means unknown: the item has no document (a plain note), or the document was ingested before 0.5.0 and has not been sent again
+(`block_*` only). To read the clause behind a hit, take `text[block_char_start:block_char_end]`. If your parser splits one clause over
+several blocks (for example a "(cont.)" sequence), join the consecutive blocks yourself. SMOS does not model clauses.
+
+A segment's stable address is `doc_id` plus `document_hash` plus its offsets. Segment ids are not stable across a changed re-send.
 
 ## Following links
 

@@ -25,13 +25,15 @@ adapter.
 **Do now:** set `doc_type` to `standard` or `legal` for normative sources, or pass `normative_tags` on each call.
 **Status:** technical debt. **Direction:** configurable normative scopes and a `guidance` document type.
 
-## `tags` on `/query` is a preference, not a filter
+## Tag scopes are a real filter (since 0.5.0)
 
-**Today:** the request says "restrict the search to items with any of these tags", but when the tag-filtered vector search finds nothing,
-`/query` repeats the search **without** the filter, and the keyword (BM25) part is never filtered. A query with a tag nobody has still
-returns results. *Pinned.*
-**Do now:** check `metadata.tags` in each result and drop what you do not want.
-**Status:** technical debt. **Direction:** a real filter applied to both parts, with an empty result when nothing matches.
+**Today:** `tags` (any-of), `tags_all` and `tags_none` on `/query` and `/recall` are applied before ranking, to the vector, keyword and
+graph parts alike. Nothing outside the scope is returned, and a scope that matches nothing returns an empty list with `unknown_tags`
+naming the tags no item carries. Before 0.5.0 the scope was only a preference (an unfiltered fallback and an unfiltered keyword part), so
+a client that filtered on `metadata.tags` itself keeps working and can drop that code.
+**Do now:** use `total` to know whether a response is complete (`total <= k`), and page with `offset` (`offset + k` at most 1000).
+**Limits:** matching is exact and case-sensitive; there are no wildcards. Deep paging is capped at 1000 results on purpose.
+**Status:** resolved in 0.5.0.
 
 ## A query always returns its nearest items
 
@@ -86,7 +88,9 @@ becomes a placeholder node that the real ingest fills in later. *Pinned.* Traver
 ## Smaller items
 
 - The interactive API page (`/api/v1/docs`) loads Swagger assets from a CDN; offline, read `/api/v1/openapi.json` directly (needs a token).
-- Re-ingest issues new segment ids; do not store segment ids across re-ingests, store `doc_id` plus `ordinal` or a quoted sentence.
+- A re-ingest that changes the text or the tags issues new segment ids (an identical re-send keeps them, see
+  [re-ingesting](parser-author-guide.md#re-ingesting)); do not store segment ids across changed re-ingests, store `doc_id` plus
+  `document_hash` plus offsets or a quoted sentence.
 - Large stores: search is exact (not approximate) and fast at the sizes expected in a trial; see [../hnsw-assessment.md](../hnsw-assessment.md).
 - These docs are files in the repository. **Future:** SMOS will serve them through the API so an agent with only a URL and a token can
   read them.

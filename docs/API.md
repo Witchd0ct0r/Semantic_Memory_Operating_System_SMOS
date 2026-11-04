@@ -23,7 +23,7 @@ A token in the query string is ignored.
 admin when creating the invitation (the form defaults to read-only).
 
 - A read-only token can only retrieve data: `POST /query`, `/recall`, `/graph/query`,
-  `/requirement-context`, `GET /nodes/{id}/text`, `GET /verbatim/{key}`, and the OpenAPI/docs.
+  `/requirement-context`, `GET /nodes/{id}/text`, `GET /documents`, `GET /tags`, `GET /verbatim/{key}`, and the OpenAPI/docs.
 - Everything that changes the database needs a read/write token: `POST /memories`,
   `DELETE /memories/{id}`, `POST /memories/derived`, `POST /links`, `PUT /nodes/{id}/summary`,
   `POST /documents`, `POST /verbatim`. A read-only token gets `403 {"detail": "this token is
@@ -60,11 +60,13 @@ user create a replacement. A missing, wrong, revoked, expired or rotated-away to
 | POST | `/api/v1/memories` | Store text; optional `summary` + `summary_source` |
 | DELETE | `/api/v1/memories/{id}` | Delete a memory, its edges and summary |
 | POST | `/api/v1/memories/derived` | Store text you wrote (`compressed` / `reflection`) linked to `source_ids` |
-| POST | `/api/v1/query` | Hybrid search → ranked exact text + stored summaries |
-| POST | `/api/v1/recall` | Strategies: `hybrid`, `exact`, `temporal`, `chain`, `repo` |
+| POST | `/api/v1/query` | Hybrid search → ranked exact text + stored summaries; `tags` / `tags_all` / `tags_none` scope it, `offset` pages, `total` says how many are eligible |
+| POST | `/api/v1/recall` | Strategies: `hybrid`, `exact`, `temporal`, `chain`, `repo` (hybrid and repo take the same tag scope and `offset`) |
+| GET | `/api/v1/documents` | List ingested documents (filter `system`, `tag`; paged) |
+| GET | `/api/v1/tags` | List tags with item counts (`prefix`; paged) |
 | POST | `/api/v1/graph/query` | Walk the graph from an entity or node id |
 | POST | `/api/v1/links` | Create a typed edge between two nodes |
-| GET | `/api/v1/nodes/{node_id}/text` | Byte-exact text of a document or section |
+| GET | `/api/v1/nodes/{node_id}/text` | Byte-exact text of a document or section; documents add `document_hash`, `char_length`, and `include=blocks` |
 | PUT | `/api/v1/nodes/{node_id}/summary` | Attach or replace a summary on any node |
 | POST | `/api/v1/documents` | Ingest a structured document (the parser contract) |
 | POST | `/api/v1/requirement-context` | Evidence for judging a requirement (no verdict) |
@@ -82,9 +84,19 @@ user create a replacement. A missing, wrong, revoked, expired or rotated-away to
   ],
   "sources": ["…"],
   "confidence": 0.81,
-  "mode": "extractive"
+  "mode": "extractive",
+  "total": 42,
+  "unknown_tags": [],
+  "offset": 0
 }
 ```
+
+`total` is the number of stored items eligible under the tag scope (the whole store when unscoped): `total <= k` means the
+response holds all of them. `unknown_tags` names scope tags that no item carries. `score` is cosine similarity for every hit.
+A segment hit's `metadata` also carries `document_hash` (the version its offsets are valid for) and the parser block it came
+from: `block_ordinal`, `block_ordinal_end` (differs only when the segmenter merged short blocks), `block_char_start`,
+`block_char_end`, `block_type`. These are `null` for items without a document and for documents ingested before 0.5.0
+until they are re-sent.
 
 `summary` is the summary attached to that exact item; `section_summary` and `document_summary` are
 the ones attached to its containing section and parent document (a segment hit can show all three). Either is `null` when none was supplied. `mode` is `extractive`, or `uncertain` when

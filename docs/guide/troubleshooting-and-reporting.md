@@ -20,7 +20,7 @@ First find out what is wrong, then write it down so someone else can act on it.
 | A clause comes back with the next clause's heading at its end | A heading block under 20 characters was merged into the previous segment | Put the heading in the same block as its text |
 | A clause comes back cut in two | The block was over 800 characters and was split | Expected; read the neighbours with `strategy: "exact"` or `GET /nodes/{id}/text` |
 | `section_count` is 0 although the document has headings | Headings do not create sections | Expected ([concepts](concepts.md)) |
-| A query with `tags` returns items without that tag | Tags are a preference, not a filter | Known limit; filter on `metadata.tags` yourself |
+| A query with `tags` returns nothing | No stored item carries that tag (typo, or not ingested yet) | Read `unknown_tags` in the response; list real tags with `GET /api/v1/tags` |
 | A query for nonsense returns results | A query always returns its nearest items | Apply your own `score` threshold |
 | References in the text are not linked | SMOS does not detect references over the API | Declare them in `source_links` |
 | `link targets its own item` | A link names the document itself | Remove it; links connect different documents |

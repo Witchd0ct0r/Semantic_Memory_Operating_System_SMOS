@@ -95,6 +95,16 @@ Posting the same `external_handle` again is an **upsert**: same `doc_id`, the ol
 new segment ids are issued, and nothing of the old text remains. Do this whenever the source changes. Documents other than
 this one keep their links *to* it.
 
+**An identical re-send is cheap and keeps ids.** If the text, `domain_tags` and `doc_type` are unchanged, SMOS keeps the stored segments
+(so their ids, segment summaries and links stay) and only refreshes the stored blocks, the document record, `source_links` and the
+document summary; the response says `"segments_kept": true`. A changed text or changed tags replaces the segments as described above
+(`"segments_kept": false`). **Send `summary` on every re-send:** a re-send without one deletes the document's stored summary.
+
+**Blocks are stored.** Since 0.5.0 SMOS keeps your blocks (ordinal, character range, `block_type`) next to the text, so every hit
+tells you which of your blocks it came from. Documents ingested before 0.5.0 have no stored blocks until you send them again (an
+identical re-send is enough); their hits show `null` block fields. The text is exactly the concatenation of your `block.text`
+values, so the ranges tile it with no gaps and offsets are Unicode code points. See the [query guide](query-guide.md#where-a-hit-sits-in-its-document).
+
 Deleting a whole document is not available through the API in 0.3.x; re-ingest it with changed content instead, or delete single
 memories with `DELETE /api/v1/memories/{id}`.
 
