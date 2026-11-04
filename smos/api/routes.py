@@ -174,11 +174,14 @@ def post_link(body: LinkIn, request: Request) -> dict:
     description=(
         "Rebuild the byte-exact original text under a document or section node id "
         "(the doc_id returned by /documents, or '<doc_id>:section:<n>'). "
-        "'complete' is false if segments have a gap."
+        "'complete' is false if segments have a gap or the first segment does not start at 0. "
+        "A document also returns 'document_hash' (the version its offsets are valid for) and 'char_length'; "
+        "offsets are Unicode code points into this 'text'. include=blocks adds the parser's stored blocks "
+        "(ordinal, char_start, char_end, block_type) for documents ingested since 0.5.0."
     ),
 )
-def get_node_text(node_id: str, request: Request) -> dict:
-    result = reconstruct(_store(request), node_id)
+def get_node_text(node_id: str, request: Request, include: str = "") -> dict:
+    result = reconstruct(_store(request), node_id, include_blocks="blocks" in include.split(","))
     if result.get("error"):
         raise HTTPException(404, result["error"])
     return result

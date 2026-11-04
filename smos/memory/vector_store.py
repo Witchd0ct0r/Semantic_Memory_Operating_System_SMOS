@@ -439,6 +439,20 @@ class VectorStore:
             })
         return len(matched), matched[offset:offset + limit]
 
+    def get_document_hashes(self, doc_ids: list[str]) -> dict[str, str]:
+        """Ingest content hash per document id (the version marker offsets are valid for)."""
+        wanted = list(dict.fromkeys(doc_ids))
+        hashes: dict[str, str] = {}
+        with self._lock:
+            for start in range(0, len(wanted), self._SQL_VARIABLE_CHUNK):
+                chunk = wanted[start:start + self._SQL_VARIABLE_CHUNK]
+                marks = ",".join("?" for _ in chunk)
+                for doc_id, content_hash in self._db.execute(
+                    f"SELECT doc_id, content_hash FROM ingest_checkpoints WHERE doc_id IN ({marks})", chunk
+                ).fetchall():
+                    hashes[doc_id] = content_hash
+        return hashes
+
     # ------------------------------------------------------------------
     # Stored parser blocks (document_blocks)
     # ------------------------------------------------------------------

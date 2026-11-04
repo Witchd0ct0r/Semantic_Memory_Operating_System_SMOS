@@ -75,7 +75,7 @@ def recall_exact(query_text: str, k: int, store: VectorStore) -> dict:
     }
 
 
-def reconstruct(store: VectorStore, node_id: str) -> dict:
+def reconstruct(store: VectorStore, node_id: str, include_blocks: bool = False) -> dict:
     """Rebuild the verbatim text under a `document` or `section` graph node
     (spec §7): fetch its segments, order by `ordinal`, concatenate. Because
     `GraphStore.traverse()` is undirected (see `_wire_containment`'s
@@ -112,10 +112,19 @@ def reconstruct(store: VectorStore, node_id: str) -> dict:
             complete = False
         prev_end = r["metadata"].get("char_end")
 
-    return {
+    is_document = node["type"] == "document"
+    if is_document and records and records[0]["metadata"].get("char_start") != 0:
+        complete = False   # offsets are measured from 0; a missing first segment shifts every later one
+
+    result = {
         "node_id": node_id,
         "text": text,
         "segment_count": len(records),
         "complete": complete,
+        "document_hash": (store.get_document_hashes([node_id]).get(node_id) if is_document else None),
+        "char_length": (prev_end if is_document and records else None),
         "error": None,
     }
+    if include_blocks and is_document:
+        result["blocks"] = store.get_blocks(node_id)
+    return result

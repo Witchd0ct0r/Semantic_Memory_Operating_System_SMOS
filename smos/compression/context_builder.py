@@ -58,6 +58,27 @@ def _section_id(store: VectorStore, segment_id: str) -> Optional[str]:
     return None
 
 
+_BLOCK_KEYS = ("block_ordinal", "block_ordinal_end", "block_char_start", "block_char_end", "block_type")
+
+
+def _enrich_metadata(meta: dict, hashes: dict[str, str], store: VectorStore) -> dict:
+    """Add document_hash and the parser block (range and type) a segment hit came from.
+    Every key is always present; null means unknown (no document, or a document ingested before blocks were stored)."""
+    meta = dict(meta)
+    doc_id = meta.get("doc_id")
+    meta["document_hash"] = hashes.get(doc_id) if doc_id else None
+    block = end_block = None
+    if doc_id and meta.get("char_start") is not None and meta.get("char_end") is not None:
+        block = store.block_containing(doc_id, meta["char_start"])
+        end_block = store.block_containing(doc_id, max(meta["char_end"] - 1, meta["char_start"])) if block else None
+    meta["block_ordinal"] = block["ordinal"] if block else None
+    meta["block_ordinal_end"] = end_block["ordinal"] if end_block else None
+    meta["block_char_start"] = block["char_start"] if block else None
+    meta["block_char_end"] = block["char_end"] if block else None
+    meta["block_type"] = block["block_type"] if block else None
+    return meta
+
+
 def to_retrieved_context(records: list[dict], store: VectorStore) -> RetrievedContext:
     """Exact stored text plus any caller-supplied summary; never synthesized.
     A segment hit also carries the summaries attached to its section and document."""
@@ -73,10 +94,11 @@ def to_retrieved_context(records: list[dict], store: VectorStore) -> RetrievedCo
         if section_id:
             section_ids[r.get("id", "")] = section_id
     summaries = store.get_summaries(ids + doc_ids + list(section_ids.values()))
+    hashes = store.get_document_hashes(doc_ids) if doc_ids else {}
     items = []
     for r in records:
         rid = r.get("id", "")
-        meta = r.get("metadata") or {}
+        meta = _enrich_metadata(r.get("metadata") or {}, hashes, store)
         own = summaries.get(rid, {})
         section = summaries.get(section_ids.get(rid, ""), {})
         doc = summaries.get(meta.get("doc_id") or "", {})
