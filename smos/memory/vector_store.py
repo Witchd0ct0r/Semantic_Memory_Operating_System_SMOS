@@ -439,6 +439,47 @@ class VectorStore:
             })
         return len(matched), matched[offset:offset + limit]
 
+    # ------------------------------------------------------------------
+    # Stored parser blocks (document_blocks)
+    # ------------------------------------------------------------------
+
+    def save_blocks(self, doc_id: str, blocks: list[tuple[int, int, str]]) -> None:
+        """Replace the stored blocks of `doc_id`; tuples are (char_start, char_end, block_type), ordinal = index."""
+        with self._lock:
+            self._db.execute("DELETE FROM document_blocks WHERE doc_id = ?", (doc_id,))
+            self._db.executemany(
+                "INSERT INTO document_blocks (doc_id, ordinal, char_start, char_end, block_type) VALUES (?,?,?,?,?)",
+                [(doc_id, i, start, end, btype) for i, (start, end, btype) in enumerate(blocks)],
+            )
+            self._db.commit()
+
+    def delete_blocks(self, doc_id: str) -> None:
+        with self._lock:
+            self._db.execute("DELETE FROM document_blocks WHERE doc_id = ?", (doc_id,))
+            self._db.commit()
+
+    @staticmethod
+    def _block_row(row: tuple) -> dict:
+        return {"ordinal": row[0], "char_start": row[1], "char_end": row[2], "block_type": row[3]}
+
+    def get_blocks(self, doc_id: str) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ordinal, char_start, char_end, block_type FROM document_blocks "
+                "WHERE doc_id = ? ORDER BY ordinal", (doc_id,)
+            ).fetchall()
+        return [self._block_row(r) for r in rows]
+
+    def block_containing(self, doc_id: str, pos: int) -> Optional[dict]:
+        """The stored block with char_start <= pos < char_end, or None (unknown document, no blocks, past the end)."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT ordinal, char_start, char_end, block_type FROM document_blocks "
+                "WHERE doc_id = ? AND char_start <= ? AND char_end > ? ORDER BY ordinal LIMIT 1",
+                (doc_id, pos, pos),
+            ).fetchone()
+        return self._block_row(row) if row else None
+
     def update_tier(self, uuid: str, tier: str) -> None:
         with self._lock:
             self._db.execute(

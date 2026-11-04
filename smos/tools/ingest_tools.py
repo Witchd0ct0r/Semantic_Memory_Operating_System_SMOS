@@ -44,6 +44,7 @@ def delete_document_segments(store: VectorStore, doc_id: str) -> None:
     for section in sections:
         store.graph.remove_node(section["id"])
         store.delete_summary(section["id"])
+    store.delete_blocks(doc_id)
 
 
 def do_ingest_document_schema(
@@ -118,6 +119,9 @@ def _ingest_locked(
         if orphans:
             store.delete_batch(orphans)
 
+    store.save_blocks(
+        doc_id, [(start, end, block.block_type) for (start, end), block in zip(block_spans, payload.blocks)]
+    )
     store.graph.upsert_node(
         doc_id, "document", payload.doc_name or doc_id,
         metadata={

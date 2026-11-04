@@ -231,9 +231,28 @@ def _memory_tags(conn: sqlite3.Connection) -> None:
         conn.executemany("INSERT OR IGNORE INTO memory_tags (row_id, tag) VALUES (?,?)", batch)
 
 
+def _document_blocks(conn: sqlite3.Connection) -> None:
+    """Version 5: the parser's own blocks (ordinal, character range, type) per document.
+
+    Written at ingest from the payload, never from the segmenter, so a hit can be mapped to the exact
+    block it came from. Documents ingested before this version have no rows until they are re-sent."""
+    conn.execute("""
+        CREATE TABLE document_blocks (
+            doc_id     TEXT NOT NULL,
+            ordinal    INTEGER NOT NULL,
+            char_start INTEGER NOT NULL,
+            char_end   INTEGER NOT NULL,
+            block_type TEXT NOT NULL,
+            PRIMARY KEY (doc_id, ordinal)
+        )
+    """)
+    conn.execute("CREATE INDEX idx_document_blocks_start ON document_blocks (doc_id, char_start)")
+
+
 STORE_MIGRATIONS: list[Migration] = [
     (1, "baseline", _baseline),
     (2, "memories_type_index", _memories_type_index),
     (3, "graph_tables", _graph_tables),
     (4, "memory_tags", _memory_tags),
+    (5, "document_blocks", _document_blocks),
 ]
