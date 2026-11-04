@@ -23,6 +23,8 @@ READ_OPERATIONS = {
     ("POST", "/api/v1/requirement-context"),
     ("GET", "/api/v1/nodes/{node_id}/text"),
     ("GET", "/api/v1/verbatim/{key}"),
+    ("GET", "/api/v1/documents"),
+    ("GET", "/api/v1/tags"),
 }
 OPEN_OPERATIONS = {("GET", "/api/v1/health")}
 

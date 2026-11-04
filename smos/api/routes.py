@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from smos.api.deps import require_write
 from smos.api.models import (
@@ -213,6 +213,45 @@ def put_node_summary(node_id: str, body: SummaryIn, request: Request) -> dict:
 )
 def post_document(body: IngestionPayload, request: Request) -> dict:
     return do_ingest_document_schema(body, _store(request))
+
+
+@read.get(
+    "/documents",
+    summary="List ingested documents",
+    description=(
+        "One row per ingested document (id, external_handle, doc_type, tags, segment_count, updated_at, "
+        "document_hash), sorted by id. Filter by source 'system' and by 'tag' (repeat the parameter; all "
+        "must be present). 'tags' are the document's domain_tags plus doctype:<type>. Pages with limit "
+        "(<= 500) and offset; 'total' counts all matches."
+    ),
+)
+def get_documents(
+    request: Request,
+    system: str = "",
+    tag: list[str] = Query(default=[]),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    total, documents = _store(request).list_documents(system=system, tags=tuple(tag), limit=limit, offset=offset)
+    return {"total": total, "documents": documents}
+
+
+@read.get(
+    "/tags",
+    summary="List tags with item counts",
+    description=(
+        "Every tag carried by stored items with the number of items, sorted by tag. 'prefix' keeps tags "
+        "starting with it (e.g. norm:). Pages with limit (<= 5000) and offset; 'total' counts the tags."
+    ),
+)
+def get_tags(
+    request: Request,
+    prefix: str = "",
+    limit: int = Query(default=1000, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    total, tags = _store(request).tag_counts(prefix=prefix, limit=limit, offset=offset)
+    return {"total": total, "tags": tags}
 
 
 @read.post(

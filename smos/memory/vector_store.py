@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import json
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -403,6 +404,40 @@ class VectorStore:
                 [*params, limit, offset],
             ).fetchall()
         return int(total), [{"tag": t, "count": int(c)} for t, c in rows]
+
+    def list_documents(
+        self, system: str = "", tags: tuple[str, ...] = (), limit: int = 100, offset: int = 0
+    ) -> tuple[int, list[dict]]:
+        """(total matching, one page) of ingested documents sorted by id. Placeholder nodes (link targets
+        not ingested yet) are not documents. `tags` must all be present on the document: its
+        domain_tags plus `doctype:<type>`, the same set its segments carry."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT n.id, n.metadata, c.total_leaves, c.updated_at, c.content_hash "
+                "FROM graph_nodes n LEFT JOIN ingest_checkpoints c ON c.doc_id = n.id "
+                "WHERE n.type = 'document' ORDER BY n.id"
+            ).fetchall()
+        matched: list[dict] = []
+        for doc_id, raw_meta, leaves, updated_at, content_hash in rows:
+            meta = json.loads(raw_meta) if raw_meta else {}
+            if meta.get("placeholder"):
+                continue
+            if system and meta.get("system") != system:
+                continue
+            doc_type = meta.get("doc_type")
+            doc_tags = list(meta.get("domain_tags") or []) + ([f"doctype:{doc_type}"] if doc_type else [])
+            if any(t not in doc_tags for t in tags):
+                continue
+            matched.append({
+                "id": doc_id,
+                "external_handle": {"system": meta.get("system"), "native_id": meta.get("native_id")},
+                "doc_type": doc_type,
+                "tags": doc_tags,
+                "segment_count": leaves,
+                "updated_at": updated_at,
+                "document_hash": content_hash,
+            })
+        return len(matched), matched[offset:offset + limit]
 
     def update_tier(self, uuid: str, tier: str) -> None:
         with self._lock:
