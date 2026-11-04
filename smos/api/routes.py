@@ -37,6 +37,14 @@ def _store(request: Request):
     return request.app.state.store
 
 
+_MAX_WINDOW = 1000  # offset + k
+
+
+def _check_page(k: int, offset: int) -> None:
+    if offset + k > _MAX_WINDOW:
+        raise HTTPException(400, f"offset + k must not exceed {_MAX_WINDOW} (got {offset + k})")
+
+
 def _too_short(text: str) -> bool:
     return not text or len(text.strip()) < _MIN_INPUT_CHARS
 
@@ -97,13 +105,20 @@ def post_derived(body: DerivedMemoryIn, request: Request) -> dict:
     description=(
         "Hybrid (vector + keyword + graph) search. Returns ranked exact text with any stored "
         "summary beside it ('summary' is null when none was supplied) and an overall confidence. "
-        "Nothing is synthesized. Pass tags to restrict the search to a domain."
+        "Nothing is synthesized. tags / tags_all / tags_none restrict the search (ANDed, exact, "
+        "case-sensitive); nothing outside the scope is returned and an empty scope returns an empty "
+        "list with unknown_tags naming tags no item carries. 'total' is the number of eligible items: "
+        "total <= k means this response holds all of them. 'offset' pages (offset + k <= 1000)."
     ),
 )
 def post_query(body: QueryIn, request: Request) -> dict:
     if _too_short(body.query):
         raise HTTPException(400, f"query must be at least {_MIN_INPUT_CHARS} characters")
-    return semantic_query(body.query, body.k, _store(request), tags=body.tags or None)
+    _check_page(body.k, body.offset)
+    return semantic_query(
+        body.query, body.k, _store(request), tags=body.tags or None,
+        tags_all=body.tags_all or None, tags_none=body.tags_none or None, offset=body.offset,
+    )
 
 
 @read.post(
@@ -116,8 +131,11 @@ def post_query(body: QueryIn, request: Request) -> dict:
     ),
 )
 def post_recall(body: RecallIn, request: Request) -> dict:
+    _check_page(body.k, body.offset)
     result = recall(body.query, body.strategy, body.k, body.since, body.until,
-                    body.seed_id, body.component, _store(request))
+                    body.seed_id, body.component, _store(request),
+                    tags=body.tags or None, tags_all=body.tags_all or None,
+                    tags_none=body.tags_none or None, offset=body.offset)
     if "error" in result:
         raise HTTPException(400, result["error"])
     return result

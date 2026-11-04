@@ -24,7 +24,14 @@ class DerivedMemoryIn(BaseModel):
 class QueryIn(BaseModel):
     query: str = Field(description="Natural-language query (at least 10 characters).")
     k: int = Field(default=5, ge=1, le=100, description="How many results to return.")
-    tags: list[str] = Field(default_factory=list, description="Restrict the search to items with any of these tags.")
+    tags: list[str] = Field(
+        default_factory=list,
+        description="Restrict the search to items having ANY of these tags (exact, case-sensitive). "
+                    "Combined with tags_all and tags_none by AND. Nothing outside the scope is returned.",
+    )
+    tags_all: list[str] = Field(default_factory=list, description="Items must have ALL of these tags.")
+    tags_none: list[str] = Field(default_factory=list, description="Items must have NONE of these tags.")
+    offset: int = Field(default=0, ge=0, description="Skip this many ranked results (offset + k must be <= 1000).")
 
 
 class RecallIn(BaseModel):
@@ -35,6 +42,10 @@ class RecallIn(BaseModel):
     until: str = Field(default="", description="ISO-8601 upper bound for temporal.")
     seed_id: str = Field(default="", description="Starting memory id for chain.")
     component: str = Field(default="", description="Tag that scopes the repo strategy.")
+    tags: list[str] = Field(default_factory=list, description="hybrid/repo: items having ANY of these tags.")
+    tags_all: list[str] = Field(default_factory=list, description="hybrid/repo: items having ALL of these tags.")
+    tags_none: list[str] = Field(default_factory=list, description="hybrid/repo: items having NONE of these tags.")
+    offset: int = Field(default=0, ge=0, description="hybrid/repo: skip this many ranked results (offset + k <= 1000).")
 
 
 class GraphQueryIn(BaseModel):
