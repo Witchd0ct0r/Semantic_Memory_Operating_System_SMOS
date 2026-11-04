@@ -60,6 +60,63 @@ def do_ingest_document_schema(
         return _ingest_locked(payload, store, adapter)
 
 
+def _is_unchanged_resend(
+    store: VectorStore, doc_id: str, payload: IngestionPayload, checkpoint: Optional[dict], text_hash: str
+) -> bool:
+    """True when this payload would rebuild exactly the segments already stored: the previous ingest is
+    complete, the text is identical, and tags and doc_type are unchanged. Anything else replaces them."""
+    if checkpoint is None or checkpoint["status"] != "complete" or checkpoint["content_hash"] != text_hash:
+        return False
+    node = store.graph.get_node(doc_id)
+    if node is None or node["type"] != "document":
+        return False
+    meta = node["metadata"]
+    return (
+        not meta.get("placeholder")
+        and list(meta.get("domain_tags") or []) == list(payload.domain_tags)
+        and meta.get("doc_type") == payload.doc_type
+        and bool(store.get_segment_ids_by_doc(doc_id))
+    )
+
+
+def _refresh_unchanged(
+    store: VectorStore, payload: IngestionPayload, doc_id: str, block_spans: list[tuple[int, int]]
+) -> dict:
+    """Re-send of an unchanged document: keep the segments (and so their ids, summaries and links) and refresh
+    only what the payload carries besides the text: the stored blocks, the document node, source links, summary."""
+    store.save_blocks(
+        doc_id, [(start, end, block.block_type) for (start, end), block in zip(block_spans, payload.blocks)]
+    )
+    store.graph.upsert_node(doc_id, "document", payload.doc_name or doc_id, metadata=_document_metadata(payload))
+    link_count = wire_source_links(store.graph, payload, doc_id)
+    if payload.summary:
+        store.set_summary(doc_id, payload.summary, payload.summary_source or "")
+    else:
+        store.delete_summary(doc_id)
+    segment_ids = store.get_segment_ids_by_doc(doc_id)
+    return {
+        "status": "success",
+        "doc_id": doc_id,
+        "segment_count": len(segment_ids),
+        "segment_ids": segment_ids,
+        "section_count": None,
+        "reference_count": None,
+        "link_count": link_count,
+        "resumed": False,
+        "segments_kept": True,
+    }
+
+
+def _document_metadata(payload: IngestionPayload) -> dict:
+    return {
+        "domain_tags": payload.domain_tags,
+        "doc_type": payload.doc_type,
+        "system": payload.external_handle.system,
+        "native_id": payload.external_handle.native_id,
+        "metadata": payload.metadata,
+    }
+
+
 def _ingest_locked(
     payload: IngestionPayload,
     store: VectorStore,
@@ -85,6 +142,8 @@ def _ingest_locked(
 
     checkpoint = store.get_checkpoint(doc_id)
     resumed = False
+    if _is_unchanged_resend(store, doc_id, payload, checkpoint, text_hash):
+        return _refresh_unchanged(store, payload, doc_id, block_spans)
     if checkpoint is not None:
         if checkpoint["status"] == "complete" or checkpoint["content_hash"] != text_hash:
             delete_document_segments(store, doc_id)
@@ -122,16 +181,7 @@ def _ingest_locked(
     store.save_blocks(
         doc_id, [(start, end, block.block_type) for (start, end), block in zip(block_spans, payload.blocks)]
     )
-    store.graph.upsert_node(
-        doc_id, "document", payload.doc_name or doc_id,
-        metadata={
-            "domain_tags": payload.domain_tags,
-            "doc_type": payload.doc_type,
-            "system": payload.external_handle.system,
-            "native_id": payload.external_handle.native_id,
-            "metadata": payload.metadata,
-        },
-    )
+    store.graph.upsert_node(doc_id, "document", payload.doc_name or doc_id, metadata=_document_metadata(payload))
     segment_tags = list(payload.domain_tags)
     if payload.doc_type:
         segment_tags.append(f"doctype:{payload.doc_type}")
@@ -197,4 +247,5 @@ def _ingest_locked(
         "reference_count": reference_count,
         "link_count": link_count,
         "resumed": resumed,
+        "segments_kept": False,
     }

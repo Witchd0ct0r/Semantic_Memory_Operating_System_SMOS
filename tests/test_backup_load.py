@@ -231,3 +231,43 @@ def test_close_failing_at_the_start_of_a_load_keeps_the_original_store(filled, b
     assert _memories(app) == 4
     _no_leftovers(data_dir)
     assert app.state.store_op_active is False
+
+
+def test_loading_pre_0_5_backup_migrates_and_scopes(filled, tmp_path: Path) -> None:
+    """A 0.4.0 backup (schema 3, no memory_tags / document_blocks) loads, is migrated and tag scoping works at once."""
+    from smos.memory.tagfilter import TagFilter
+
+    client, headers, app = filled
+    app.state.store.store(MemoryObject(type="doc", content="tagged memory used for scoping after the load",
+                                       tags=["norm:A", "topic:x"]))
+    app.state.store._save_index()
+    modern = create_backup(app)
+    work = tmp_path / "old"
+    work.mkdir()
+    with zipfile.ZipFile(modern) as zf:
+        zf.extractall(work)
+    conn = sqlite3.connect(str(work / "metadata.db"))
+    conn.executescript(
+        "DROP TRIGGER memory_tags_delete; DROP TABLE memory_tags; DROP TABLE document_blocks;"
+        "DELETE FROM schema_version; INSERT INTO schema_version (version) VALUES (3);"
+    )
+    conn.commit()
+    conn.close()
+    manifest = json.loads((work / "manifest.json").read_text(encoding="utf-8"))
+    manifest["sha256"] = {n: hashlib.sha256((work / n).read_bytes()).hexdigest() for n in LIVE_FILES}
+    old = tmp_path / "pre-0.5.zip"
+    with zipfile.ZipFile(old, "w") as zf:
+        zf.writestr("manifest.json", json.dumps(manifest))
+        for n in LIVE_FILES:
+            zf.write(work / n, n)
+
+    load_backup(app, old)
+
+    store = app.state.store
+    assert store._db.execute("SELECT version FROM schema_version").fetchone()[0] == STORE_MIGRATIONS[-1][0] >= 5
+    eligible = store.resolve_tag_filter(TagFilter.make(any=["norm:A"]))
+    assert eligible is not None and len(eligible) == 1
+    assert store.unknown_tags(["norm:A", "nope"]) == ["nope"]
+    r = client.post("/api/v1/query", json={"query": "tagged memory used for scoping", "k": 5, "tags": ["norm:A"]},
+                    headers=headers)
+    assert r.status_code == 200 and r.json()["total"] == 1 and len(r.json()["results"]) == 1

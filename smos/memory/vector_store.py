@@ -785,7 +785,7 @@ class VectorStore:
     def get_segment_ids_by_doc(self, doc_id: str) -> list[str]:
         with self._lock:
             rows = self._db.execute(
-                "SELECT uuid FROM memories WHERE doc_id = ?", (doc_id,)
+                "SELECT uuid FROM memories WHERE doc_id = ? ORDER BY ordinal", (doc_id,)
             ).fetchall()
         return [r[0] for r in rows]
 
