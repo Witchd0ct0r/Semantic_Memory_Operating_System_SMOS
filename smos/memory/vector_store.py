@@ -199,21 +199,59 @@ class VectorStore:
         return ids
 
     def query(self, query_text: str, k: int = 5) -> list[dict]:
-        return self._query_internal(query_text, k, domain_tags=None)
+        return self._query_internal(query_text, k)
 
     def query_domain(
         self,
         query_text: str,
         k: int = 20,
         domain_tags: Optional[list[str]] = None,
+        eligible: Optional[Eligible] = None,
     ) -> list[dict]:
-        return self._query_internal(query_text, k, domain_tags=domain_tags)
+        """Nearest `k` memories. A tag scope (`eligible`, or `domain_tags` = any-of) restricts the search
+        itself, so the top-k comes from in-scope memories only."""
+        if eligible is None and domain_tags:
+            eligible = self.resolve_tag_filter(TagFilter.make(any=domain_tags))
+        return self._query_internal(query_text, k, eligible=eligible)
+
+    def _search(self, vector: np.ndarray, n: int, row_ids: Optional[np.ndarray]) -> list[tuple[float, int]]:
+        """(score, row_id) pairs, best first, ties by row_id; the caller holds `_lock`."""
+        if row_ids is not None:
+            if len(row_ids) == 0:
+                return []
+            params = faiss.SearchParameters()
+            params.sel = faiss.IDSelectorBatch(row_ids)
+            scores, ids = self._index.search(vector, min(n, len(row_ids)), params=params)
+        else:
+            scores, ids = self._index.search(vector, n)
+        hits = [(float(score), int(row_id)) for score, row_id in zip(scores[0], ids[0]) if row_id != -1]
+        hits.sort(key=lambda h: (-h[0], h[1]))
+        return hits
+
+    def cosine_scores(self, query_text: str, uuids: list[str]) -> dict[str, float]:
+        """Exact cosine similarity of the query to the stored vectors of `uuids` (keyword-only hits have none)."""
+        wanted = list(dict.fromkeys(uuids))
+        if not wanted:
+            return {}
+        vector = np.array([embed(query_text)], dtype=np.float32)
+        faiss.normalize_L2(vector)
+        with self._lock:
+            by_row: dict[int, str] = {}
+            for start in range(0, len(wanted), self._SQL_VARIABLE_CHUNK):
+                chunk = wanted[start:start + self._SQL_VARIABLE_CHUNK]
+                marks = ",".join("?" for _ in chunk)
+                for row_id, uuid_ in self._db.execute(
+                    f"SELECT row_id, uuid FROM memories WHERE uuid IN ({marks})", chunk
+                ).fetchall():
+                    by_row[int(row_id)] = uuid_
+            hits = self._search(vector, len(by_row), np.array(list(by_row), dtype=np.int64)) if by_row else []
+        return {by_row[row_id]: score for score, row_id in hits}
 
     def _query_internal(
         self,
         query_text: str,
         k: int,
-        domain_tags: Optional[list[str]],
+        eligible: Optional[Eligible] = None,
     ) -> list[dict]:
         with self._lock:
             total = self._index.ntotal
@@ -223,10 +261,7 @@ class VectorStore:
             vector = np.array([embed(query_text)], dtype=np.float32)
             faiss.normalize_L2(vector)
 
-            n = min(k, total)
-            scores, ids = self._index.search(vector, n)
-
-            hits = [(float(score), int(row_id)) for score, row_id in zip(scores[0], ids[0]) if row_id != -1]
+            hits = self._search(vector, min(k, total), eligible.row_ids if eligible is not None else None)
             rows = self._rows_by_row_id([row_id for _score, row_id in hits])
 
             results: list[dict] = []
@@ -236,11 +271,6 @@ class VectorStore:
                     continue
                 (_row_id, uuid_, type_, content, timestamp, tags, tier, source_ids, confidence,
                  doc_id, ordinal, char_start, char_end) = row
-
-                if domain_tags:
-                    tag_set = {t.strip() for t in tags.split(",") if t.strip()}
-                    if not tag_set.intersection(domain_tags):
-                        continue
 
                 results.append({
                     "id": uuid_,

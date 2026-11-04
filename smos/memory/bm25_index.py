@@ -208,8 +208,11 @@ class BM25Index:
                 self._kill(uuid)
             self._finish()
 
-    def query(self, text: str, k: int) -> list[tuple[str, float]]:
+    def query(self, text: str, k: int, allowed: Optional[frozenset[str]] = None) -> list[tuple[str, float]]:
         """Return top-k (uuid, score) pairs for the query text.
+
+        `allowed` restricts the result to those uuids (a tag scope resolved by the caller); scores still use
+        the whole corpus's statistics, so a hit's score does not depend on the scope.
 
         Note: Results may include zero-score entries (insertion-order tie-broken) when no query terms match the corpus.
         Callers should not assume all returned entries are relevant matches."""
@@ -234,11 +237,16 @@ class BM25Index:
                     scores[slots] += idf * (freq * (_K1 + 1) / (freq + _K1 * (1 - _B + _B * self._doc_len[slots] / self._avgdl)))
             if len(self._dead_idx):
                 scores[self._dead_idx] = 0.0
-            return [(self._uuids[slot], float(scores[slot])) for slot in self._top(scores, k, has_negative)]
+            alive = self._alive[:n]
+            if allowed is not None:
+                in_scope = np.zeros(n, dtype=bool)
+                in_scope[[self._slot_of[u] for u in allowed if u in self._slot_of]] = True
+                scores[~in_scope] = 0.0
+                alive = alive & in_scope
+            return [(self._uuids[slot], float(scores[slot])) for slot in self._top(scores, k, has_negative, alive)]
 
-    def _top(self, scores: np.ndarray, k: int, has_negative: bool) -> np.ndarray:
+    def _top(self, scores: np.ndarray, k: int, has_negative: bool, alive: np.ndarray) -> np.ndarray:
         """Slots of the best k live documents: score descending, ties newest (highest slot) first."""
-        alive = self._alive[: len(scores)]
         if has_negative:  # scores can be negative or zero: rank every live document
             live = np.flatnonzero(alive)
             return live[np.lexsort((-live, -scores[live]))][:k]
