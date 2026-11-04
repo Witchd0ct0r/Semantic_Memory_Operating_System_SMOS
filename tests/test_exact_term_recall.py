@@ -249,7 +249,7 @@ def test_hybrid_recall_beats_vector_only(store: VectorStore, monkeypatch: pytest
 
     hybrid_recall = _recall(store, ids)
 
-    monkeypatch.setattr(store.bm25, "query", lambda text, k: [])
+    monkeypatch.setattr(store.bm25, "query", lambda text, k, allowed=None: [])
     vector_only_recall = _recall(store, ids)
 
     assert hybrid_recall >= 0.80, (

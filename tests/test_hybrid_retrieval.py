@@ -16,6 +16,10 @@ def _make_store_with_memories(memories: list[dict], extra_bm25_docs: list[dict] 
     extra_bm25_docs = extra_bm25_docs or []
     store = MagicMock()
     store.query_domain.return_value = memories
+    store.resolve_tag_filter.return_value = None
+    store.count.return_value = len(memories) + len(extra_bm25_docs)
+    store.unknown_tags.return_value = []
+    store.cosine_scores.return_value = {}
     bm25 = BM25Index()
     bm25.build([(m["id"], m["content"]) for m in memories + extra_bm25_docs])
     store.bm25 = bm25
@@ -94,3 +98,24 @@ def test_bm25_only_hit_is_hydrated_via_get_many():
     # exercised — this is what the previous tests failed to cover.
     assert store.get_many.call_count >= 1
     assert "bm25-only-id" in result.sources
+
+
+def test_bm25_only_hit_gets_a_numeric_cosine_score():
+    """A keyword-only hit has no FAISS score; build_context asks the store for its exact cosine."""
+    from smos.compression.context_builder import build_context
+
+    memories = [{"id": "id1", "content": "completely unrelated filler text about weather", "distance": 0.5,
+                 "score": 0.5, "tags": []}]
+    bm25_only = {"id": "bm25-only-id", "content": "JWTValidator token authentication middleware", "metadata": {"tags": []}}
+    filler = [
+        {"id": "filler-1", "content": "database migration script executed successfully", "metadata": {"tags": []}},
+        {"id": "filler-2", "content": "caching layer improves response latency", "metadata": {"tags": []}},
+    ]
+    store = _make_store_with_memories(memories, extra_bm25_docs=[bm25_only, *filler])
+    store.cosine_scores.return_value = {"bm25-only-id": 0.37}
+
+    result = build_context("JWTValidator", k=2, store=store)
+
+    item = next(r for r in result.results if r.id == "bm25-only-id")
+    assert item.score == 0.37
+    store.cosine_scores.assert_called_once_with("JWTValidator", ["bm25-only-id"])

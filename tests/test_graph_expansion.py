@@ -7,6 +7,10 @@ from smos.memory.bm25_index import BM25Index
 def _store_with(memories: list[dict], graph_neighbors: list[dict]):
     store = MagicMock()
     store.query_domain.return_value = memories
+    store.resolve_tag_filter.return_value = None
+    store.count.return_value = len(memories)
+    store.unknown_tags.return_value = []
+    store.cosine_scores.return_value = {}
     bm25 = BM25Index()
     bm25.build([(m["id"], m["content"]) for m in memories])
     store.bm25 = bm25

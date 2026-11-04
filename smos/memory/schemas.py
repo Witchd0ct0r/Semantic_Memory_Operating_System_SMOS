@@ -40,6 +40,16 @@ class RetrievedContext(BaseModel):
     sources: list[str]
     confidence: float = Field(ge=0.0, le=1.0)
     mode: Literal["extractive", "uncertain"] = "extractive"
+    total: Optional[int] = Field(
+        default=None,
+        description="Stored memories eligible under the tag scope (the whole store when unscoped). "
+                    "total <= k means this response holds every eligible item.",
+    )
+    unknown_tags: list[str] = Field(
+        default_factory=list,
+        description="Names in tags / tags_all that no stored item carries (typo, or not ingested).",
+    )
+    offset: int = 0
 
 
 class GraphNode(BaseModel):

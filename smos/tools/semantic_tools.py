@@ -30,10 +30,14 @@ def semantic_query(
     k: int,
     store: VectorStore,
     tags: list[str] | None = None,
+    *,
+    tags_all: list[str] | None = None,
+    tags_none: list[str] | None = None,
+    offset: int = 0,
 ) -> dict:
     if not _validate_text(query):
         return _INVALID_INPUT_RESPONSE
-    result = build_context(query, k, store, tags=tags)
+    result = build_context(query, k, store, tags=tags, tags_all=tags_all, tags_none=tags_none, offset=offset)
     store.bump_recall(result.sources)
     return result.model_dump()
 

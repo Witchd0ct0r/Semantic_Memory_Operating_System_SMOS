@@ -4,6 +4,7 @@ import re
 from typing import Optional
 
 from smos.memory.schemas import RetrievedContext, RetrievedItem
+from smos.memory.tagfilter import TagFilter
 from smos.memory.vector_store import VectorStore
 
 _CANDIDATE_MULTIPLIER = 4
@@ -104,28 +105,39 @@ def build_context(
     k: int,
     store: VectorStore,
     tags: Optional[list[str]] = None,
+    *,
+    tags_all: Optional[list[str]] = None,
+    tags_none: Optional[list[str]] = None,
+    offset: int = 0,
 ) -> RetrievedContext:
-    candidate_k = max(k * _CANDIDATE_MULTIPLIER, 20)
+    """Hybrid retrieval. A tag scope (`tags` any-of, `tags_all`, `tags_none`, ANDed) is resolved to the
+    eligible memories first and restricts the vector, keyword and graph legs alike: a scoped query
+    never returns an out-of-scope item and never falls back to an unfiltered search.
+    `offset` pages through the fused ranking (offset + k is capped by the API)."""
+    scope = TagFilter.make(any=tags, all=tags_all, none=tags_none)
+    eligible = store.resolve_tag_filter(scope)
+    candidate_k = max((offset + k) * _CANDIDATE_MULTIPLIER, 20)
+    total = len(eligible) if eligible is not None else store.count()
+    unknown = store.unknown_tags(list(scope.any) + list(scope.all)) if not scope.is_empty else []
 
-    # Vector retrieval — explicit tags scope the search; otherwise unfiltered.
-    domain_tags = tags or None
-    vector_results = store.query_domain(query, k=candidate_k, domain_tags=domain_tags)
-    if not vector_results:
-        vector_results = store.query(query, k=candidate_k)
+    vector_results = store.query_domain(query, k=candidate_k, eligible=eligible)
+    bm25_results = store.bm25.query(query, k=candidate_k, allowed=eligible.uuids if eligible is not None else None)
 
-    # BM25 retrieval
-    bm25_results = store.bm25.query(query, k=candidate_k)
-
-    if not vector_results and not bm25_results:
-        return to_retrieved_context([], store)
+    def _done(records: list[dict]) -> RetrievedContext:
+        ctx = to_retrieved_context(records, store)
+        ctx.total, ctx.unknown_tags, ctx.offset = total, unknown, offset
+        return ctx
 
     # BM25Index.query() pads results with zero-score entries (insertion-order
     # tied) when fewer than k terms match. Those carry no relevance signal, so
     # drop them before fusion to avoid granting them undeserved rank credit.
     bm25_results = [(uid, score) for uid, score in bm25_results if score > 0.0]
 
+    if not vector_results and not bm25_results:
+        return _done([])
+
     # Hybrid merge via Reciprocal Rank Fusion
-    merged = _rrf_merge(vector_results, bm25_results, top_k=k * 2)
+    merged = _rrf_merge(vector_results, bm25_results, top_k=(offset + k) * 2)
     rrf_scores = {uid: score for uid, score in merged}
 
     # Hydrate merged results: prefer the vector hit (already carries FAISS
@@ -140,18 +152,19 @@ def build_context(
 
     # Final rerank: RRF fused score is the primary ranking signal; term
     # overlap only breaks ties between candidates with equal (or very close)
-    # RRF scores.
+    # RRF scores; the id makes the order total, so pages neither skip nor repeat.
     for c in candidates:
         c["_rrf_score"] = rrf_scores.get(c.get("id", ""), 0.0)
         c["_final_score"] = _term_overlap(query, c.get("content", ""))
-    candidates.sort(key=lambda c: (c["_rrf_score"], c["_final_score"]), reverse=True)
-    top = candidates[:k]
+    candidates.sort(key=lambda c: (-c["_rrf_score"], -c["_final_score"], c.get("id", "")))
+    top = candidates[offset:offset + k]
 
     # Graph expansion — purely additive: pulls in memories that share an
     # extracted entity with the top-ranked result, without altering the
     # RRF-ranked order of `top` itself. Bounded to 2 extra memories so a
-    # densely-connected entity can't blow up the compression input.
-    if top:
+    # densely-connected entity can't blow up the compression input. First page
+    # only, and never outside the tag scope.
+    if top and offset == 0:
         graph_neighbors = store.graph.traverse(top[0].get("id", ""), max_hops=2, edge_types=["references"])
         existing_ids = {c.get("id", "") for c in top}
         added = 0
@@ -160,6 +173,8 @@ def build_context(
                 break
             if node["type"] != "memory" or node["id"] in existing_ids:
                 continue
+            if eligible is not None and node["id"] not in eligible.uuids:
+                continue
             record = store.get_by_uuid(node["id"])
             if record is None:
                 continue
@@ -167,4 +182,10 @@ def build_context(
             existing_ids.add(node["id"])
             added += 1
 
-    return to_retrieved_context(top, store)
+    # `score` is cosine similarity for every hit; a keyword-only hit has no vector rank, so compute it.
+    missing = [c["id"] for c in top if c.get("score") is None and c.get("id")]
+    cosine = store.cosine_scores(query, missing) if missing else {}
+    for c in top:
+        if c.get("score") is None:
+            c["score"] = float(cosine.get(c.get("id", ""), 0.0))
+    return _done(top)

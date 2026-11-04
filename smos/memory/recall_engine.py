@@ -20,12 +20,20 @@ def recall(
     seed_id: str,
     component: str,
     store: VectorStore,
+    *,
+    tags: list[str] | None = None,
+    tags_all: list[str] | None = None,
+    tags_none: list[str] | None = None,
+    offset: int = 0,
 ) -> dict:
     if strategy not in _VALID_STRATEGIES:
         return {"error": f"unknown strategy: {strategy}"}
 
+    scope = {"tags_all": tags_all, "tags_none": tags_none, "offset": offset}
     if strategy == "repo":
-        result = _recall_repo(query, k, component, store)
+        result = build_context(
+            query, k, store, tags=list(tags or []) + ([component] if component else []), **scope
+        ).model_dump()
     elif strategy == "temporal":
         result = _recall_temporal(query, k, since, until, store)
     elif strategy == "chain":
@@ -33,15 +41,10 @@ def recall(
     elif strategy == "exact":
         result = recall_exact(query, k, store)
     else:
-        result = build_context(query, k, store).model_dump()
+        result = build_context(query, k, store, tags=tags, **scope).model_dump()
 
     store.bump_recall(result.get("sources", []))
     return result
-
-
-def _recall_repo(query: str, k: int, component: str, store: VectorStore) -> dict:
-    tags = [component] if component else None
-    return build_context(query, k, store, tags=tags).model_dump()
 
 
 def _recall_temporal(query: str, k: int, since: str, until: str, store: VectorStore) -> dict:
