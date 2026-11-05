@@ -21,6 +21,20 @@ history log; git history is the log.
 > alignment with its read-only token. Parked from the ledger: multilingual embeddings (SMOS-005, needs evidence), document delete and
 > stable ids (006), batch query (010), Retry-After / quarantine status (007), a `group` key for multi-block clauses.
 
+## Session 13 (2026-11-05): SYS.2 traceability support, built on `main`, NOT yet tagged
+
+> From the tool-user pipeline's phase-2 ledger. SYS.2 verification requirements will reach SMOS through Codebeamer and a future parser
+> (the pipeline itself never writes to SMOS). Built: edge type `verifies` (RequirementsAdapter; SYS.2 -> SYS.1 only, norms go through
+> `cites`); `/requirement-context` walks it both ways (`verifies` / `verified by`); a `cites` edge may carry `metadata.anchors`
+> (`clause`, `quote`, block range) and SMOS stamps `target_hash` at link time, so each anchor reads `current` / `stale` / `unverified`;
+> normative items carry `doc_tags` and `edition_status` read live from the target's `status:<x>` tag; `external_handle.version` and
+> `deep_link` are stored and listed (P2-006); hits carry `rank` and `rank_score` (SMOS-013; `score` stays cosine). 1209 tests pass.
+> Not run against a real server or store yet. **Edges are unique per (source, target, type)** and a duplicate is silently ignored:
+> several clauses of one norm must go in one `cites` link as `anchors`. **Parked:** the confidence field (`(1+cosine)/2` mean over the
+> returned hits, compressed scale, no "nothing relevant" signal) waits for two benchmark runs at the current and a larger corpus size;
+> baseline today 0.807 on-topic, 0.662 off-topic at 9,970 segments. **Next:** the issue-submission endpoint (special issue token,
+> admin approval, upload to GitHub issues after authentication): brainstorm first, own session.
+
 ## Earlier: session 11 (2026-10-30)
 
 > **Session 11 built and PUBLISHED release v0.4.0 (2026-10-30, tag on c3bca94, pushed; Debian update and a try of the Settings page pending on the Governor).** Token lifecycle: tokens expire

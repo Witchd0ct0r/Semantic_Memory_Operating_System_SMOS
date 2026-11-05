@@ -27,7 +27,7 @@ def test_documents_listing_filters_and_pages(api) -> None:
     body = client.get("/api/v1/documents", headers=h).json()
     assert body["total"] == 3 and [d["id"] for d in body["documents"]] == ids
     first = next(d for d in body["documents"] if d["external_handle"]["native_id"] == "R-1")
-    assert first["external_handle"] == {"system": "cb", "native_id": "R-1"}
+    assert first["external_handle"] == {"system": "cb", "native_id": "R-1", "version": None, "deep_link": None}
     assert first["doc_type"] == "requirements"
     assert first["tags"] == ["norm:A", "topic:x", "doctype:requirements"]
     assert first["segment_count"] >= 1 and first["updated_at"] and first["document_hash"]

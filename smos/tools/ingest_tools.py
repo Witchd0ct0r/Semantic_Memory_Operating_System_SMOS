@@ -113,6 +113,8 @@ def _document_metadata(payload: IngestionPayload) -> dict:
         "doc_type": payload.doc_type,
         "system": payload.external_handle.system,
         "native_id": payload.external_handle.native_id,
+        "version": payload.external_handle.version,
+        "deep_link": payload.external_handle.deep_link,
         "metadata": payload.metadata,
     }
 

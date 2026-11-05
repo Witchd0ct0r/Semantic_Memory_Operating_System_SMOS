@@ -44,7 +44,8 @@ All examples below were produced by a real run; see [../guide-verification.md](.
 | `metadata{}` | Optional free-form object, kept on the document node (returned by `/graph/query`). Put things SMOS has no field for here, such as a deep link or a source version. |
 | `summary`, `summary_source` | Optional caller-written summary of the whole document. |
 
-**Accepted but not stored or used:** `external_handle.deep_link`, `.version`, `.source_updated_at`, block `source_anchor`,
+**Stored and listed:** `external_handle.version` and `.deep_link` (on the document node, returned by `GET /documents` in `external_handle`).
+**Accepted but not stored or used:** `external_handle.source_updated_at`, block `source_anchor`,
 `schema_version`, `confidence`, `transformer_name`, `transformer_version`, `ingested_at`. They are validated for type only. Keep
 anything you need later in `metadata{}`. See [known limits](known-limits-and-roadmap.md#accepted-but-ignored-fields).
 
@@ -76,9 +77,18 @@ Consequences for you:
 `source_links` connect this document to others. Each link becomes an edge `this document --edge_type--> target document`.
 
 - `edge_type` must be one of: `references`, `depends_on`, `related_to`, `implements`, `contains`, `evolves_into`,
-  `generated_from`, `parent_of`, `member_of`, `cites`. Anything else is quarantined.
+  `generated_from`, `parent_of`, `member_of`, `cites`, `verifies`. Anything else is quarantined.
 - The target is identified like any document: `target_native_id` in system `metadata.target_system` (default: this document's own
   system). `metadata` may carry more keys (for example a cited `clause`); they are stored on the edge.
+- **`verifies`** points a verification item (for example SYS.2) at the requirement it verifies (SYS.1). Use it between requirements
+  only. `/requirement-context` walks it in both directions (`verifies` / `verified by`) and returns the full text of the other item,
+  so do not point it at a long norm chapter; cite norms with `cites`.
+- **Evidence anchors on `cites`.** An edge is unique per (source, target, edge type): a second link of the same type to the same
+  target is silently ignored. To cite several clauses of one document send one `cites` link with
+  `metadata.anchors = [{clause, quote, block_ordinal, char_start, char_end}, ...]`. SMOS stamps `target_hash` (the target's content
+  hash) on the edge when the target is already ingested; `/requirement-context` then reports each anchor as `current`, `stale` (the
+  target was re-sent with different text: re-locate by `clause`, then `quote`) or `unverified` (no hash was recorded, for example
+  the target arrived after the link). Block ordinals and offsets belong to SMOS; keep `clause` and `quote` in your own data.
 - A link to its own document is rejected.
 - **The target need not exist yet.** SMOS creates a placeholder document node with the target's deterministic id, and ingesting the
   target later fills that same node.

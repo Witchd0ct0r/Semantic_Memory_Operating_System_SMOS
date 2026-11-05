@@ -118,7 +118,7 @@ quarantined: HTTP 200 with `{"status": "quarantined", "quarantine_key", "errors"
 Schema violations return HTTP 422.
 
 Typed edges the registered adapters understand include `references`, `depends_on`,
-`parent_of`, `member_of`, `cites`, `contains`, `generated_from`, `related_to`, `evolves_into`.
+`parent_of`, `member_of`, `cites`, `verifies`, `contains`, `generated_from`, `related_to`, `evolves_into`.
 
 ### Errors
 

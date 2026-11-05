@@ -59,8 +59,7 @@ text) and apply your own threshold; quote text only when it answers the question
 
 ## Accepted but ignored fields
 
-**Today:** these ingestion fields are accepted and validated for type, then dropped: `external_handle.deep_link`, `.version`,
-`.source_updated_at`, block `source_anchor`, `schema_version`, `confidence`, `transformer_name`, `transformer_version`,
+**Today:** these ingestion fields are accepted and validated for type, then dropped: `external_handle.source_updated_at`, block `source_anchor`, `schema_version`, `confidence`, `transformer_name`, `transformer_version`,
 `ingested_at`.
 **Do now:** keep such data in `metadata{}`; it is stored on the document node and returned by `/graph/query`.
 **Status:** technical debt (store and return them, or stop accepting them).

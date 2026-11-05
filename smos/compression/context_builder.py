@@ -112,6 +112,8 @@ def to_retrieved_context(records: list[dict], store: VectorStore) -> RetrievedCo
             document_summary=doc.get("summary"),
             document_summary_source=doc.get("source"),
             score=r.get("score"),
+            rank=r.get("_rank"),
+            rank_score=r.get("_rrf_score"),
             metadata=meta,
         ))
     return RetrievedContext(
@@ -180,6 +182,8 @@ def build_context(
         c["_final_score"] = _term_overlap(query, c.get("content", ""))
     candidates.sort(key=lambda c: (-c["_rrf_score"], -c["_final_score"], c.get("id", "")))
     top = candidates[offset:offset + k]
+    for position, c in enumerate(top, start=offset + 1):
+        c["_rank"] = position
 
     # Graph expansion — purely additive: pulls in memories that share an
     # extracted entity with the top-ranked result, without altering the

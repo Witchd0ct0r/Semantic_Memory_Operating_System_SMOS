@@ -447,7 +447,10 @@ class VectorStore:
                 continue
             matched.append({
                 "id": doc_id,
-                "external_handle": {"system": meta.get("system"), "native_id": meta.get("native_id")},
+                "external_handle": {
+                    "system": meta.get("system"), "native_id": meta.get("native_id"),
+                    "version": meta.get("version"), "deep_link": meta.get("deep_link"),
+                },
                 "doc_type": doc_type,
                 "tags": doc_tags,
                 "segment_count": leaves,

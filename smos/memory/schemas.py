@@ -32,6 +32,16 @@ class RetrievedItem(BaseModel):
     document_summary: Optional[str] = None
     document_summary_source: Optional[str] = None
     score: Optional[float] = None
+    rank: Optional[int] = Field(
+        default=None,
+        description="1-based position in the fused ranking (offset included), the order results are sorted by. "
+                    "Null for graph-expansion extras, which are appended after the ranked hits.",
+    )
+    rank_score: Optional[float] = Field(
+        default=None,
+        description="The fused (reciprocal rank fusion) score the ranking sorts on, descending. "
+                    "`score` stays the cosine similarity and does not follow this order.",
+    )
     metadata: dict = Field(default_factory=dict)
 
 

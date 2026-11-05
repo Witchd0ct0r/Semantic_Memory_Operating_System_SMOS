@@ -56,6 +56,9 @@ How to read it:
 - `content` is the **exact stored text**. Quote it as is. Never present a paraphrase as a quotation.
 - `score` is closeness (higher is closer). Direct hits scored about 0.75 to 0.81 and unrelated text 0.02 to 0.18 in the real run.
   **A query always returns its nearest items**, however weak; apply your own threshold.
+- Results are sorted by the fused ranking, not by `score`: each hit carries `rank` (1-based, offset included) and `rank_score` (the fused
+  score, descending down the page). `score` stays the cosine similarity, so it can rise and fall inside a page. Graph extras appended
+  after the ranked hits have `rank: null`.
 - `summary`, `section_summary`, `document_summary` are text a parser supplied for the segment, its section and its document
   (`null` when none, with matching `*_source` fields saying who wrote them).
 - `metadata.doc_id` says which document; `ordinal`, `char_start`, `char_end` say where in that document's text. `tags` is a
@@ -155,8 +158,9 @@ derive its `doc_id` with `sha1("system:native_id")[:16]`.
 
 Give a draft `text`, or a stored item (`doc_id`, or `system` + `native_id`), or both. Optional: `level`, `domain_tags` (peers must share
 one), `normative_tags`, `declared_links`, `token_budget` (at least 100, default 4000), `k_per_section` (1 to 50, default 5).
-The answer has `linked`, `peers`, `normative` (each item: `doc_id`, `segment_id`, `doc_name`, `text`, `score`, `reason`, `clause`,
-`source_kind`, `hops`, `path`, `clipped`), `coverage` (counts and `unresolved_links`) and `truncated`. In the real run a draft
+The answer has `linked` (declared links, including `verifies` in both directions), `peers`, `normative` (each item: `doc_id`, `segment_id`, `doc_name`, `text`, `score`, `reason`, `clause`,
+`source_kind`, `hops`, `path`, `clipped`; normative items also `anchors` (each with `status` current / stale / unverified), `doc_tags` and
+`edition_status`, the document's own `status:<x>` tag read at query time, so a cited edition shows as `superseded` once it is tagged so), `coverage` (counts and `unresolved_links`) and `truncated`. In the real run a draft
 requirement about "3 mm" returned the standard's two-millimetre clause first (`reason: "standard match"`, score 0.79).
 Normative means `doctype:legal` or `doctype:standard` unless you pass `normative_tags`
 ([known limits](known-limits-and-roadmap.md#normative-means-doctypelegal-or-doctypestandard)).
