@@ -9,7 +9,7 @@ from smos.ingest.contract import derive_doc_id
 from smos.memory.exact_retrieval import reconstruct
 from smos.memory.vector_store import VectorStore
 
-LINK_EDGE_TYPES = ["depends_on", "parent_of", "member_of"]
+LINK_EDGE_TYPES = ["depends_on", "parent_of", "member_of", "verifies"]
 NORMATIVE_DOCTYPES = ("legal", "standard")
 _MAX_HOPS = 2
 _NEAR_DUPLICATE_THRESHOLD = 0.90
@@ -27,8 +27,29 @@ _RELATION_LABELS = {
     ("parent_of", "in"): "parent (parent_of)",
     ("member_of", "out"): "member of (member_of)",
     ("member_of", "in"): "has member (member_of)",
+    ("verifies", "out"): "verifies (verifies)",
+    ("verifies", "in"): "verified by (verifies)",
 }
 _EDGE_ORDER = {t: i for i, t in enumerate(LINK_EDGE_TYPES)}
+
+
+def _doc_status(node: Optional[dict]) -> tuple[list[str], Optional[str]]:
+    """Tags of a document node and its `status:<x>` value, read at query time so an
+    edition that was current when cited shows as superseded once a newer one arrives."""
+    tags = list(((node or {}).get("metadata") or {}).get("domain_tags") or [])
+    status = next((t.split(":", 1)[1] for t in tags if t.startswith("status:")), None)
+    return tags, status
+
+
+def _anchor_states(anchors: list, edge_hash: Optional[str], current_hash: Optional[str]) -> list[dict]:
+    """Each anchor with `status`: current (target unchanged since the link was made),
+    stale (target re-sent with different text: re-locate by clause, then quote) or
+    unverified (no hash was recorded for the link, or the target has no hash)."""
+    if edge_hash and current_hash:
+        status = "current" if edge_hash == current_hash else "stale"
+    else:
+        status = "unverified"
+    return [{**a, "status": status} for a in anchors if isinstance(a, dict)]
 
 
 def _placeholder(node: Optional[dict]) -> bool:
@@ -209,6 +230,7 @@ def _normative_items(
         if node is None or _placeholder(node) or target_id in cited_docs:
             continue
         cited_docs.add(target_id)
+        doc_tags, edition_status = _doc_status(node)
         own = [
             r for r in candidates
             if r.get("metadata", {}).get("doc_id") == target_id
@@ -227,6 +249,9 @@ def _normative_items(
                 "score": record.get("score"),
                 "reason": "explicit citation",
                 "clause": cite.get("clause"),
+                "anchors": cite.get("anchors", []),
+                "doc_tags": doc_tags,
+                "edition_status": edition_status,
                 "hops": None,
                 "path": [],
             })
@@ -247,6 +272,7 @@ def _normative_items(
         node = store.graph.get_node(document_id) if document_id else None
         if node is None or _placeholder(node):
             continue
+        doc_tags, edition_status = _doc_status(node)
         items.append({
             "id": document_id,
             "doc_id": document_id,
@@ -256,6 +282,9 @@ def _normative_items(
             "score": record.get("score"),
             "reason": f"{kinds[0]} match",
             "clause": None,
+            "anchors": [],
+            "doc_tags": doc_tags,
+            "edition_status": edition_status,
             "source_kind": kinds[0],
             "hops": None,
             "path": [],
@@ -319,7 +348,11 @@ def requirement_context(
         if edge_type == "depends_on":
             has_upstream = True
         if edge_type == "cites":
-            declared_cites.append({"target_id": target_id, "clause": link.get("clause")})
+            declared_cites.append({
+                "target_id": target_id,
+                "clause": link.get("clause"),
+                "anchors": _anchor_states(link.get("anchors") or [], None, None),
+            })
         elif edge_type in LINK_EDGE_TYPES:
             starts.append((
                 target_id, 1,
@@ -333,10 +366,17 @@ def requirement_context(
         if graph.get_edges(stored_id, "out", ["depends_on"]):
             has_upstream = True
         has_downstream = bool(graph.get_edges(stored_id, "in", ["depends_on"]))
-        for edge in graph.get_edges(stored_id, "out", ["cites"]):
+        cite_edges = graph.get_edges(stored_id, "out", ["cites"])
+        current_hashes = store.get_document_hashes([e["target_id"] for e in cite_edges])
+        for edge in cite_edges:
             stored_cites.append({
                 "target_id": edge["target_id"],
                 "clause": edge["metadata"].get("clause"),
+                "anchors": _anchor_states(
+                    edge["metadata"].get("anchors") or [],
+                    edge["metadata"].get("target_hash"),
+                    current_hashes.get(edge["target_id"]),
+                ),
             })
 
     found = _walk_links(store, starts, stored_id or None)

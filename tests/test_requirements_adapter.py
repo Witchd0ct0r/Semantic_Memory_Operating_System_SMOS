@@ -32,7 +32,7 @@ def _payload(edge_type: str) -> IngestionPayload:
 def test_adapter_declares_traceability_edge_types():
     adapter = RequirementsAdapter()
     assert adapter.name == "requirements"
-    assert adapter.edge_types == frozenset({"parent_of", "member_of", "cites"})
+    assert adapter.edge_types == frozenset({"parent_of", "member_of", "cites", "verifies"})
 
 
 def test_adapter_has_no_text_behaviour():
@@ -61,4 +61,4 @@ def test_package_import_registers_requirements_adapter():
 
     importlib.reload(adapters_pkg)
     assert get_adapter("requirements") is not None
-    assert {"parent_of", "member_of", "cites"} <= all_edge_types()
+    assert {"parent_of", "member_of", "cites", "verifies"} <= all_edge_types()

@@ -304,3 +304,113 @@ def test_normative_is_found_even_when_many_requirements_outrank_it(store):
 
     assert result["coverage"]["normative_by_source"]["standard"] == 1
     assert [i["reason"] for i in result["normative"]] == ["standard match"]
+
+
+# ---- verifies edges, anchors on cites, live edition status (release after 0.5.0) ----
+
+def test_verifies_is_registered_by_the_requirements_adapter():
+    from smos.ingest.adapters.registry import all_edge_types
+
+    assert "verifies" in all_edge_types()
+
+
+def test_verifies_is_walked_in_both_directions_with_labels(store):
+    from smos.ingest.contract import derive_doc_id
+
+    _ingest(store, "SYS1", S1_TEXT)
+    _ingest(store, "SYS2", S2_TEXT, links=[("SYS1", "verifies", {})])
+    from_sys1 = _by_id(requirement_context(store, system=SYSTEM, native_id="SYS1")["linked"])
+    from_sys2 = _by_id(requirement_context(store, system=SYSTEM, native_id="SYS2")["linked"])
+    assert from_sys1[derive_doc_id(SYSTEM, "SYS2")]["reason"] == "verified by (verifies)"
+    assert from_sys2[derive_doc_id(SYSTEM, "SYS1")]["reason"] == "verifies (verifies)"
+
+
+def test_verifies_does_not_count_as_upstream(store):
+    _ingest(store, "SYS1", S1_TEXT)
+    _ingest(store, "SYS2", S2_TEXT, links=[("SYS1", "verifies", {})])
+    result = requirement_context(store, system=SYSTEM, native_id="SYS2")
+    assert result["coverage"]["has_upstream"] is False
+
+
+ANCHORS = [
+    {"clause": "7.2.1", "quote": "Article seven text", "block_ordinal": 3, "char_start": 10, "char_end": 40},
+    {"clause": "7.2.2", "quote": "another clause", "block_ordinal": 4, "char_start": 41, "char_end": 60},
+]
+
+
+def test_cites_edge_keeps_anchors_and_stamps_the_target_hash(store):
+    from smos.ingest.contract import derive_doc_id
+
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    _ingest(store, "R9", "The unit shall log every actuator fault.",
+            links=[("STD-1", "cites", {"anchors": ANCHORS})])
+    std = derive_doc_id(SYSTEM, "STD-1")
+    edge = store.graph.get_edges(derive_doc_id(SYSTEM, "R9"), "out", ["cites"])[0]
+    assert edge["metadata"]["anchors"] == ANCHORS
+    assert edge["metadata"]["target_hash"] == store.get_document_hashes([std])[std]
+
+
+def test_anchors_are_reported_current_when_the_hash_matches(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    _ingest(store, "R9", "The unit shall log every actuator fault.",
+            links=[("STD-1", "cites", {"anchors": ANCHORS})])
+    first = requirement_context(store, system=SYSTEM, native_id="R9")["normative"][0]
+    assert [a["status"] for a in first["anchors"]] == ["current", "current"]
+    assert [a["clause"] for a in first["anchors"]] == ["7.2.1", "7.2.2"]
+
+
+def test_anchors_become_stale_when_the_norm_is_re_sent_with_new_text(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    _ingest(store, "R9", "The unit shall log every actuator fault.",
+            links=[("STD-1", "cites", {"anchors": ANCHORS})])
+    _ingest(store, "STD-1", STANDARD_TEXT + " A new sentence changes the hash.",
+            doc_type="standard", tags=["iso26262"])
+    first = requirement_context(store, system=SYSTEM, native_id="R9")["normative"][0]
+    assert [a["status"] for a in first["anchors"]] == ["stale", "stale"]
+
+
+def test_anchors_are_unverified_when_the_target_was_not_ingested_at_link_time(store):
+    _ingest(store, "R9", "The unit shall log every actuator fault.",
+            links=[("STD-1", "cites", {"anchors": ANCHORS})])
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    first = requirement_context(store, system=SYSTEM, native_id="R9")["normative"][0]
+    assert [a["status"] for a in first["anchors"]] == ["unverified", "unverified"]
+
+
+def test_cites_without_anchors_reports_an_empty_list(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    _ingest(store, "R9", "The unit shall log every actuator fault.",
+            links=[("STD-1", "cites", {"clause": "Article 7"})])
+    first = requirement_context(store, system=SYSTEM, native_id="R9")["normative"][0]
+    assert first["anchors"] == []
+    assert first["clause"] == "Article 7"
+
+
+def test_edition_status_is_read_live_from_the_target_tags(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262", "status:current"])
+    _ingest(store, "R9", "The unit shall log every actuator fault.",
+            links=[("STD-1", "cites", {"anchors": ANCHORS})])
+    assert requirement_context(store, system=SYSTEM, native_id="R9")["normative"][0]["edition_status"] == "current"
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262", "status:superseded"])
+    after = requirement_context(store, system=SYSTEM, native_id="R9")["normative"][0]
+    assert after["edition_status"] == "superseded"
+    assert "status:superseded" in after["doc_tags"]
+
+
+def test_semantic_normative_hits_carry_edition_status_too(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["status:superseded"])
+    result = requirement_context(
+        store, text="The braking system shall keep decelerating after a single fault."
+    )
+    assert result["normative"][0]["edition_status"] == "superseded"
+
+
+def test_declared_cite_anchors_are_returned_as_unverified(store):
+    _ingest(store, "STD-1", STANDARD_TEXT, doc_type="standard", tags=["iso26262"])
+    result = requirement_context(
+        store, text="The unit shall log every actuator fault.",
+        declared_links=[{"target_system": SYSTEM, "target_native_id": "STD-1", "edge_type": "cites", "anchors": ANCHORS}],
+    )
+    first = result["normative"][0]
+    assert first["reason"] == "explicit citation"
+    assert [a["status"] for a in first["anchors"]] == ["unverified", "unverified"]

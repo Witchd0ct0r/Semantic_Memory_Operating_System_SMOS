@@ -88,7 +88,7 @@ def _refresh_unchanged(
         doc_id, [(start, end, block.block_type) for (start, end), block in zip(block_spans, payload.blocks)]
     )
     store.graph.upsert_node(doc_id, "document", payload.doc_name or doc_id, metadata=_document_metadata(payload))
-    link_count = wire_source_links(store.graph, payload, doc_id)
+    link_count = wire_source_links(store.graph, payload, doc_id, store.get_document_hashes)
     if payload.summary:
         store.set_summary(doc_id, payload.summary, payload.summary_source or "")
     else:
@@ -223,7 +223,7 @@ def _ingest_locked(
 
     section_count = _wire_containment(store.graph, doc_id, root)
     reference_count = _wire_references(store.graph, block_adapter, full_text, leaves, doc_id=doc_id)
-    link_count = wire_source_links(store.graph, payload, doc_id)
+    link_count = wire_source_links(store.graph, payload, doc_id, store.get_document_hashes)
     store.save_checkpoint(
         doc_id=doc_id,
         content_hash=text_hash,
